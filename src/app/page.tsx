@@ -77,7 +77,15 @@ async function getDashboardData() {
 }
 
 export default async function DashboardPage() {
-  const data = await getDashboardData();
+  const data = await getDashboardData().catch(() => ({
+    today: null,
+    salesChange: 0,
+    ticketChange: 0,
+    criticalStock: [] as { id: string; name: string; qty: number; daysOfStock: number; minStock: number }[],
+    aiRecs: [] as { id: string; type: string; priority: string; title: string; content: string; impact?: number; applied: boolean; dismissed: boolean }[],
+    hourlyData: [] as { label: string; amount: number; transactions: number }[],
+    lastSync: undefined as Date | undefined,
+  }));
   const { today, salesChange, ticketChange, criticalStock, aiRecs, hourlyData, lastSync } = data;
 
   return (
