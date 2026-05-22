@@ -18,13 +18,14 @@ export default function LoginPage() {
       email: fd.get("email"),
       password: fd.get("password"),
       redirect: false,
+      callbackUrl: "/",
     });
 
-    if (result?.error) {
+    if (!result || result.error) {
       toast.error("Credenciales incorrectas");
       setLoading(false);
     } else {
-      router.push("/dashboard");
+      router.replace(result.url ?? "/");
     }
   }
 

@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 import { prisma } from "@/lib/prisma";
 import { formatCurrency, stockStatus } from "@/lib/utils";
 import { cn } from "@/lib/utils";
