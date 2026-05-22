@@ -1,0 +1,196 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  password      String
+  role          Role      @default(OPERATOR)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+enum Role {
+  ADMIN
+  OPERATOR
+}
+
+// ─── Sync State ───────────────────────────────────────────────────────────────
+
+model SyncState {
+  id         String   @id @default(cuid())
+  entity     String   @unique  // "sale_order" | "stock_quant" | "product_template" | "account_move" | "res_partner"
+  lastSyncAt DateTime
+  status     String   @default("idle") // "idle" | "syncing" | "error"
+  error      String?
+  updatedAt  DateTime @updatedAt
+}
+
+// ─── Product Intelligence ─────────────────────────────────────────────────────
+
+model ProductInsight {
+  id               String   @id @default(cuid())
+  odooProductId    Int      @unique
+  internalRef      String?
+  name             String
+  category         String?
+  stockQty         Float    @default(0)
+  cmp              Float    @default(0)  // Costo Medio Ponderado
+  salePrice        Float    @default(0)
+  avgDailySales7d  Float    @default(0)
+  avgDailySales14d Float    @default(0)
+  avgDailySales30d Float    @default(0)
+  daysOfStock      Float    @default(0)
+  lastSoldAt       DateTime?
+  rotationDays     Int      @default(0)  // días desde última venta
+  trend            String   @default("stable") // "up" | "down" | "stable"
+  suggestion       String?  // IA suggestion text
+  minStock         Int      @default(5)
+  reorderQty       Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+// ─── Financial ────────────────────────────────────────────────────────────────
+
+model FinancialSnapshot {
+  id                  String   @id @default(cuid())
+  date                DateTime @unique @db.Date
+  totalRevenue        Float    @default(0)
+  totalCost           Float    @default(0)
+  grossProfit         Float    @default(0)
+  fixedExpenses       Float    @default(0)
+  netProfit           Float    @default(0)
+  netMarginPct        Float    @default(0)
+  transactionCount    Int      @default(0)
+  avgTicket           Float    @default(0)
+  cashBalance         Float    @default(0)
+  projectedCash30d    Float    @default(0)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model ExpenseBudget {
+  id           String   @id @default(cuid())
+  category     String
+  month        Int      // 1-12
+  year         Int
+  budgetAmount Float
+  actualAmount Float    @default(0)
+  alertPct     Float    @default(90)  // alert threshold %
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([category, month, year])
+}
+
+// ─── Campaigns ────────────────────────────────────────────────────────────────
+
+model Campaign {
+  id           String              @id @default(cuid())
+  name         String
+  description  String?
+  status       CampaignStatus      @default(DRAFT)
+  triggerType  CampaignTrigger     @default(MANUAL)
+  segment      String?             // customer segment id or "all"
+  templateId   String?             // WhatsApp template name
+  templateVars Json?               // { "1": "valor", "2": "valor" }
+  aiCopy       String?
+  scheduledAt  DateTime?
+  sentAt       DateTime?
+  totalSent    Int                 @default(0)
+  totalRead    Int                 @default(0)
+  totalReplied Int                 @default(0)
+  revenueAttr  Float               @default(0)  // atributed revenue 48h
+  executions   CampaignExecution[]
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+}
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  RUNNING
+  COMPLETED
+  PAUSED
+  CANCELLED
+}
+
+enum CampaignTrigger {
+  MANUAL
+  INVENTORY_LOW
+  INVENTORY_STALE
+  CALENDAR
+  AI_OPPORTUNITY
+  REACTIVATION
+  CROSSSELL
+  BIRTHDAY
+}
+
+model CampaignExecution {
+  id           String   @id @default(cuid())
+  campaign     Campaign @relation(fields: [campaignId], references: [id])
+  campaignId   String
+  phone        String
+  customerName String?
+  message      String
+  status       String   @default("pending") // "pending" | "sent" | "delivered" | "read" | "failed"
+  whatsappId   String?  // 360dialog message ID
+  sentAt       DateTime?
+  deliveredAt  DateTime?
+  readAt       DateTime?
+  errorMsg     String?
+  createdAt    DateTime @default(now())
+
+  @@index([campaignId])
+  @@index([phone])
+}
+
+// ─── Customer Segments ────────────────────────────────────────────────────────
+
+model CustomerSegment {
+  id             String   @id @default(cuid())
+  odooPartnerId  Int?     @unique
+  phone          String   @unique
+  name           String?
+  email          String?
+  segment        String   @default("occasional") // "vip" | "frequent" | "occasional" | "at_risk" | "new"
+  tags           String[] // ["estudiante", "profesor", "vecino"]
+  recencyDays    Int      @default(999)
+  frequency      Float    @default(0)  // compras/mes
+  avgTicket      Float    @default(0)
+  totalSpend     Float    @default(0)
+  lastPurchaseAt DateTime?
+  birthday       DateTime?
+  optedOut       Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+// ─── AI Recommendations ───────────────────────────────────────────────────────
+
+model AIRecommendation {
+  id          String   @id @default(cuid())
+  type        String   // "restock" | "promote" | "discontinue" | "campaign" | "price" | "financial"
+  priority    String   @default("medium") // "high" | "medium" | "low"
+  title       String
+  content     String
+  entityType  String?  // "product" | "campaign" | "expense"
+  entityId    String?
+  impact      Float?   // estimated revenue impact
+  applied     Boolean  @default(false)
+  dismissed   Boolean  @default(false)
+  appliedAt   DateTime?
+  expiresAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
