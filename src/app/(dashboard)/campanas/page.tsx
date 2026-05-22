@@ -34,7 +34,7 @@ const statusColor: Record<string, string> = {
 };
 
 export default async function CampanasPage() {
-  const { campaigns } = await getCampaignsData();
+  const { campaigns } = await getCampaignsData().catch(() => ({ campaigns: [] as Awaited<ReturnType<typeof getCampaignsData>>["campaigns"] }));
 
   const stats = {
     total: campaigns.length,

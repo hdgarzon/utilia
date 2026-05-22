@@ -35,7 +35,7 @@ async function getSalesData() {
 }
 
 export default async function VentasPage() {
-  const { dailyData, topProducts, totalRevenue30d, totalTransactions, avgTicket } = await getSalesData();
+  const { dailyData, topProducts, totalRevenue30d, totalTransactions, avgTicket } = await getSalesData().catch(() => ({ dailyData: [] as Awaited<ReturnType<typeof getSalesData>>["dailyData"], topProducts: [] as Awaited<ReturnType<typeof getSalesData>>["topProducts"], totalRevenue30d: 0, totalTransactions: 0, avgTicket: 0 }));
 
   return (
     <div className="space-y-6">

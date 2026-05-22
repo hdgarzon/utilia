@@ -17,7 +17,7 @@ async function getInventoryData() {
 }
 
 export default async function InventarioPage() {
-  const { critical, warning, healthy, stale } = await getInventoryData();
+  const { critical, warning, healthy, stale } = await getInventoryData().catch(() => ({ critical: [] as Awaited<ReturnType<typeof getInventoryData>>["critical"], warning: [] as Awaited<ReturnType<typeof getInventoryData>>["warning"], healthy: [] as Awaited<ReturnType<typeof getInventoryData>>["healthy"], stale: [] as Awaited<ReturnType<typeof getInventoryData>>["stale"] }));
   const all = [...critical, ...warning, ...healthy];
 
   return (

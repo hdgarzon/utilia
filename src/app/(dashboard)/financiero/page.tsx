@@ -42,7 +42,8 @@ async function getFinancialData() {
 }
 
 export default async function FinancieroPage() {
-  const { totals, avgMargin, chartData, budgets, cashBalance, projected30d } = await getFinancialData();
+  const fallbackTotals = { revenue: 0, cost: 0, profit: 0, expenses: 0, transactions: 0 };
+  const { totals = fallbackTotals, avgMargin, chartData, budgets, cashBalance, projected30d } = await getFinancialData().catch(() => ({ totals: fallbackTotals, avgMargin: 0, chartData: [] as Awaited<ReturnType<typeof getFinancialData>>["chartData"], budgets: [] as Awaited<ReturnType<typeof getFinancialData>>["budgets"], cashBalance: 0, projected30d: 0 }));
 
   return (
     <div className="space-y-6">
