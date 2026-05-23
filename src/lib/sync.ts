@@ -136,15 +136,40 @@ export async function syncSalesAndComputeMetrics() {
     const orderIds = orders.map((o) => o.id);
     const lines = await odoo.getSaleOrderLines(orderIds);
 
-    // ── 1. Agregar ventas por día ──────────────────────────────────────────
-    const salesByDate = new Map<string, { revenue: number; count: number; tickets: number[] }>();
+    // ── 0. Cargar tabla de costos actuales (fallback para órdenes sin purchase_price)
+    const referencedIdsForCosts = Array.from(new Set(lines.map((l) => l.product_id[0])));
+    const productCosts = await prisma.productInsight.findMany({
+      where: { odooProductId: { in: referencedIdsForCosts } },
+      select: { odooProductId: true, cmp: true },
+    });
+    const cmpByProduct = new Map(productCosts.map((p) => [p.odooProductId, p.cmp]));
+
+    // ── 1. Agregar ventas + costos por día ─────────────────────────────────
+    // Mapa orderId → dateKey para luego asociar líneas con su día
+    const orderDateKey = new Map(orders.map((o) => [o.id, o.date_order.slice(0, 10)]));
+    const salesByDate = new Map<string, { revenue: number; cost: number; count: number; tickets: number[] }>();
+
     for (const order of orders) {
       const dateKey = order.date_order.slice(0, 10);
-      const bucket = salesByDate.get(dateKey) ?? { revenue: 0, count: 0, tickets: [] };
+      const bucket = salesByDate.get(dateKey) ?? { revenue: 0, cost: 0, count: 0, tickets: [] };
       bucket.revenue += order.amount_total;
       bucket.tickets.push(order.amount_total);
       bucket.count += 1;
       salesByDate.set(dateKey, bucket);
+    }
+
+    // Sumar costos por día a partir de las líneas
+    for (const line of lines) {
+      const dateKey = orderDateKey.get(line.order_id[0]);
+      if (!dateKey) continue;
+      const bucket = salesByDate.get(dateKey);
+      if (!bucket) continue;
+      // Prioridad: purchase_price histórico > CMP actual del producto > 0
+      const unitCost =
+        typeof line.purchase_price === "number" && line.purchase_price > 0
+          ? line.purchase_price
+          : cmpByProduct.get(line.product_id[0]) ?? 0;
+      bucket.cost += unitCost * line.product_uom_qty;
     }
 
     // ── 2. Agregar ventas por producto ─────────────────────────────────────
@@ -163,19 +188,40 @@ export async function syncSalesAndComputeMetrics() {
       }
     }
 
-    // ── 3. Upsert snapshots financieros diarios ────────────────────────────
+    // ── 3. Upsert snapshots financieros diarios con utilidad real ─────────
+    // Precarga presupuesto de gastos fijos por mes para prorratear (memoizado)
+    const fixedExpensesPerDay = new Map<string, number>();
+    async function getFixedExpensesForDay(date: Date): Promise<number> {
+      const key = `${date.getFullYear()}-${date.getMonth() + 1}`;
+      const cached = fixedExpensesPerDay.get(key);
+      if (cached !== undefined) return cached;
+      const budgets = await prisma.expenseBudget.findMany({
+        where: { year: date.getFullYear(), month: date.getMonth() + 1 },
+      });
+      const totalMonthly = budgets.reduce((sum, b) => sum + b.budgetAmount, 0);
+      // días en el mes para distribuir uniformemente
+      const daysInMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+      const perDay = totalMonthly / daysInMonth;
+      fixedExpensesPerDay.set(key, perDay);
+      return perDay;
+    }
+
     for (const [dateKey, data] of salesByDate) {
       const date = startOfDay(new Date(dateKey));
       const avgTicket = data.tickets.reduce((a, b) => a + b, 0) / data.tickets.length;
-      const netProfit = data.revenue; // TODO: restar costos con line.standard_price cuando sincronicemos costos
-      const netMarginPct = 0; // mismo TODO
+      const grossProfit = data.revenue - data.cost;
+      const fixedExpenses = await getFixedExpensesForDay(date);
+      const netProfit = grossProfit - fixedExpenses;
+      const netMarginPct = data.revenue > 0 ? (netProfit / data.revenue) * 100 : 0;
+
       await prisma.financialSnapshot.upsert({
         where: { date },
         create: {
           date,
           totalRevenue: data.revenue,
-          totalCost: 0,
-          grossProfit: data.revenue,
+          totalCost: data.cost,
+          grossProfit,
+          fixedExpenses,
           netProfit,
           netMarginPct,
           transactionCount: data.count,
@@ -183,7 +229,9 @@ export async function syncSalesAndComputeMetrics() {
         },
         update: {
           totalRevenue: data.revenue,
-          grossProfit: data.revenue,
+          totalCost: data.cost,
+          grossProfit,
+          fixedExpenses,
           netProfit,
           netMarginPct,
           transactionCount: data.count,

@@ -124,6 +124,12 @@ export interface OdooSaleOrderLine {
   product_uom_qty: number;
   price_unit: number;
   price_subtotal: number;
+  // `purchase_price` solo existe si el módulo `sale_margin` está instalado.
+  // Es el costo histórico al momento de confirmar la venta (mejor que
+  // standard_price actual porque captura precios pasados).
+  purchase_price?: number | false;
+  // `margin` es purchase_price * qty restado de price_subtotal, computado.
+  margin?: number | false;
 }
 
 export interface OdooStockQuant {
@@ -184,12 +190,34 @@ export const odoo = {
 
   async getSaleOrderLines(orderIds: number[]): Promise<OdooSaleOrderLine[]> {
     if (orderIds.length === 0) return [];
-    return searchRead<OdooSaleOrderLine>(
-      "sale.order.line",
-      [["order_id", "in", orderIds]],
-      ["id", "order_id", "product_id", "product_uom_qty", "price_unit", "price_subtotal"],
-      { limit: 5000 }
-    );
+    // Pedimos purchase_price y margin; Odoo los ignora si el módulo no está
+    // instalado (campos opcionales en el resultado).
+    const fields = [
+      "id",
+      "order_id",
+      "product_id",
+      "product_uom_qty",
+      "price_unit",
+      "price_subtotal",
+      "purchase_price",
+      "margin",
+    ];
+    try {
+      return await searchRead<OdooSaleOrderLine>(
+        "sale.order.line",
+        [["order_id", "in", orderIds]],
+        fields,
+        { limit: 5000 }
+      );
+    } catch {
+      // Si purchase_price/margin no existen (sale_margin no instalado), reintentar sin ellos
+      return searchRead<OdooSaleOrderLine>(
+        "sale.order.line",
+        [["order_id", "in", orderIds]],
+        ["id", "order_id", "product_id", "product_uom_qty", "price_unit", "price_subtotal"],
+        { limit: 5000 }
+      );
+    }
   },
 
   async getStockQuants(): Promise<OdooStockQuant[]> {
