@@ -3,9 +3,11 @@ export const dynamic = 'force-dynamic';
 import { prisma } from "@/lib/prisma";
 import { SalesChart } from "@/components/dashboard/SalesChart";
 import { KPICard } from "@/components/dashboard/KPICard";
+import { WeeklyPattern } from "@/components/dashboard/WeeklyPattern";
+import { getWeeklyPattern } from "@/lib/analytics/weekly-pattern";
 import { formatCurrency } from "@/lib/utils";
 import { DollarSign, ShoppingCart, TrendingUp, Users } from "lucide-react";
-import { subDays, startOfDay } from "date-fns";
+import { subDays } from "date-fns";
 
 async function getSalesData() {
   const last30 = subDays(new Date(), 30);
@@ -35,7 +37,11 @@ async function getSalesData() {
 }
 
 export default async function VentasPage() {
-  const { dailyData, topProducts, totalRevenue30d, totalTransactions, avgTicket } = await getSalesData().catch(() => ({ dailyData: [] as Awaited<ReturnType<typeof getSalesData>>["dailyData"], topProducts: [] as Awaited<ReturnType<typeof getSalesData>>["topProducts"], totalRevenue30d: 0, totalTransactions: 0, avgTicket: 0 }));
+  const [salesData, weeklyPattern] = await Promise.all([
+    getSalesData().catch(() => ({ dailyData: [] as Awaited<ReturnType<typeof getSalesData>>["dailyData"], topProducts: [] as Awaited<ReturnType<typeof getSalesData>>["topProducts"], totalRevenue30d: 0, totalTransactions: 0, avgTicket: 0 })),
+    getWeeklyPattern(60).catch(() => []),
+  ]);
+  const { dailyData, topProducts, totalRevenue30d, totalTransactions, avgTicket } = salesData;
 
   return (
     <div className="space-y-6">
@@ -49,6 +55,8 @@ export default async function VentasPage() {
       </div>
 
       <SalesChart data={dailyData} title="Ventas Diarias — Últimos 30 Días" />
+
+      <WeeklyPattern data={weeklyPattern} title="Patrón Semanal — Identifica días débiles" windowDays={60} />
 
       <div className="rounded-xl border border-border bg-card p-5 space-y-3">
         <h3 className="text-sm font-semibold">Top 10 Productos por Velocidad de Venta</h3>
