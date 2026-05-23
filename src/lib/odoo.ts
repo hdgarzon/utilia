@@ -160,6 +160,31 @@ export interface OdooPartner {
   birthday: string | false;
 }
 
+/** POS = Point of Sale. Modelo paralelo a sale.order pero para caja registradora. */
+export interface OdooPosOrder {
+  id: number;
+  name: string;
+  date_order: string;
+  amount_total: number;
+  amount_paid: number;
+  state: string; // "draft" | "paid" | "done" | "invoiced" | "cancel"
+  partner_id: [number, string] | false;
+  lines: number[];
+  session_id: [number, string];
+}
+
+export interface OdooPosOrderLine {
+  id: number;
+  order_id: [number, string];
+  product_id: [number, string];
+  qty: number;
+  price_unit: number;
+  price_subtotal: number;
+  discount: number;
+  // total_cost = qty × costo unitario al momento de la venta (histórico, ideal)
+  total_cost: number;
+}
+
 // ─── API pública ─────────────────────────────────────────────────────────────
 
 export const odoo = {
@@ -265,6 +290,37 @@ export const odoo = {
     // Odoo no garantiza el orden; devolvemos en orden solicitado
     const byId = new Map(result.map((p) => [p.id, p]));
     return ids.map((id) => byId.get(id)).filter(Boolean) as OdooProduct[];
+  },
+
+  /** Trae órdenes POS pagadas/cerradas. Paginado porque pueden ser miles. */
+  async getPosOrders(since?: Date, limit = 5000): Promise<OdooPosOrder[]> {
+    const domain: unknown[] = [["state", "in", ["paid", "done", "invoiced"]]];
+    if (since) domain.push(["write_date", ">=", formatOdooDate(since)]);
+
+    return searchRead<OdooPosOrder>(
+      "pos.order",
+      domain,
+      ["id", "name", "date_order", "amount_total", "amount_paid", "state", "partner_id", "lines", "session_id"],
+      { limit, order: "date_order desc" }
+    );
+  },
+
+  async getPosOrderLines(orderIds: number[]): Promise<OdooPosOrderLine[]> {
+    if (orderIds.length === 0) return [];
+    // Chunking en lotes de 500 para evitar payload gigante en la respuesta
+    const CHUNK = 500;
+    const all: OdooPosOrderLine[] = [];
+    for (let i = 0; i < orderIds.length; i += CHUNK) {
+      const slice = orderIds.slice(i, i + CHUNK);
+      const lines = await searchRead<OdooPosOrderLine>(
+        "pos.order.line",
+        [["order_id", "in", slice]],
+        ["id", "order_id", "product_id", "qty", "price_unit", "price_subtotal", "discount", "total_cost"],
+        { limit: 50000 }
+      );
+      all.push(...lines);
+    }
+    return all;
   },
 
   async getPartners(since?: Date): Promise<OdooPartner[]> {

@@ -117,24 +117,39 @@ export async function syncStock() {
 
 export async function syncSalesAndComputeMetrics() {
   const runStart = new Date();
-  // Leer el cutoff ANTES de marcar "syncing"
-  const sinceFromState = await getLastSync("sale_order");
-  // Si nunca se sincronizó, importar 24 meses hacia atrás para capturar historial
-  const since = sinceFromState && sinceFromState.getTime() > 0 ? sinceFromState : subDays(new Date(), 730);
-  await markSyncStatus("sale_order", "syncing");
+  // Para POS, los datos viven en pos.order (no sale.order). Usamos ese modelo.
+  const sinceFromState = await getLastSync("pos_order");
+  // Sync inicial: 90 días hacia atrás (POS suele tener miles de órdenes, no
+  // queremos importar años en el primer run; el resto vendrá si se necesita)
+  const since = sinceFromState && sinceFromState.getTime() > 0 ? sinceFromState : subDays(new Date(), 90);
+  await markSyncStatus("pos_order", "syncing");
 
   try {
-    const orders = await odoo.getSaleOrders(since);
+    const posOrders = await odoo.getPosOrders(since);
+    // Adaptador a la estructura genérica usada por el resto del cálculo
+    const orders = posOrders.map((o) => ({
+      id: o.id,
+      date_order: o.date_order,
+      amount_total: o.amount_total,
+    }));
 
     if (orders.length === 0) {
-      await recordSyncSuccess("sale_order", runStart);
-      // Igual recalcular daysOfStock para reflejar cambios de stock recientes
+      await recordSyncSuccess("pos_order", runStart);
       await recomputeDaysOfStock();
       return { synced: 0 };
     }
 
     const orderIds = orders.map((o) => o.id);
-    const lines = await odoo.getSaleOrderLines(orderIds);
+    const posLines = await odoo.getPosOrderLines(orderIds);
+    // Adaptador: mapeamos campos POS al shape usado por el resto del flujo
+    const lines = posLines.map((l) => ({
+      order_id: l.order_id,
+      product_id: l.product_id,
+      product_uom_qty: l.qty,
+      // total_cost ya viene multiplicado (qty * unit_cost) — convertimos a unit_cost
+      // para que la lógica downstream (que multiplica por qty) dé el costo total correcto.
+      purchase_price: l.qty > 0 ? l.total_cost / l.qty : 0,
+    }));
 
     // ── 0. Cargar tabla de costos actuales (fallback para órdenes sin purchase_price)
     const referencedIdsForCosts = Array.from(new Set(lines.map((l) => l.product_id[0])));
@@ -295,11 +310,11 @@ export async function syncSalesAndComputeMetrics() {
     // ── 5. Recalcular días de stock para todos los productos con ventas ───
     await recomputeDaysOfStock();
 
-    await recordSyncSuccess("sale_order", runStart);
+    await recordSyncSuccess("pos_order", runStart);
     return { synced: orders.length };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    await markSyncStatus("sale_order", "error", msg);
+    await markSyncStatus("pos_order", "error", msg);
     throw err;
   }
 }
