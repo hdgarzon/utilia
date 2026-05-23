@@ -48,7 +48,7 @@ export default async function CampanasPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold">Centro de Campañas</h1>
         <Link
-          href="/dashboard/campanas/nueva"
+          href="/campanas/nueva"
           className="flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90 transition-opacity"
         >
           <Plus className="h-3.5 w-3.5" />
@@ -81,7 +81,7 @@ export default async function CampanasPage() {
           <p className="text-sm font-medium">No hay campañas todavía</p>
           <p className="text-xs text-muted-foreground">Crea tu primera campaña de WhatsApp para llegar a tus clientes</p>
           <Link
-            href="/dashboard/campanas/nueva"
+            href="/campanas/nueva"
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90 transition-opacity"
           >
             <Plus className="h-3.5 w-3.5" />

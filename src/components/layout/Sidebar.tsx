@@ -15,11 +15,11 @@ import {
 } from "lucide-react";
 
 const nav = [
-  { href: "/dashboard", label: "Resumen", icon: LayoutDashboard },
-  { href: "/dashboard/ventas", label: "Ventas", icon: TrendingUp },
-  { href: "/dashboard/inventario", label: "Inventario", icon: Package },
-  { href: "/dashboard/financiero", label: "Financiero", icon: DollarSign },
-  { href: "/dashboard/campanas", label: "Campañas", icon: MessageSquare },
+  { href: "/", label: "Resumen", icon: LayoutDashboard },
+  { href: "/ventas", label: "Ventas", icon: TrendingUp },
+  { href: "/inventario", label: "Inventario", icon: Package },
+  { href: "/financiero", label: "Financiero", icon: DollarSign },
+  { href: "/campanas", label: "Campañas", icon: MessageSquare },
 ];
 
 export function Sidebar() {
@@ -34,7 +34,7 @@ export function Sidebar() {
 
       <nav className="flex-1 space-y-1 px-3 py-4">
         {nav.map(({ href, label, icon: Icon }) => {
-          const active = pathname === href || (href !== "/dashboard" && pathname.startsWith(href));
+          const active = pathname === href || (href !== "/" && pathname.startsWith(href));
           return (
             <Link
               key={href}

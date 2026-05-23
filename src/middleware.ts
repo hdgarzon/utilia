@@ -4,9 +4,9 @@ import { NextResponse } from "next/server";
 export default auth((req) => {
   const isLoggedIn = !!req.auth;
   const isLoginPage = req.nextUrl.pathname === "/login";
-  const isApiAuth = req.nextUrl.pathname.startsWith("/api/auth");
+  const isApi = req.nextUrl.pathname.startsWith("/api/");
 
-  if (isApiAuth) return NextResponse.next();
+  if (isApi) return NextResponse.next();
   if (isLoginPage && isLoggedIn) return NextResponse.redirect(new URL("/", req.url));
   if (!isLoginPage && !isLoggedIn) return NextResponse.redirect(new URL("/login", req.url));
 

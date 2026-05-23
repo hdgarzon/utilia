@@ -27,7 +27,7 @@ export async function syncProducts() {
         where: { odooProductId: p.id },
         create: {
           odooProductId: p.id,
-          internalRef: p.default_code,
+          internalRef: p.default_code || null,
           name: p.name,
           category: p.categ_id?.[1] ?? null,
           stockQty: p.qty_available,
