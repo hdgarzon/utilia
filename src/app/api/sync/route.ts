@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runFullSync } from "@/lib/sync";
 import { auth } from "@/lib/auth";
+import { generateRecommendations } from "@/lib/ai/recommendations";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // 5 min — el sync inicial puede ser largo
@@ -24,7 +25,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ states, cron: false });
   }
 
-  // Con secret válido: ejecutar sync completo
+  // Con secret válido: ejecutar sync completo + regenerar recomendaciones IA
   const t0 = Date.now();
   try {
     const results = await runFullSync();
@@ -33,7 +34,15 @@ export async function GET(req: NextRequest) {
       status: r.status,
       ...(r.status === "fulfilled" ? r.value : { error: String(r.reason?.message ?? r.reason) }),
     }));
-    return NextResponse.json({ ok: true, durationMs: Date.now() - t0, summary });
+    // Después del sync exitoso, generar recomendaciones nuevas (no bloquea
+    // la respuesta si falla — log y seguir).
+    let aiResult: unknown = null;
+    try {
+      aiResult = await generateRecommendations();
+    } catch (aiErr) {
+      aiResult = { error: aiErr instanceof Error ? aiErr.message : String(aiErr) };
+    }
+    return NextResponse.json({ ok: true, durationMs: Date.now() - t0, summary, ai: aiResult });
   } catch (err) {
     return NextResponse.json(
       { error: "Sync failed", detail: String(err) },
