@@ -1,136 +1,181 @@
-import "server-only";
 import { prisma } from "@/lib/prisma";
 import { odoo } from "@/lib/odoo";
 import { startOfDay, subDays } from "date-fns";
 
+// Sentinel: la primera vez no existe el registro, devolvemos undefined
 async function getLastSync(entity: string): Promise<Date | undefined> {
   const state = await prisma.syncState.findUnique({ where: { entity } });
   return state?.lastSyncAt;
 }
 
-async function updateSyncState(entity: string, status: "idle" | "syncing" | "error", error?: string) {
+// Marca el estado SIN tocar lastSyncAt (preserva el punto de corte del próximo since)
+async function markSyncStatus(entity: string, status: "syncing" | "error", error?: string) {
   await prisma.syncState.upsert({
     where: { entity },
-    create: { entity, lastSyncAt: new Date(), status, error },
-    update: { lastSyncAt: new Date(), status, error },
+    // Si es la primera vez creamos lastSyncAt en el epoch para que getLastSync devuelva ~"sin sync previo"
+    create: { entity, lastSyncAt: new Date(0), status, error },
+    update: { status, error },
+  });
+}
+
+// Solo al terminar exitosamente bumpeamos lastSyncAt
+async function recordSyncSuccess(entity: string, syncedAt: Date = new Date()) {
+  await prisma.syncState.upsert({
+    where: { entity },
+    create: { entity, lastSyncAt: syncedAt, status: "idle", error: null },
+    update: { lastSyncAt: syncedAt, status: "idle", error: null },
   });
 }
 
 export async function syncProducts() {
-  await updateSyncState("product_template", "syncing");
+  const runStart = new Date();
+  // Leer el cutoff ANTES de marcar "syncing" para no machacarlo
+  const since = await getLastSync("product_template");
+  await markSyncStatus("product_template", "syncing");
+
   try {
-    const since = await getLastSync("product_template");
     const products = await odoo.getProducts(since);
 
-    for (const p of products) {
-      await prisma.productInsight.upsert({
-        where: { odooProductId: p.id },
-        create: {
-          odooProductId: p.id,
-          internalRef: p.default_code || null,
-          name: p.name,
-          category: p.categ_id?.[1] ?? null,
-          stockQty: p.qty_available,
-          cmp: p.standard_price,
-          salePrice: p.list_price,
-        },
-        update: {
-          name: p.name,
-          category: p.categ_id?.[1] ?? null,
-          stockQty: p.qty_available,
-          cmp: p.standard_price,
-          salePrice: p.list_price,
-        },
-      });
+    // Si Odoo no devuelve nada (porque since está al día), no es error — registrar y salir
+    if (products.length === 0) {
+      await recordSyncSuccess("product_template", runStart);
+      return { synced: 0 };
     }
 
-    await updateSyncState("product_template", "idle");
+    // Upserts en lotes paralelos de 25 (mejora de N+1 secuencial sin pasar el rate limit del pooler)
+    const CHUNK = 5;
+    for (let i = 0; i < products.length; i += CHUNK) {
+      await Promise.all(
+        products.slice(i, i + CHUNK).map((p) =>
+          prisma.productInsight.upsert({
+            where: { odooProductId: p.id },
+            create: {
+              odooProductId: p.id,
+              internalRef: p.default_code || null,
+              name: p.name,
+              category: p.categ_id?.[1] ?? null,
+              stockQty: p.qty_available,
+              cmp: p.standard_price,
+              salePrice: p.list_price,
+            },
+            update: {
+              name: p.name,
+              category: p.categ_id?.[1] ?? null,
+              stockQty: p.qty_available,
+              cmp: p.standard_price,
+              salePrice: p.list_price,
+            },
+          })
+        )
+      );
+    }
+
+    await recordSyncSuccess("product_template", runStart);
     return { synced: products.length };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    await updateSyncState("product_template", "error", msg);
+    await markSyncStatus("product_template", "error", msg);
     throw err;
   }
 }
 
 export async function syncStock() {
-  await updateSyncState("stock_quant", "syncing");
+  const runStart = new Date();
+  await markSyncStatus("stock_quant", "syncing");
   try {
     const quants = await odoo.getStockQuants();
 
-    const byProduct: Record<number, number> = {};
+    // Suma cantidades por producto (un producto puede estar en varios almacenes)
+    const byProduct = new Map<number, number>();
     for (const q of quants) {
       const pid = q.product_id[0];
-      byProduct[pid] = (byProduct[pid] ?? 0) + q.quantity;
+      byProduct.set(pid, (byProduct.get(pid) ?? 0) + q.quantity);
     }
 
-    for (const [productId, qty] of Object.entries(byProduct)) {
-      await prisma.productInsight.updateMany({
-        where: { odooProductId: Number(productId) },
-        data: { stockQty: qty },
-      });
+    // Update en lotes paralelos
+    const entries = Array.from(byProduct.entries());
+    const CHUNK = 5;
+    for (let i = 0; i < entries.length; i += CHUNK) {
+      await Promise.all(
+        entries.slice(i, i + CHUNK).map(([productId, qty]) =>
+          prisma.productInsight.updateMany({
+            where: { odooProductId: productId },
+            data: { stockQty: qty },
+          })
+        )
+      );
     }
 
-    await updateSyncState("stock_quant", "idle");
-    return { synced: Object.keys(byProduct).length };
+    await recordSyncSuccess("stock_quant", runStart);
+    return { synced: byProduct.size };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    await updateSyncState("stock_quant", "error", msg);
+    await markSyncStatus("stock_quant", "error", msg);
     throw err;
   }
 }
 
 export async function syncSalesAndComputeMetrics() {
-  await updateSyncState("sale_order", "syncing");
+  const runStart = new Date();
+  // Leer el cutoff ANTES de marcar "syncing"
+  const sinceFromState = await getLastSync("sale_order");
+  // Si nunca se sincronizó, importar 24 meses hacia atrás para capturar historial
+  const since = sinceFromState && sinceFromState.getTime() > 0 ? sinceFromState : subDays(new Date(), 730);
+  await markSyncStatus("sale_order", "syncing");
+
   try {
-    const since = (await getLastSync("sale_order")) ?? subDays(new Date(), 90);
     const orders = await odoo.getSaleOrders(since);
 
     if (orders.length === 0) {
-      await updateSyncState("sale_order", "idle");
+      await recordSyncSuccess("sale_order", runStart);
+      // Igual recalcular daysOfStock para reflejar cambios de stock recientes
+      await recomputeDaysOfStock();
       return { synced: 0 };
     }
 
     const orderIds = orders.map((o) => o.id);
     const lines = await odoo.getSaleOrderLines(orderIds);
 
-    const salesByDate: Record<string, { revenue: number; cost: number; count: number; tickets: number[] }> = {};
-
+    // ── 1. Agregar ventas por día ──────────────────────────────────────────
+    const salesByDate = new Map<string, { revenue: number; count: number; tickets: number[] }>();
     for (const order of orders) {
       const dateKey = order.date_order.slice(0, 10);
-      if (!salesByDate[dateKey]) {
-        salesByDate[dateKey] = { revenue: 0, cost: 0, count: 0, tickets: [] };
-      }
-      salesByDate[dateKey].revenue += order.amount_total;
-      salesByDate[dateKey].tickets.push(order.amount_total);
-      salesByDate[dateKey].count += 1;
+      const bucket = salesByDate.get(dateKey) ?? { revenue: 0, count: 0, tickets: [] };
+      bucket.revenue += order.amount_total;
+      bucket.tickets.push(order.amount_total);
+      bucket.count += 1;
+      salesByDate.set(dateKey, bucket);
     }
 
-    const productSales: Record<number, { qty: number; lastSold: Date }> = {};
+    // ── 2. Agregar ventas por producto ─────────────────────────────────────
+    // O(1) lookup de fecha de orden con un Map
+    const orderDate = new Map(orders.map((o) => [o.id, new Date(o.date_order)]));
+    const productSales = new Map<number, { qty: number; lastSold: Date }>();
     for (const line of lines) {
       const pid = line.product_id[0];
-      const order = orders.find((o) => o.id === line.order_id[0]);
-      const saleDate = order ? new Date(order.date_order) : new Date();
-      if (!productSales[pid] || saleDate > productSales[pid].lastSold) {
-        productSales[pid] = { qty: (productSales[pid]?.qty ?? 0) + line.product_uom_qty, lastSold: saleDate };
+      const saleDate = orderDate.get(line.order_id[0]) ?? new Date();
+      const existing = productSales.get(pid);
+      if (!existing) {
+        productSales.set(pid, { qty: line.product_uom_qty, lastSold: saleDate });
       } else {
-        productSales[pid].qty += line.product_uom_qty;
+        existing.qty += line.product_uom_qty;
+        if (saleDate > existing.lastSold) existing.lastSold = saleDate;
       }
     }
 
-    for (const [dateKey, data] of Object.entries(salesByDate)) {
+    // ── 3. Upsert snapshots financieros diarios ────────────────────────────
+    for (const [dateKey, data] of salesByDate) {
       const date = startOfDay(new Date(dateKey));
       const avgTicket = data.tickets.reduce((a, b) => a + b, 0) / data.tickets.length;
-      const netProfit = data.revenue - data.cost;
-      const netMarginPct = data.revenue > 0 ? (netProfit / data.revenue) * 100 : 0;
-
+      const netProfit = data.revenue; // TODO: restar costos con line.standard_price cuando sincronicemos costos
+      const netMarginPct = 0; // mismo TODO
       await prisma.financialSnapshot.upsert({
         where: { date },
         create: {
           date,
           totalRevenue: data.revenue,
-          totalCost: data.cost,
-          grossProfit: data.revenue - data.cost,
+          totalCost: 0,
+          grossProfit: data.revenue,
           netProfit,
           netMarginPct,
           transactionCount: data.count,
@@ -138,8 +183,7 @@ export async function syncSalesAndComputeMetrics() {
         },
         update: {
           totalRevenue: data.revenue,
-          totalCost: data.cost,
-          grossProfit: data.revenue - data.cost,
+          grossProfit: data.revenue,
           netProfit,
           netMarginPct,
           transactionCount: data.count,
@@ -148,53 +192,80 @@ export async function syncSalesAndComputeMetrics() {
       });
     }
 
-    const now = new Date();
-    const last7 = subDays(now, 7);
-    const last14 = subDays(now, 14);
-    const last30 = subDays(now, 30);
-
-    for (const [pid, data] of Object.entries(productSales)) {
-      const productId = Number(pid);
-      const daysSinceSale = Math.floor((now.getTime() - data.lastSold.getTime()) / (1000 * 60 * 60 * 24));
-      const dailyRate7d = data.qty / 7;
-      const dailyRate14d = data.qty / 14;
-      const dailyRate30d = data.qty / 30;
-
-      await prisma.productInsight.updateMany({
-        where: { odooProductId: productId },
-        data: {
-          avgDailySales7d: dailyRate7d,
-          avgDailySales14d: dailyRate14d,
-          avgDailySales30d: dailyRate30d,
-          lastSoldAt: data.lastSold,
-          rotationDays: daysSinceSale,
-        },
-      });
-    }
-
-    await prisma.productInsight.updateMany({
-      where: { avgDailySales7d: { gt: 0 } },
-      data: {},
+    // ── 3.5. Crear stubs para productos que referencian las líneas pero no
+    // están en nuestra BD (ej: productos archivados en Odoo). Sin stubs, el
+    // updateMany no hace nada y se pierden las métricas.
+    const referencedIds = Array.from(productSales.keys());
+    const existing = await prisma.productInsight.findMany({
+      where: { odooProductId: { in: referencedIds } },
+      select: { odooProductId: true },
     });
-
-    const products = await prisma.productInsight.findMany({ where: { avgDailySales7d: { gt: 0 } } });
-    for (const p of products) {
-      if (p.avgDailySales7d > 0) {
-        const daysOfStock = p.stockQty / p.avgDailySales7d;
-        await prisma.productInsight.update({
-          where: { id: p.id },
-          data: { daysOfStock },
+    const existingIds = new Set(existing.map((e) => e.odooProductId));
+    const missingIds = referencedIds.filter((id) => !existingIds.has(id));
+    if (missingIds.length > 0) {
+      const stubs = await odoo.getProductsByIds(missingIds);
+      for (const p of stubs) {
+        const label = p.active ? p.name : `${p.name} (archivado)`;
+        await prisma.productInsight.upsert({
+          where: { odooProductId: p.id },
+          create: {
+            odooProductId: p.id,
+            internalRef: p.default_code || null,
+            name: label,
+            category: p.categ_id?.[1] ?? null,
+            stockQty: p.qty_available,
+            cmp: p.standard_price,
+            salePrice: p.list_price,
+          },
+          update: { name: label },
         });
       }
     }
 
-    await updateSyncState("sale_order", "idle");
+    // ── 4. Actualizar ventas promedio + rotación por producto ─────────────
+    const now = new Date();
+    const productEntries = Array.from(productSales.entries());
+    const CHUNK = 5;
+    for (let i = 0; i < productEntries.length; i += CHUNK) {
+      await Promise.all(
+        productEntries.slice(i, i + CHUNK).map(([pid, data]) => {
+          const daysSinceSale = Math.floor((now.getTime() - data.lastSold.getTime()) / 86_400_000);
+          return prisma.productInsight.updateMany({
+            where: { odooProductId: pid },
+            data: {
+              avgDailySales7d: data.qty / 7,
+              avgDailySales14d: data.qty / 14,
+              avgDailySales30d: data.qty / 30,
+              lastSoldAt: data.lastSold,
+              rotationDays: daysSinceSale,
+            },
+          });
+        })
+      );
+    }
+
+    // ── 5. Recalcular días de stock para todos los productos con ventas ───
+    await recomputeDaysOfStock();
+
+    await recordSyncSuccess("sale_order", runStart);
     return { synced: orders.length };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    await updateSyncState("sale_order", "error", msg);
+    await markSyncStatus("sale_order", "error", msg);
     throw err;
   }
+}
+
+// Helper: calcula daysOfStock = stockQty / avgDailySales7d (con cap razonable)
+async function recomputeDaysOfStock() {
+  // Usamos SQL crudo para hacerlo en un solo round-trip y no traer 1500+ rows a Node
+  await prisma.$executeRaw`
+    UPDATE "ProductInsight"
+    SET "daysOfStock" = CASE
+      WHEN "avgDailySales7d" > 0 THEN LEAST("stockQty" / "avgDailySales7d", 999)
+      ELSE 0
+    END
+  `;
 }
 
 export async function runFullSync() {

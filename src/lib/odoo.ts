@@ -201,16 +201,42 @@ export const odoo = {
     );
   },
 
-  async getProducts(since?: Date): Promise<OdooProduct[]> {
-    const domain: unknown[] = [["active", "=", true]];
+  /**
+   * Obtiene productos vendibles (product.product, no product.template).
+   * Importante: las líneas de venta apuntan a product.product, no a templates.
+   * Por defecto solo los activos; `opts.includeArchived` los trae todos.
+   */
+  async getProducts(
+    since?: Date,
+    opts: { includeArchived?: boolean } = {}
+  ): Promise<OdooProduct[]> {
+    // Odoo aplica `active = true` por defecto. Para traer inactivos hay que
+    // usar el operador OR explícito ('|' active=true active=false).
+    const domain: unknown[] = opts.includeArchived
+      ? ["|", ["active", "=", true], ["active", "=", false]]
+      : [["active", "=", true]];
     if (since) domain.push(["write_date", ">=", formatOdooDate(since)]);
 
     return searchRead<OdooProduct>(
-      "product.template",
+      "product.product",
       domain,
-      ["id", "name", "default_code", "categ_id", "list_price", "standard_price", "qty_available"],
-      { limit: 2000 }
+      ["id", "name", "default_code", "categ_id", "list_price", "standard_price", "qty_available", "active"],
+      { limit: 5000 }
     );
+  },
+
+  /** Obtiene una lista específica de productos por ID (incluso archivados). */
+  async getProductsByIds(ids: number[]): Promise<OdooProduct[]> {
+    if (ids.length === 0) return [];
+    const result = await searchRead<OdooProduct>(
+      "product.product",
+      ["|", ["active", "=", true], ["active", "=", false], ["id", "in", ids]],
+      ["id", "name", "default_code", "categ_id", "list_price", "standard_price", "qty_available", "active"],
+      { limit: ids.length }
+    );
+    // Odoo no garantiza el orden; devolvemos en orden solicitado
+    const byId = new Map(result.map((p) => [p.id, p]));
+    return ids.map((id) => byId.get(id)).filter(Boolean) as OdooProduct[];
   },
 
   async getPartners(since?: Date): Promise<OdooPartner[]> {
