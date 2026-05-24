@@ -305,6 +305,52 @@ export const odoo = {
     );
   },
 
+  /** Trae las órdenes POS de hoy (UTC-5) agregadas por hora local. */
+  async getTodayHourlySales(): Promise<Array<{ hour: number; revenue: number; transactions: number }>> {
+    // Colombia siempre es UTC-5 (sin horario de verano). Calcular "inicio
+    // de hoy en Colombia" y "inicio de mañana en Colombia" expresados en UTC.
+    const COLOMBIA_OFFSET_MS = 5 * 60 * 60 * 1000;
+    const nowMs = Date.now();
+    // Shift al "reloj de Colombia"
+    const colombiaNow = new Date(nowMs - COLOMBIA_OFFSET_MS);
+    // Medianoche Colombia (en el espacio de UTC shifteado)
+    const colombiaMidnight = new Date(colombiaNow);
+    colombiaMidnight.setUTCHours(0, 0, 0, 0);
+    // Volver al espacio UTC real
+    const start = new Date(colombiaMidnight.getTime() + COLOMBIA_OFFSET_MS);
+    const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+
+    const orders = await searchRead<{ date_order: string; amount_total: number }>(
+      "pos.order",
+      [
+        ["state", "in", ["paid", "done", "invoiced"]],
+        ["date_order", ">=", formatOdooDate(start)],
+        ["date_order", "<", formatOdooDate(end)],
+      ],
+      ["date_order", "amount_total"],
+      { limit: 500, order: "date_order asc" }
+    );
+
+    // Bucket por hora local de Colombia
+    const byHour = new Map<number, { revenue: number; transactions: number }>();
+    for (let h = 7; h <= 21; h++) byHour.set(h, { revenue: 0, transactions: 0 });
+
+    for (const o of orders) {
+      // date_order viene en UTC; convertir a hora Colombia (UTC-5)
+      const dt = new Date(o.date_order + "Z");
+      const hourCO = (dt.getUTCHours() - 5 + 24) % 24;
+      const bucket = byHour.get(hourCO);
+      if (bucket) {
+        bucket.revenue += o.amount_total;
+        bucket.transactions += 1;
+      }
+    }
+
+    return Array.from(byHour.entries())
+      .sort(([a], [b]) => a - b)
+      .map(([hour, data]) => ({ hour, ...data }));
+  },
+
   async getPosOrderLines(orderIds: number[]): Promise<OdooPosOrderLine[]> {
     if (orderIds.length === 0) return [];
     // Chunking en lotes de 500 para evitar payload gigante en la respuesta

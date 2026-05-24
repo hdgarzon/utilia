@@ -2,11 +2,14 @@ export const dynamic = 'force-dynamic';
 
 import { Suspense } from "react";
 import { prisma } from "@/lib/prisma";
+import { odoo } from "@/lib/odoo";
+import { getWeeklyPattern } from "@/lib/analytics/weekly-pattern";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { KPICard } from "@/components/dashboard/KPICard";
 import { SalesChart } from "@/components/dashboard/SalesChart";
 import { StockAlert } from "@/components/dashboard/StockAlert";
 import { AIFeed } from "@/components/dashboard/AIFeed";
+import { WeeklyPattern } from "@/components/dashboard/WeeklyPattern";
 import { formatCurrency } from "@/lib/utils";
 import {
   ShoppingCart,
@@ -21,11 +24,21 @@ async function getDashboardData() {
   const today = startOfDay(new Date());
   const yesterday = startOfDay(subDays(new Date(), 1));
 
-  const [todaySnapshot, yesterdaySnapshot, criticalStock, aiRecs, syncState] = await Promise.all([
+  // Las queries pesadas/independientes en paralelo. Odoo y el weeklyPattern
+  // van por separado y con catch propio para no tirar la página si fallan.
+  const [todaySnapshot, yesterdaySnapshot, criticalStock, aiRecs, syncState, hourlyRaw, weeklyPattern] = await Promise.all([
     prisma.financialSnapshot.findUnique({ where: { date: today } }),
     prisma.financialSnapshot.findUnique({ where: { date: yesterday } }),
+    // Stock crítico: SOLO productos con ventas reales (avgDailySales7d > 0)
+    // y menos de 7 días de cobertura. Esto excluye los 2,000+ productos sin
+    // sales data que tienen daysOfStock = 0 por default.
     prisma.productInsight.findMany({
-      where: { daysOfStock: { lt: 7 } },
+      where: {
+        AND: [
+          { avgDailySales7d: { gt: 0 } },
+          { daysOfStock: { gt: 0, lt: 7 } },
+        ],
+      },
       orderBy: { daysOfStock: "asc" },
       take: 10,
     }),
@@ -34,7 +47,10 @@ async function getDashboardData() {
       orderBy: [{ priority: "asc" }, { createdAt: "desc" }],
       take: 6,
     }),
-    prisma.syncState.findFirst({ where: { entity: "sale_order" } }),
+    // El sync usa entity="pos_order" (no sale_order que era el placeholder viejo)
+    prisma.syncState.findFirst({ where: { entity: "pos_order" } }),
+    odoo.getTodayHourlySales().catch(() => [] as Awaited<ReturnType<typeof odoo.getTodayHourlySales>>),
+    getWeeklyPattern(60).catch(() => []),
   ]);
 
   const salesChange = todaySnapshot && yesterdaySnapshot && yesterdaySnapshot.totalRevenue > 0
@@ -45,10 +61,12 @@ async function getDashboardData() {
     ? ((todaySnapshot.avgTicket - yesterdaySnapshot.avgTicket) / yesterdaySnapshot.avgTicket) * 100
     : 0;
 
-  const hourlyData = Array.from({ length: 13 }, (_, i) => {
-    const hour = i + 7;
-    return { label: `${hour}:00`, amount: Math.random() * 500000, transactions: Math.floor(Math.random() * 8) };
-  });
+  // Hourly real desde Odoo (no Math.random() ridículo)
+  const hourlyData = hourlyRaw.map((h) => ({
+    label: `${String(h.hour).padStart(2, "0")}:00`,
+    amount: h.revenue,
+    transactions: h.transactions,
+  }));
 
   return {
     today: todaySnapshot,
@@ -72,6 +90,7 @@ async function getDashboardData() {
       dismissed: r.dismissed,
     })),
     hourlyData,
+    weeklyPattern,
     lastSync: syncState?.lastSyncAt,
   };
 }
@@ -84,9 +103,10 @@ export default async function DashboardPage() {
     criticalStock: [] as { id: string; name: string; qty: number; daysOfStock: number; minStock: number }[],
     aiRecs: [] as { id: string; type: string; priority: string; title: string; content: string; impact?: number; applied: boolean; dismissed: boolean }[],
     hourlyData: [] as { label: string; amount: number; transactions: number }[],
+    weeklyPattern: [] as Awaited<ReturnType<typeof getWeeklyPattern>>,
     lastSync: undefined as Date | undefined,
   }));
-  const { today, salesChange, ticketChange, criticalStock, aiRecs, hourlyData, lastSync } = data;
+  const { today, salesChange, ticketChange, criticalStock, aiRecs, hourlyData, weeklyPattern, lastSync } = data;
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -158,7 +178,12 @@ export default async function DashboardPage() {
             <StockAlert items={criticalStock} />
           </div>
 
-          <AIFeed recommendations={aiRecs} />
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+            <div className="xl:col-span-2">
+              <AIFeed recommendations={aiRecs} />
+            </div>
+            <WeeklyPattern data={weeklyPattern} title="Patrón Semanal" windowDays={60} compact />
+          </div>
         </div>
       </main>
     </div>
