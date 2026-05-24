@@ -12,13 +12,17 @@ import {
   MessageSquare,
   LogOut,
   Zap,
+  Tags,
+  Wallet,
 } from "lucide-react";
 
 const nav = [
   { href: "/", label: "Resumen", icon: LayoutDashboard },
   { href: "/ventas", label: "Ventas", icon: TrendingUp },
   { href: "/inventario", label: "Inventario", icon: Package },
+  { href: "/categorias", label: "Categorías", icon: Tags },
   { href: "/financiero", label: "Financiero", icon: DollarSign },
+  { href: "/presupuestos", label: "Presupuestos", icon: Wallet },
   { href: "/campanas", label: "Campañas", icon: MessageSquare },
 ];
 
