@@ -1,0 +1,35 @@
+name: Utilia POS Sync (cada 10 min en horario operativo)
+
+# GitHub Actions corre en UTC. Utilia opera ~8:00-21:00 Colombia (UTC-5)
+# = 13:00-02:00 UTC. Limitamos el cron a esa franja para no gastar minutos
+# inútiles a la madrugada.
+#
+# Schedule cada 10 min entre 13:00 y 23:59 UTC + entre 00:00 y 02:00 UTC.
+# = sync continuo durante todo el horario abierto + 3h después de cierre.
+
+on:
+  schedule:
+    - cron: "*/10 13-23 * * *"  # 13:00 → 23:59 UTC (8:00 → 18:59 Colombia)
+    - cron: "*/10 0-2 * * *"    # 00:00 → 02:59 UTC (19:00 → 21:59 Colombia)
+  # Permite disparar manual desde la pestaña Actions del repo
+  workflow_dispatch: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Trigger /api/sync en producción
+        run: |
+          response=$(curl -s -o /tmp/body -w "%{http_code}" \
+            -X POST \
+            -H "Authorization: Bearer ${{ secrets.UTILIA_CRON_SECRET }}" \
+            --max-time 290 \
+            "${{ vars.UTILIA_BASE_URL || 'https://utilia-two.vercel.app' }}/api/sync")
+          echo "HTTP $response"
+          cat /tmp/body
+          if [ "$response" != "200" ]; then
+            echo "❌ Sync falló con HTTP $response"
+            exit 1
+          fi
+          echo "✓ Sync ejecutado correctamente"

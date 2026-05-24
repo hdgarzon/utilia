@@ -5,6 +5,7 @@ import { formatCurrency } from "@/lib/utils";
 import { BudgetRow } from "./BudgetRow";
 import { AddBudgetForm } from "./AddBudgetForm";
 import { RecordExpense } from "./RecordExpense";
+import { CloneBudgets } from "./CloneBudgets";
 import { DollarSign, AlertCircle, Calendar } from "lucide-react";
 
 const MONTHS = [
@@ -43,7 +44,8 @@ export default async function PresupuestosPage({
             {MONTHS[month - 1]} {year}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {budgets.length > 0 && <CloneBudgets currentMonth={month} currentYear={year} />}
           <AddBudgetForm month={month} year={year} />
         </div>
       </div>

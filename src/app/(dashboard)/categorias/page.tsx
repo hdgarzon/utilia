@@ -1,8 +1,16 @@
 export const dynamic = "force-dynamic";
 
+import Link from "next/link";
 import { getCategoryStats } from "@/lib/analytics/categories";
 import { formatCurrency, cn } from "@/lib/utils";
-import { Tags, AlertTriangle, Package, TrendingUp } from "lucide-react";
+import { Tags, AlertTriangle, Package, TrendingUp, ChevronRight } from "lucide-react";
+
+const SENTINEL_NULL = "_sin_categoria";
+
+function categoryHref(rawCategory: string | null): string {
+  const slug = rawCategory === null ? SENTINEL_NULL : encodeURIComponent(rawCategory);
+  return `/categorias/${slug}`;
+}
 
 export default async function CategoriasPage() {
   const stats = await getCategoryStats().catch(() => []);
@@ -80,8 +88,16 @@ export default async function CategoriasPage() {
                 const marginTone =
                   c.avgMarginPct >= 30 ? "text-primary" : c.avgMarginPct >= 15 ? "text-foreground" : "text-warning";
                 return (
-                  <tr key={c.category} className="border-b border-border last:border-0 hover:bg-secondary/20">
-                    <td className="px-4 py-3 font-medium max-w-48 truncate">{c.category}</td>
+                  <tr key={c.category} className="border-b border-border last:border-0 hover:bg-secondary/20 group">
+                    <td className="px-4 py-3 font-medium max-w-48 truncate">
+                      <Link
+                        href={categoryHref(c.rawCategory)}
+                        className="inline-flex items-center gap-1 hover:text-primary transition-colors"
+                      >
+                        {c.category}
+                        <ChevronRight className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </Link>
+                    </td>
                     <td className="px-4 py-3 text-right">
                       {c.productCount}
                       <span className="text-muted-foreground ml-1">({c.productsWithSales} act.)</span>
