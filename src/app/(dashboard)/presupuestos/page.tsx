@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { formatCurrency } from "@/lib/utils";
 import { BudgetRow } from "./BudgetRow";
 import { AddBudgetForm } from "./AddBudgetForm";
+import { RecordExpense } from "./RecordExpense";
 import { DollarSign, AlertCircle, Calendar } from "lucide-react";
 
 const MONTHS = [
@@ -42,8 +43,12 @@ export default async function PresupuestosPage({
             {MONTHS[month - 1]} {year}
           </p>
         </div>
-        <AddBudgetForm month={month} year={year} />
+        <div className="flex items-center gap-2">
+          <AddBudgetForm month={month} year={year} />
+        </div>
       </div>
+
+      <RecordExpense budgets={budgets.map((b) => ({ id: b.id, category: b.category }))} />
 
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">

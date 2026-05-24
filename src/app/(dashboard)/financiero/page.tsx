@@ -3,6 +3,8 @@ export const dynamic = 'force-dynamic';
 import { prisma } from "@/lib/prisma";
 import { KPICard } from "@/components/dashboard/KPICard";
 import { SalesChart } from "@/components/dashboard/SalesChart";
+import { MonthCompare } from "@/components/dashboard/MonthCompare";
+import { getMonthComparison } from "@/lib/analytics/month-compare";
 import { formatCurrency } from "@/lib/utils";
 import { DollarSign, TrendingUp, TrendingDown, AlertTriangle } from "lucide-react";
 import { subDays } from "date-fns";
@@ -43,11 +45,17 @@ async function getFinancialData() {
 
 export default async function FinancieroPage() {
   const fallbackTotals = { revenue: 0, cost: 0, profit: 0, expenses: 0, transactions: 0 };
-  const { totals = fallbackTotals, avgMargin, chartData, budgets, cashBalance, projected30d } = await getFinancialData().catch(() => ({ totals: fallbackTotals, avgMargin: 0, chartData: [] as Awaited<ReturnType<typeof getFinancialData>>["chartData"], budgets: [] as Awaited<ReturnType<typeof getFinancialData>>["budgets"], cashBalance: 0, projected30d: 0 }));
+  const [financial, monthCompare] = await Promise.all([
+    getFinancialData().catch(() => ({ totals: fallbackTotals, avgMargin: 0, chartData: [] as Awaited<ReturnType<typeof getFinancialData>>["chartData"], budgets: [] as Awaited<ReturnType<typeof getFinancialData>>["budgets"], cashBalance: 0, projected30d: 0 })),
+    getMonthComparison().catch(() => null),
+  ]);
+  const { totals = fallbackTotals, avgMargin, chartData, budgets, cashBalance, projected30d } = financial;
 
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-bold">Centro Financiero</h1>
+
+      {monthCompare && <MonthCompare data={monthCompare} />}
 
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         <KPICard title="Ingresos 30d" value={formatCurrency(totals.revenue)} icon={DollarSign} variant="success" />

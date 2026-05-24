@@ -74,6 +74,56 @@ export async function upsertBudget(formData: FormData) {
   }
 }
 
+const recordExpenseSchema = z.object({
+  budgetId: z.string().min(1),
+  amount: z.coerce.number().positive(),
+  note: z.string().max(200).optional(),
+});
+
+/**
+ * Registra un gasto real (incrementa actualAmount).
+ * Reemplaza la promesa de sync automático desde Odoo, porque la instancia
+ * del usuario no registra arriendo/nómina/servicios en account.move.
+ */
+export async function recordExpense(formData: FormData) {
+  await requireSession();
+  const parsed = recordExpenseSchema.safeParse({
+    budgetId: formData.get("budgetId"),
+    amount: formData.get("amount"),
+    note: formData.get("note") || undefined,
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues.map((i) => i.message).join(", ") };
+  }
+  try {
+    await prisma.expenseBudget.update({
+      where: { id: parsed.data.budgetId },
+      data: { actualAmount: { increment: parsed.data.amount } },
+    });
+    revalidatePath("/presupuestos");
+    revalidatePath("/financiero");
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** Resetea el ejecutado de una categoría (útil para corregir errores). */
+export async function resetActual(id: string) {
+  await requireSession();
+  try {
+    await prisma.expenseBudget.update({
+      where: { id },
+      data: { actualAmount: 0 },
+    });
+    revalidatePath("/presupuestos");
+    revalidatePath("/financiero");
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 export async function deleteBudget(id: string) {
   await requireSession();
   try {
