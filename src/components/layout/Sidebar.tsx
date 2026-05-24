@@ -14,6 +14,8 @@ import {
   Zap,
   Tags,
   Wallet,
+  BarChart3,
+  ShoppingBag,
 } from "lucide-react";
 
 const nav = [
@@ -21,8 +23,10 @@ const nav = [
   { href: "/ventas", label: "Ventas", icon: TrendingUp },
   { href: "/inventario", label: "Inventario", icon: Package },
   { href: "/categorias", label: "Categorías", icon: Tags },
+  { href: "/abc", label: "ABC / Pareto", icon: BarChart3 },
   { href: "/financiero", label: "Financiero", icon: DollarSign },
   { href: "/presupuestos", label: "Presupuestos", icon: Wallet },
+  { href: "/compras", label: "Compras", icon: ShoppingBag },
   { href: "/campanas", label: "Campañas", icon: MessageSquare },
 ];
 

@@ -77,6 +77,7 @@ export default async function CategoriasPage() {
                 <th className="px-4 py-2.5 text-right font-medium">Stock</th>
                 <th className="px-4 py-2.5 text-right font-medium">Valor (CMP)</th>
                 <th className="px-4 py-2.5 text-right font-medium">Margen</th>
+                <th className="px-4 py-2.5 text-right font-medium">ROI mes</th>
                 <th className="px-4 py-2.5 text-right font-medium">Vel. venta</th>
                 <th className="px-4 py-2.5 text-center font-medium">Alertas</th>
                 <th className="px-4 py-2.5 text-left font-medium w-32">Peso relativo</th>
@@ -106,6 +107,12 @@ export default async function CategoriasPage() {
                     <td className="px-4 py-3 text-right font-medium">{formatCurrency(c.inventoryValue)}</td>
                     <td className={cn("px-4 py-3 text-right font-medium", marginTone)}>
                       {c.avgMarginPct.toFixed(1)}%
+                    </td>
+                    <td className={cn(
+                      "px-4 py-3 text-right font-medium",
+                      c.inventoryROI >= 30 ? "text-primary" : c.inventoryROI >= 15 ? "text-foreground" : "text-warning"
+                    )}>
+                      {c.inventoryROI > 0 ? `${c.inventoryROI.toFixed(0)}%` : "—"}
                     </td>
                     <td className="px-4 py-3 text-right">
                       {c.totalDailySales > 0 ? (

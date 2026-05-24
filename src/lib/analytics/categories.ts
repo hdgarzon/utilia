@@ -12,6 +12,10 @@ export interface CategoryStat {
   criticalStockCount: number; // productos con 0 < daysOfStock < 7
   staleCount: number;          // productos con rotationDays > 30
   totalDailySales: number;     // suma de avgDailySales7d (volumen)
+  // Proyección mensual y ROI
+  monthlyRevenueProxy: number; // SUM(avgDailySales7d * salePrice * 30)
+  monthlyProfitProxy: number;  // SUM(avgDailySales7d * (salePrice - cmp) * 30)
+  inventoryROI: number;        // monthlyProfitProxy / inventoryValue * 100 (%)
 }
 
 /**
@@ -31,6 +35,8 @@ export async function getCategoryStats(): Promise<CategoryStat[]> {
       critical_count: bigint;
       stale_count: bigint;
       total_daily_sales: number | null;
+      monthly_revenue_proxy: number | null;
+      monthly_profit_proxy: number | null;
     }>
   >`
     SELECT
@@ -52,23 +58,33 @@ export async function getCategoryStats(): Promise<CategoryStat[]> {
         WHERE "avgDailySales7d" > 0 AND "daysOfStock" > 0 AND "daysOfStock" < 7
       )::bigint                                              AS critical_count,
       COUNT(*) FILTER (WHERE "rotationDays" > 30)::bigint    AS stale_count,
-      COALESCE(SUM("avgDailySales7d"), 0)                    AS total_daily_sales
+      COALESCE(SUM("avgDailySales7d"), 0)                    AS total_daily_sales,
+      COALESCE(SUM("avgDailySales7d" * "salePrice" * 30), 0) AS monthly_revenue_proxy,
+      COALESCE(SUM("avgDailySales7d" * ("salePrice" - cmp) * 30), 0) AS monthly_profit_proxy
     FROM "ProductInsight"
     GROUP BY category
     ORDER BY inventory_value DESC NULLS LAST
   `;
 
-  return rows.map((r) => ({
-    category: r.category ?? "Sin categoría",
-    rawCategory: r.category,
-    productCount: Number(r.product_count),
-    totalStock: r.total_stock ?? 0,
-    inventoryValue: r.inventory_value ?? 0,
-    retailValue: r.retail_value ?? 0,
-    avgMarginPct: r.avg_margin_pct ?? 0,
-    productsWithSales: Number(r.with_sales),
-    criticalStockCount: Number(r.critical_count),
-    staleCount: Number(r.stale_count),
-    totalDailySales: r.total_daily_sales ?? 0,
-  }));
+  return rows.map((r) => {
+    const inventoryValue = r.inventory_value ?? 0;
+    const monthlyProfitProxy = r.monthly_profit_proxy ?? 0;
+    const inventoryROI = inventoryValue > 0 ? (monthlyProfitProxy / inventoryValue) * 100 : 0;
+    return {
+      category: r.category ?? "Sin categoría",
+      rawCategory: r.category,
+      productCount: Number(r.product_count),
+      totalStock: r.total_stock ?? 0,
+      inventoryValue,
+      retailValue: r.retail_value ?? 0,
+      avgMarginPct: r.avg_margin_pct ?? 0,
+      productsWithSales: Number(r.with_sales),
+      criticalStockCount: Number(r.critical_count),
+      staleCount: Number(r.stale_count),
+      totalDailySales: r.total_daily_sales ?? 0,
+      monthlyRevenueProxy: r.monthly_revenue_proxy ?? 0,
+      monthlyProfitProxy,
+      inventoryROI,
+    };
+  });
 }
