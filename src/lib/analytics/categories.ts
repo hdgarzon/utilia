@@ -46,7 +46,7 @@ export async function getCategoryStats(): Promise<CategoryStat[]> {
   >`
     SELECT
       category,
-      COUNT(*)::bigint                                       AS product_count,
+      COUNT(DISTINCT COALESCE("odooTemplateId", "odooProductId"))::bigint AS product_count,
       COALESCE(SUM("stockQty"), 0)                           AS total_stock,
       COALESCE(SUM("stockQty" * cmp), 0)                     AS inventory_value,
       COALESCE(SUM("stockQty" * "salePrice"), 0)             AS retail_value,
@@ -58,11 +58,12 @@ export async function getCategoryStats(): Promise<CategoryStat[]> {
         ) * 100
         ELSE 0
       END                                                    AS avg_margin_pct,
-      COUNT(*) FILTER (WHERE "avgDailySales7d" > 0)::bigint  AS with_sales,
-      COUNT(*) FILTER (
-        WHERE "avgDailySales7d" > 0 AND "daysOfStock" > 0 AND "daysOfStock" < 7
-      )::bigint                                              AS critical_count,
-      COUNT(*) FILTER (WHERE "rotationDays" > 30)::bigint    AS stale_count,
+      COUNT(DISTINCT CASE WHEN "avgDailySales7d" > 0
+        THEN COALESCE("odooTemplateId", "odooProductId") END)::bigint AS with_sales,
+      COUNT(DISTINCT CASE WHEN "avgDailySales7d" > 0 AND "daysOfStock" > 0 AND "daysOfStock" < 7
+        THEN COALESCE("odooTemplateId", "odooProductId") END)::bigint AS critical_count,
+      COUNT(DISTINCT CASE WHEN "rotationDays" > 30
+        THEN COALESCE("odooTemplateId", "odooProductId") END)::bigint AS stale_count,
       COALESCE(SUM("avgDailySales7d"), 0)                    AS total_daily_sales,
       COALESCE(SUM("avgDailySales7d" * "salePrice" * 30), 0) AS monthly_revenue_proxy,
       COALESCE(SUM("avgDailySales7d" * ("salePrice" - cmp) * 30), 0) AS monthly_profit_proxy,

@@ -47,11 +47,13 @@ export interface ABCAnalysis {
  * (es lo que tenemos sin recorrer pos.order.line a nivel orden histórica).
  */
 export async function getABCAnalysis(): Promise<ABCAnalysis> {
-  const products = await prisma.productInsight.findMany({
+  const rawProducts = await prisma.productInsight.findMany({
     where: { avgDailySales7d: { gt: 0 }, salePrice: { gt: 0 } },
     select: {
       id: true,
       odooProductId: true,
+      odooTemplateId: true,
+      templateName: true,
       name: true,
       category: true,
       stockQty: true,
@@ -59,6 +61,37 @@ export async function getABCAnalysis(): Promise<ABCAnalysis> {
       salePrice: true,
       avgDailySales7d: true,
     },
+  });
+
+  // Agrupar variantes del mismo template en un producto consolidado.
+  // Precio y costo efectivos: promedio ponderado por velocidad de venta.
+  const groups = new Map<string, typeof rawProducts>();
+  for (const p of rawProducts) {
+    const key = p.odooTemplateId !== null ? `t_${p.odooTemplateId}` : `p_${p.odooProductId}`;
+    const g = groups.get(key) ?? [];
+    g.push(p);
+    groups.set(key, g);
+  }
+  const products = Array.from(groups.values()).map((variants) => {
+    const totalSales = variants.reduce((s, v) => s + v.avgDailySales7d, 0);
+    const totalStock = variants.reduce((s, v) => s + v.stockQty, 0);
+    const weightedPrice = totalSales > 0
+      ? variants.reduce((s, v) => s + v.avgDailySales7d * v.salePrice, 0) / totalSales
+      : variants[0].salePrice;
+    const weightedCmp = totalSales > 0
+      ? variants.reduce((s, v) => s + v.avgDailySales7d * v.cmp, 0) / totalSales
+      : variants[0].cmp;
+    const rep = variants[0];
+    return {
+      id: rep.id,
+      odooProductId: rep.odooTemplateId ?? rep.odooProductId,
+      name: rep.templateName ?? rep.name,
+      category: rep.category,
+      stockQty: totalStock,
+      cmp: weightedCmp,
+      salePrice: weightedPrice,
+      avgDailySales7d: totalSales,
+    };
   });
 
   // Calcular revenue mensual proxy y ordenar desc

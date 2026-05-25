@@ -51,6 +51,8 @@ export async function syncProducts() {
             where: { odooProductId: p.id },
             create: {
               odooProductId: p.id,
+              odooTemplateId: p.product_tmpl_id?.[0] ?? null,
+              templateName: p.product_tmpl_id?.[1] ?? null,
               internalRef: p.default_code || null,
               name: p.name,
               category: p.categ_id?.[1] ?? null,
@@ -59,6 +61,8 @@ export async function syncProducts() {
               salePrice: p.list_price,
             },
             update: {
+              odooTemplateId: p.product_tmpl_id?.[0] ?? null,
+              templateName: p.product_tmpl_id?.[1] ?? null,
               name: p.name,
               category: p.categ_id?.[1] ?? null,
               stockQty: p.qty_available,
@@ -273,6 +277,8 @@ export async function syncSalesAndComputeMetrics() {
           where: { odooProductId: p.id },
           create: {
             odooProductId: p.id,
+            odooTemplateId: p.product_tmpl_id?.[0] ?? null,
+            templateName: p.product_tmpl_id?.[1] ?? null,
             internalRef: p.default_code || null,
             name: label,
             category: p.categ_id?.[1] ?? null,
@@ -280,7 +286,7 @@ export async function syncSalesAndComputeMetrics() {
             cmp: p.standard_price,
             salePrice: p.list_price,
           },
-          update: { name: label },
+          update: { name: label, odooTemplateId: p.product_tmpl_id?.[0] ?? null, templateName: p.product_tmpl_id?.[1] ?? null },
         });
       }
     }

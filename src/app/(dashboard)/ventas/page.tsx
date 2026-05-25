@@ -17,11 +17,33 @@ async function getSalesData() {
     orderBy: { date: "asc" },
   });
 
-  const topProducts = await prisma.productInsight.findMany({
+  const rawTopProducts = await prisma.productInsight.findMany({
     where: { avgDailySales7d: { gt: 0 } },
-    orderBy: { avgDailySales7d: "desc" },
-    take: 10,
+    select: {
+      id: true,
+      odooProductId: true,
+      odooTemplateId: true,
+      templateName: true,
+      name: true,
+      category: true,
+      avgDailySales7d: true,
+      salePrice: true,
+    },
   });
+  // Consolidar variantes del mismo template antes de ordenar
+  const templateMap = new Map<string, typeof rawTopProducts[0] & { avgDailySales7d: number }>();
+  for (const p of rawTopProducts) {
+    const key = p.odooTemplateId !== null ? `t_${p.odooTemplateId}` : `p_${p.odooProductId}`;
+    const existing = templateMap.get(key);
+    if (!existing) {
+      templateMap.set(key, { ...p, name: p.templateName ?? p.name, avgDailySales7d: p.avgDailySales7d });
+    } else {
+      existing.avgDailySales7d += p.avgDailySales7d;
+    }
+  }
+  const topProducts = Array.from(templateMap.values())
+    .sort((a, b) => b.avgDailySales7d - a.avgDailySales7d)
+    .slice(0, 10);
 
   const dailyData = snapshots.map((s) => ({
     label: new Date(s.date).toLocaleDateString("es-CO", { day: "2-digit", month: "short" }),

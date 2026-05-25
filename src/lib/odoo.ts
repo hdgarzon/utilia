@@ -145,6 +145,7 @@ export interface OdooProduct {
   name: string;
   default_code: string | false;
   categ_id: [number, string];
+  product_tmpl_id: [number, string];
   list_price: number;
   standard_price: number;
   qty_available: number;
@@ -273,7 +274,7 @@ export const odoo = {
     return searchRead<OdooProduct>(
       "product.product",
       domain,
-      ["id", "name", "default_code", "categ_id", "list_price", "standard_price", "qty_available", "active"],
+      ["id", "name", "default_code", "categ_id", "product_tmpl_id", "list_price", "standard_price", "qty_available", "active"],
       { limit: 5000 }
     );
   },
@@ -284,7 +285,7 @@ export const odoo = {
     const result = await searchRead<OdooProduct>(
       "product.product",
       ["|", ["active", "=", true], ["active", "=", false], ["id", "in", ids]],
-      ["id", "name", "default_code", "categ_id", "list_price", "standard_price", "qty_available", "active"],
+      ["id", "name", "default_code", "categ_id", "product_tmpl_id", "list_price", "standard_price", "qty_available", "active"],
       { limit: ids.length }
     );
     // Odoo no garantiza el orden; devolvemos en orden solicitado

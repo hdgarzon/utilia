@@ -41,6 +41,8 @@ model SyncState {
 model ProductInsight {
   id               String   @id @default(cuid())
   odooProductId    Int      @unique
+  odooTemplateId   Int?     // product.template id — agrupa variantes del mismo producto
+  templateName     String?  // nombre del template sin atributos de variante
   internalRef      String?
   name             String
   category         String?
