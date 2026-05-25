@@ -78,6 +78,9 @@ export default async function CategoriasPage() {
                 <th className="px-4 py-2.5 text-right font-medium">Valor (CMP)</th>
                 <th className="px-4 py-2.5 text-right font-medium">Margen</th>
                 <th className="px-4 py-2.5 text-right font-medium">ROI mes</th>
+                <th className="px-4 py-2.5 text-right font-medium" title="Rotaciones por año — papelería sana: 6-8">
+                  Turnover
+                </th>
                 <th className="px-4 py-2.5 text-right font-medium">Vel. venta</th>
                 <th className="px-4 py-2.5 text-center font-medium">Alertas</th>
                 <th className="px-4 py-2.5 text-left font-medium w-32">Peso relativo</th>
@@ -113,6 +116,12 @@ export default async function CategoriasPage() {
                       c.inventoryROI >= 30 ? "text-primary" : c.inventoryROI >= 15 ? "text-foreground" : "text-warning"
                     )}>
                       {c.inventoryROI > 0 ? `${c.inventoryROI.toFixed(0)}%` : "—"}
+                    </td>
+                    <td className={cn(
+                      "px-4 py-3 text-right font-medium",
+                      c.turnoverRate >= 6 ? "text-primary" : c.turnoverRate >= 3 ? "text-foreground" : "text-warning"
+                    )} title={c.turnoverRate > 0 ? `~${Math.round(c.daysOfStockAvg)} días de stock promedio` : ""}>
+                      {c.turnoverRate > 0 ? `${c.turnoverRate.toFixed(1)}x` : "—"}
                     </td>
                     <td className="px-4 py-3 text-right">
                       {c.totalDailySales > 0 ? (

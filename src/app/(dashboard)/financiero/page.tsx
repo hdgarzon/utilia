@@ -5,8 +5,10 @@ import { KPICard } from "@/components/dashboard/KPICard";
 import { SalesChart } from "@/components/dashboard/SalesChart";
 import { MonthCompare } from "@/components/dashboard/MonthCompare";
 import { BreakevenCard } from "@/components/dashboard/BreakevenCard";
+import { CashFlowCard } from "@/components/dashboard/CashFlowCard";
 import { getMonthComparison } from "@/lib/analytics/month-compare";
 import { getBreakevenAnalysis } from "@/lib/analytics/breakeven";
+import { getCashFlowAnalysis } from "@/lib/analytics/cash-flow";
 import { formatCurrency } from "@/lib/utils";
 import { DollarSign, TrendingUp, TrendingDown, AlertTriangle } from "lucide-react";
 import { subDays } from "date-fns";
@@ -47,16 +49,19 @@ async function getFinancialData() {
 
 export default async function FinancieroPage() {
   const fallbackTotals = { revenue: 0, cost: 0, profit: 0, expenses: 0, transactions: 0 };
-  const [financial, monthCompare, breakeven] = await Promise.all([
+  const [financial, monthCompare, breakeven, cashFlow] = await Promise.all([
     getFinancialData().catch(() => ({ totals: fallbackTotals, avgMargin: 0, chartData: [] as Awaited<ReturnType<typeof getFinancialData>>["chartData"], budgets: [] as Awaited<ReturnType<typeof getFinancialData>>["budgets"], cashBalance: 0, projected30d: 0 })),
     getMonthComparison().catch(() => null),
     getBreakevenAnalysis().catch(() => null),
+    getCashFlowAnalysis().catch(() => null),
   ]);
   const { totals = fallbackTotals, avgMargin, chartData, budgets, cashBalance, projected30d } = financial;
 
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-bold">Centro Financiero</h1>
+
+      {cashFlow && <CashFlowCard data={cashFlow} />}
 
       {breakeven && <BreakevenCard data={breakeven} />}
 

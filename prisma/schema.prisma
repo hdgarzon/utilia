@@ -177,6 +177,14 @@ model CustomerSegment {
   updatedAt      DateTime @updatedAt
 }
 
+// ─── Settings (key-value para configuraciones simples) ──────────────────────
+
+model Setting {
+  key       String   @id
+  value     String   // JSON o texto plano según la key
+  updatedAt DateTime @updatedAt
+}
+
 // ─── AI Recommendations ───────────────────────────────────────────────────────
 
 model AIRecommendation {

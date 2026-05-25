@@ -16,6 +16,10 @@ export interface CategoryStat {
   monthlyRevenueProxy: number; // SUM(avgDailySales7d * salePrice * 30)
   monthlyProfitProxy: number;  // SUM(avgDailySales7d * (salePrice - cmp) * 30)
   inventoryROI: number;        // monthlyProfitProxy / inventoryValue * 100 (%)
+  // Rotación / Turnover
+  annualCogs: number;          // SUM(velocidad * cmp * 365) — costo de ventas anual
+  turnoverRate: number;        // annualCogs / inventoryValue → rotaciones/año
+  daysOfStockAvg: number;      // 365 / turnoverRate → días promedio de stock
 }
 
 /**
@@ -37,6 +41,7 @@ export async function getCategoryStats(): Promise<CategoryStat[]> {
       total_daily_sales: number | null;
       monthly_revenue_proxy: number | null;
       monthly_profit_proxy: number | null;
+      annual_cogs: number | null;
     }>
   >`
     SELECT
@@ -60,7 +65,8 @@ export async function getCategoryStats(): Promise<CategoryStat[]> {
       COUNT(*) FILTER (WHERE "rotationDays" > 30)::bigint    AS stale_count,
       COALESCE(SUM("avgDailySales7d"), 0)                    AS total_daily_sales,
       COALESCE(SUM("avgDailySales7d" * "salePrice" * 30), 0) AS monthly_revenue_proxy,
-      COALESCE(SUM("avgDailySales7d" * ("salePrice" - cmp) * 30), 0) AS monthly_profit_proxy
+      COALESCE(SUM("avgDailySales7d" * ("salePrice" - cmp) * 30), 0) AS monthly_profit_proxy,
+      COALESCE(SUM("avgDailySales7d" * cmp * 365), 0)        AS annual_cogs
     FROM "ProductInsight"
     GROUP BY category
     ORDER BY inventory_value DESC NULLS LAST
@@ -70,6 +76,9 @@ export async function getCategoryStats(): Promise<CategoryStat[]> {
     const inventoryValue = r.inventory_value ?? 0;
     const monthlyProfitProxy = r.monthly_profit_proxy ?? 0;
     const inventoryROI = inventoryValue > 0 ? (monthlyProfitProxy / inventoryValue) * 100 : 0;
+    const annualCogs = r.annual_cogs ?? 0;
+    const turnoverRate = inventoryValue > 0 ? annualCogs / inventoryValue : 0;
+    const daysOfStockAvg = turnoverRate > 0 ? 365 / turnoverRate : 0;
     return {
       category: r.category ?? "Sin categoría",
       rawCategory: r.category,
@@ -85,6 +94,9 @@ export async function getCategoryStats(): Promise<CategoryStat[]> {
       monthlyRevenueProxy: r.monthly_revenue_proxy ?? 0,
       monthlyProfitProxy,
       inventoryROI,
+      annualCogs,
+      turnoverRate,
+      daysOfStockAvg,
     };
   });
 }
