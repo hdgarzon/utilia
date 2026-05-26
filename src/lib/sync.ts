@@ -128,9 +128,24 @@ export async function syncSalesAndComputeMetrics() {
   const runStart = new Date();
   // Para POS, los datos viven en pos.order (no sale.order). Usamos ese modelo.
   const sinceFromState = await getLastSync("pos_order");
-  // Sync inicial: 90 días hacia atrás (POS suele tener miles de órdenes, no
-  // queremos importar años en el primer run; el resto vendrá si se necesita)
-  const since = sinceFromState && sinceFromState.getTime() > 0 ? sinceFromState : subDays(new Date(), 90);
+
+  // Colombia = UTC-5 sin DST. Calculamos "inicio del día de hoy en Colombia"
+  // expresado en UTC, para que el sync siempre re-traiga TODAS las órdenes del
+  // día actual aunque ya haya corrido antes. Sin esto, un sync incremental a
+  // las 7pm sobreescribiría el snapshot del día con solo las órdenes nuevas.
+  const COLOMBIA_OFFSET_MS = 5 * 60 * 60 * 1000;
+  const nowCO = new Date(Date.now() - COLOMBIA_OFFSET_MS);
+  const startOfTodayCO = new Date(
+    Date.UTC(nowCO.getUTCFullYear(), nowCO.getUTCMonth(), nowCO.getUTCDate()) + COLOMBIA_OFFSET_MS
+  );
+
+  // Usar el más temprano entre lastSyncAt y inicio-de-hoy Colombia, con
+  // fallback a 90 días para el sync inicial.
+  const since =
+    sinceFromState && sinceFromState.getTime() > 0
+      ? new Date(Math.min(sinceFromState.getTime(), startOfTodayCO.getTime()))
+      : subDays(new Date(), 90);
+
   await markSyncStatus("pos_order", "syncing");
 
   try {
@@ -169,12 +184,20 @@ export async function syncSalesAndComputeMetrics() {
     const cmpByProduct = new Map(productCosts.map((p) => [p.odooProductId, p.cmp]));
 
     // ── 1. Agregar ventas + costos por día ─────────────────────────────────
-    // Mapa orderId → dateKey para luego asociar líneas con su día
-    const orderDateKey = new Map(orders.map((o) => [o.id, o.date_order.slice(0, 10)]));
+    // Odoo guarda date_order en UTC. Convertimos a fecha local Colombia (UTC-5)
+    // para que órdenes del 25 de mayo a las 8pm Colombia (= 1am UTC 26 mayo)
+    // queden en el snapshot del 25, no del 26.
+    const toColombiaDateKey = (dateOrderUtc: string): string => {
+      const dt = new Date(dateOrderUtc + "Z");
+      const localMs = dt.getTime() - COLOMBIA_OFFSET_MS;
+      return new Date(localMs).toISOString().slice(0, 10);
+    };
+
+    const orderDateKey = new Map(orders.map((o) => [o.id, toColombiaDateKey(o.date_order)]));
     const salesByDate = new Map<string, { revenue: number; cost: number; count: number; tickets: number[] }>();
 
     for (const order of orders) {
-      const dateKey = order.date_order.slice(0, 10);
+      const dateKey = toColombiaDateKey(order.date_order);
       const bucket = salesByDate.get(dateKey) ?? { revenue: 0, cost: 0, count: 0, tickets: [] };
       bucket.revenue += order.amount_total;
       bucket.tickets.push(order.amount_total);
