@@ -96,18 +96,23 @@ export async function syncStock() {
       byProduct.set(pid, (byProduct.get(pid) ?? 0) + q.quantity);
     }
 
-    // Update en lotes paralelos
+    // Bulk update en una sola query SQL por lote de 1000 productos.
+    // Antes: 327 round-trips con CHUNK=5 → timeout en funciones serverless.
+    // Ahora: 2 round-trips máximo para 1634 productos.
     const entries = Array.from(byProduct.entries());
-    const CHUNK = 5;
-    for (let i = 0; i < entries.length; i += CHUNK) {
-      await Promise.all(
-        entries.slice(i, i + CHUNK).map(([productId, qty]) =>
-          prisma.productInsight.updateMany({
-            where: { odooProductId: productId },
-            data: { stockQty: qty },
-          })
-        )
-      );
+    const SQL_CHUNK = 1000;
+    for (let i = 0; i < entries.length; i += SQL_CHUNK) {
+      const slice = entries.slice(i, i + SQL_CHUNK);
+      // Construye: UPDATE "ProductInsight" SET "stockQty" = v.qty
+      //            FROM (VALUES (id,qty),...) AS v("odooProductId", qty)
+      //            WHERE "ProductInsight"."odooProductId" = v."odooProductId"
+      const values = slice.map(([id, qty]) => `(${id}, ${qty})`).join(",");
+      await prisma.$executeRawUnsafe(`
+        UPDATE "ProductInsight" p
+        SET "stockQty" = v.qty
+        FROM (VALUES ${values}) AS v("odooProductId", qty)
+        WHERE p."odooProductId" = v."odooProductId"
+      `);
     }
 
     await recordSyncSuccess("stock_quant", runStart);
