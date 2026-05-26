@@ -7,13 +7,11 @@ import { WeeklyPattern } from "@/components/dashboard/WeeklyPattern";
 import { getWeeklyPattern } from "@/lib/analytics/weekly-pattern";
 import { formatCurrency } from "@/lib/utils";
 import { DollarSign, ShoppingCart, TrendingUp, Users } from "lucide-react";
-import { subDays } from "date-fns";
+import { colombiaStartOfMonth } from "@/lib/timezone";
 
 async function getSalesData() {
-  const last30 = subDays(new Date(), 30);
-
   const snapshots = await prisma.financialSnapshot.findMany({
-    where: { date: { gte: last30 } },
+    where: { date: { gte: colombiaStartOfMonth() } },
     orderBy: { date: "asc" },
   });
 
@@ -70,13 +68,13 @@ export default async function VentasPage() {
       <h1 className="text-xl font-bold">Analítica de Ventas</h1>
 
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-        <KPICard title="Ingresos 30 días" value={formatCurrency(totalRevenue30d)} icon={DollarSign} variant="success" />
-        <KPICard title="Transacciones 30d" value={String(totalTransactions)} icon={ShoppingCart} />
-        <KPICard title="Ticket Promedio 30d" value={formatCurrency(avgTicket)} icon={TrendingUp} />
+        <KPICard title="Ingresos mes actual" value={formatCurrency(totalRevenue30d)} icon={DollarSign} variant="success" />
+        <KPICard title="Transacciones mes" value={String(totalTransactions)} icon={ShoppingCart} />
+        <KPICard title="Ticket Promedio" value={formatCurrency(avgTicket)} icon={TrendingUp} />
         <KPICard title="Productos Activos" value={String(topProducts.length)} subvalue="con ventas recientes" icon={Users} />
       </div>
 
-      <SalesChart data={dailyData} title="Ventas Diarias — Últimos 30 Días" />
+      <SalesChart data={dailyData} title="Ventas Diarias — Mes Actual" />
 
       <WeeklyPattern data={weeklyPattern} title="Patrón Semanal — Identifica días débiles" windowDays={60} />
 

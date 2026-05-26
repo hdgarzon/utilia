@@ -7,6 +7,7 @@ import { AddBudgetForm } from "./AddBudgetForm";
 import { RecordExpense } from "./RecordExpense";
 import { CloneBudgets } from "./CloneBudgets";
 import { DollarSign, AlertCircle, Calendar } from "lucide-react";
+import { colombiaYearMonthDay } from "@/lib/timezone";
 
 const MONTHS = [
   "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -19,9 +20,9 @@ export default async function PresupuestosPage({
   searchParams: Promise<{ month?: string; year?: string }>;
 }) {
   const params = await searchParams;
-  const now = new Date();
-  const month = Number(params.month) || now.getMonth() + 1;
-  const year = Number(params.year) || now.getFullYear();
+  const { month: currentMonth, year: currentYear } = colombiaYearMonthDay();
+  const month = Number(params.month) || currentMonth;
+  const year = Number(params.year) || currentYear;
 
   const budgets = await prisma.expenseBudget.findMany({
     where: { month, year },
