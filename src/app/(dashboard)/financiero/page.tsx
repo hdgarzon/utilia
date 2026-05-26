@@ -11,15 +11,13 @@ import { getBreakevenAnalysis } from "@/lib/analytics/breakeven";
 import { getCashFlowAnalysis } from "@/lib/analytics/cash-flow";
 import { formatCurrency } from "@/lib/utils";
 import { DollarSign, TrendingUp, TrendingDown, AlertTriangle } from "lucide-react";
-import { subDays } from "date-fns";
+import { colombiaDaysAgo, colombiaYearMonthDay } from "@/lib/timezone";
 
 async function getFinancialData() {
-  const last30 = subDays(new Date(), 30);
+  const { year, month } = colombiaYearMonthDay();
   const [snapshots, budgets] = await Promise.all([
-    prisma.financialSnapshot.findMany({ where: { date: { gte: last30 } }, orderBy: { date: "asc" } }),
-    prisma.expenseBudget.findMany({
-      where: { year: new Date().getFullYear(), month: new Date().getMonth() + 1 },
-    }),
+    prisma.financialSnapshot.findMany({ where: { date: { gte: colombiaDaysAgo(30) } }, orderBy: { date: "asc" } }),
+    prisma.expenseBudget.findMany({ where: { year, month } }),
   ]);
 
   const totals = snapshots.reduce(

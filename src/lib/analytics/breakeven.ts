@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { subDays, startOfDay } from "date-fns";
+import { colombiaToday, colombiaDaysAgo, colombiaYearMonthDay } from "@/lib/timezone";
 
 export interface BreakevenAnalysis {
   // Inputs base
@@ -29,17 +29,15 @@ export interface BreakevenAnalysis {
  * necesitas vender $225k / 0.40 = $562k al día para no perder plata.
  */
 export async function getBreakevenAnalysis(): Promise<BreakevenAnalysis> {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth() + 1;
+  const { year, month } = colombiaYearMonthDay();
   const daysInMonth = new Date(year, month, 0).getDate();
-  const today = startOfDay(now);
+  const today = colombiaToday();
 
   const [budgets, todaySnap, recent30] = await Promise.all([
     prisma.expenseBudget.findMany({ where: { year, month } }),
     prisma.financialSnapshot.findUnique({ where: { date: today } }),
     prisma.financialSnapshot.findMany({
-      where: { date: { gte: subDays(today, 30) } },
+      where: { date: { gte: colombiaDaysAgo(30) } },
       select: { totalRevenue: true, totalCost: true, transactionCount: true, avgTicket: true },
     }),
   ]);

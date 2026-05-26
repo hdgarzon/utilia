@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { colombiaYearMonthDay } from "@/lib/timezone";
 
 export interface MonthMetrics {
   label: string;          // "Mayo 2026"
@@ -91,10 +92,7 @@ function pctChange(current: number, previous: number): number {
  * Compara mes actual vs mes anterior, total y también MTD (mismos N días desde el 1).
  */
 export async function getMonthComparison(): Promise<MonthComparison> {
-  const now = new Date();
-  const curYear = now.getFullYear();
-  const curMonth = now.getMonth() + 1;
-  const curDay = now.getDate();
+  const { year: curYear, month: curMonth, day: curDay } = colombiaYearMonthDay();
   const prevDate = new Date(curYear, curMonth - 2, 1);
   const prevYear = prevDate.getFullYear();
   const prevMonth = prevDate.getMonth() + 1;
