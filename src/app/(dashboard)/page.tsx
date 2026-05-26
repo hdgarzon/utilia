@@ -17,11 +17,14 @@ import {
   Package,
   AlertTriangle,
 } from "lucide-react";
-import { startOfDay, subDays } from "date-fns";
 
 async function getDashboardData() {
-  const today = startOfDay(new Date());
-  const yesterday = startOfDay(subDays(new Date(), 1));
+  // Colombia = UTC-5 sin horario de verano. Calcular "hoy" local para que
+  // la búsqueda de snapshots coincida con la fecha real del negocio.
+  const COLOMBIA_OFFSET_MS = 5 * 60 * 60 * 1000;
+  const nowCO = new Date(Date.now() - COLOMBIA_OFFSET_MS);
+  const today = new Date(Date.UTC(nowCO.getUTCFullYear(), nowCO.getUTCMonth(), nowCO.getUTCDate()));
+  const yesterday = new Date(today.getTime() - 86_400_000);
 
   const [todaySnapshot, yesterdaySnapshot, criticalStock, aiRecs, hourlyRaw, weeklyPattern] = await Promise.all([
     prisma.financialSnapshot.findUnique({ where: { date: today } }),
@@ -102,7 +105,7 @@ export default async function DashboardPage() {
       <div>
         <h1 className="text-xl font-bold">Resumen Ejecutivo</h1>
         <p className="text-xs text-muted-foreground mt-0.5">
-          {new Date().toLocaleDateString("es-CO", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
+          {new Date().toLocaleDateString("es-CO", { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "America/Bogota" })}
         </p>
       </div>
 
