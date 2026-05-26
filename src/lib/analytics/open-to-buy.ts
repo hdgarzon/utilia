@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/prisma";
 
+export type CoverageBrake = "urgente" | "normal" | "freno";
+
 export interface OTBCategory {
   category: string;
   rawCategory: string | null;
@@ -12,24 +14,33 @@ export interface OTBCategory {
   unitsToBuy: number;                // = projected + desired_end - current (con piso en 0)
   // Valoración
   avgCMP: number;                    // CMP promedio ponderado por velocidad
-  estimatedInvestment: number;       // unitsToBuy * avgCMP
+  estimatedInvestment: number;       // unitsToBuy * avgCMP (sin freno)
+  adjustedInvestment: number;        // con freno de mano aplicado
   estimatedRevenue: number;          // projectedMonthlyUnits * avgSalePrice
   estimatedProfit: number;
   estimatedROI: number;              // estimatedProfit / estimatedInvestment * 100
-  // Salud
+  // Salud y distribución
   currentCoverageDays: number;       // currentStockUnits / dailySales
+  coverageBrake: CoverageBrake;      // "urgente" <30d | "normal" | "freno" >60d
+  salesParticipationPct: number;     // % del total de ventas proyectadas
+  reinvestmentShare: number;         // cuánto del fondo de reposición le toca según participación
 }
 
 export interface OTBPlan {
   coverageDaysTarget: number;        // input: días de stock objetivo al cierre (default 21)
   categories: OTBCategory[];
   totals: {
-    totalInvestment: number;
+    totalInvestment: number;         // sin freno
+    totalAdjustedInvestment: number; // con freno de mano
     totalUnits: number;
     totalProjectedRevenue: number;
     totalProjectedProfit: number;
     avgROI: number;
   };
+  // Fondo de Reposición: COGS real de los últimos 30 días
+  // = el dinero que "ya le pertenece" al inventario y debe reinvertirse
+  reinvestmentFund: number;
+  reinvestmentFundDays: number;      // días de datos usados para calcularlo
 }
 
 /**
@@ -43,6 +54,15 @@ export interface OTBPlan {
  * de compras del mes siguiente.
  */
 export async function getOpenToBuyPlan(coverageDaysTarget = 21): Promise<OTBPlan> {
+  // Fondo de Reposición: COGS real de los últimos 30 días desde FinancialSnapshot
+  const last30Start = new Date(Date.now() - 30 * 86_400_000);
+  const recentSnaps = await prisma.financialSnapshot.findMany({
+    where: { date: { gte: last30Start } },
+    select: { totalCost: true },
+  });
+  const reinvestmentFund = recentSnaps.reduce((s, r) => s + r.totalCost, 0);
+  const reinvestmentFundDays = recentSnaps.length;
+
   // Aggregate por categoría desde ProductInsight
   const rows = await prisma.$queryRaw<
     Array<{
@@ -72,6 +92,9 @@ export async function getOpenToBuyPlan(coverageDaysTarget = 21): Promise<OTBPlan
     ORDER BY revenue_proxy DESC NULLS LAST
   `;
 
+  // Paso 1: calcular métricas base por categoría
+  const totalRevenueAll = rows.reduce((s, r) => s + (r.revenue_proxy ?? 0), 0);
+
   const categories: OTBCategory[] = rows.map((r) => {
     const totalDailySales = r.total_daily_sales ?? 0;
     const projectedMonthlyUnits = totalDailySales * 30;
@@ -90,6 +113,17 @@ export async function getOpenToBuyPlan(coverageDaysTarget = 21): Promise<OTBPlan
 
     const currentCoverageDays = totalDailySales > 0 ? currentStockUnits / totalDailySales : 0;
 
+    // Freno de mano: >60 días de cobertura → reducir 50%; <30 días → urgente 100%
+    const coverageBrake: CoverageBrake =
+      currentCoverageDays > 60 ? "freno" : currentCoverageDays < 30 ? "urgente" : "normal";
+    const brakeMultiplier = coverageBrake === "freno" ? 0.5 : 1.0;
+    const adjustedInvestment = estimatedInvestment * brakeMultiplier;
+
+    // Participación de ventas
+    const salesParticipationPct = totalRevenueAll > 0 ? (estimatedRevenue / totalRevenueAll) * 100 : 0;
+    // Cuánto del fondo de reposición le corresponde según su % de ventas
+    const reinvestmentShare = reinvestmentFund * (salesParticipationPct / 100);
+
     return {
       category: r.category ?? "Sin categoría",
       rawCategory: r.category,
@@ -100,15 +134,20 @@ export async function getOpenToBuyPlan(coverageDaysTarget = 21): Promise<OTBPlan
       unitsToBuy,
       avgCMP,
       estimatedInvestment,
+      adjustedInvestment,
       estimatedRevenue,
       estimatedProfit,
       estimatedROI,
       currentCoverageDays,
+      coverageBrake,
+      salesParticipationPct,
+      reinvestmentShare,
     };
   });
 
   const totals = {
     totalInvestment: categories.reduce((s, c) => s + c.estimatedInvestment, 0),
+    totalAdjustedInvestment: categories.reduce((s, c) => s + c.adjustedInvestment, 0),
     totalUnits: categories.reduce((s, c) => s + c.unitsToBuy, 0),
     totalProjectedRevenue: categories.reduce((s, c) => s + c.estimatedRevenue, 0),
     totalProjectedProfit: categories.reduce((s, c) => s + c.estimatedProfit, 0),
@@ -116,5 +155,5 @@ export async function getOpenToBuyPlan(coverageDaysTarget = 21): Promise<OTBPlan
   };
   totals.avgROI = totals.totalInvestment > 0 ? (totals.totalProjectedProfit / totals.totalInvestment) * 100 : 0;
 
-  return { coverageDaysTarget, categories, totals };
+  return { coverageDaysTarget, categories, totals, reinvestmentFund, reinvestmentFundDays };
 }

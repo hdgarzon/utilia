@@ -1,15 +1,33 @@
 export const dynamic = "force-dynamic";
 
 import Link from "next/link";
-import { getOpenToBuyPlan } from "@/lib/analytics/open-to-buy";
+import { getOpenToBuyPlan, type CoverageBrake } from "@/lib/analytics/open-to-buy";
 import { formatCurrency, cn } from "@/lib/utils";
-import { ShoppingBag, TrendingUp, AlertCircle, Wallet, ChevronRight } from "lucide-react";
+import { ShoppingBag, TrendingUp, AlertCircle, Wallet, ChevronRight, AlertTriangle, Zap, Minus } from "lucide-react";
 
 const SENTINEL_NULL = "_sin_categoria";
 
 function categoryHref(rawCategory: string | null): string {
   const slug = rawCategory === null ? SENTINEL_NULL : encodeURIComponent(rawCategory);
   return `/categorias/${slug}`;
+}
+
+function BrakeBadge({ brake }: { brake: CoverageBrake }) {
+  if (brake === "urgente") return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-destructive font-semibold text-xs">
+      <Zap className="h-2.5 w-2.5" /> Urgente
+    </span>
+  );
+  if (brake === "freno") return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-warning/10 px-2 py-0.5 text-warning font-semibold text-xs">
+      <AlertTriangle className="h-2.5 w-2.5" /> Freno
+    </span>
+  );
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-muted-foreground text-xs">
+      <Minus className="h-2.5 w-2.5" /> Normal
+    </span>
+  );
 }
 
 interface PageProps {
@@ -34,7 +52,8 @@ export default async function ComprasPage({ searchParams }: PageProps) {
     );
   }
 
-  const { categories, totals, coverageDaysTarget } = plan;
+  const { categories, totals, coverageDaysTarget, reinvestmentFund, reinvestmentFundDays } = plan;
+  const capitalGap = totals.totalAdjustedInvestment - reinvestmentFund;
 
   return (
     <div className="space-y-6">
@@ -42,7 +61,7 @@ export default async function ComprasPage({ searchParams }: PageProps) {
         <div>
           <h1 className="text-xl font-bold">Plan de Compras (Open-to-Buy)</h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Cuánto comprar en cada categoría para los próximos 30 días + {coverageDaysTarget} días de cobertura objetivo
+            El dinero sigue la venta y la rotación — categorías más activas reciben más capital
           </p>
         </div>
         <div className="flex items-center gap-2 text-xs">
@@ -64,15 +83,37 @@ export default async function ComprasPage({ searchParams }: PageProps) {
         </div>
       </div>
 
+      {/* Fondo de Reposición — la pieza central */}
+      <div className="rounded-xl border border-primary/30 bg-primary/5 p-5 space-y-3">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <p className="text-xs text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+              <Wallet className="h-3 w-3 text-primary" />
+              Fondo de Reposición disponible
+            </p>
+            <p className="text-3xl font-bold text-primary mt-1">{formatCurrency(reinvestmentFund)}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              COGS real de los últimos {reinvestmentFundDays} días — este dinero <strong className="text-foreground">ya le pertenece al inventario</strong>, no es utilidad
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-xs text-muted-foreground uppercase tracking-wider">Inversión sugerida (con frenos)</p>
+            <p className="text-2xl font-bold mt-1">{formatCurrency(totals.totalAdjustedInvestment)}</p>
+            <p className={cn("text-xs font-medium mt-0.5", capitalGap > 0 ? "text-destructive" : "text-primary")}>
+              {capitalGap > 0
+                ? `⚠ Faltan ${formatCurrency(capitalGap)} — considera priorizar categorías urgentes`
+                : `✓ El fondo cubre la inversión con ${formatCurrency(-capitalGap)} de margen`}
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* KPIs totales */}
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-        <div className="rounded-xl border border-primary/40 bg-primary/5 p-4 space-y-1">
-          <p className="text-xs text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-            <Wallet className="h-3 w-3" />
-            Inversión sugerida
-          </p>
-          <p className="text-2xl font-bold text-primary">{formatCurrency(totals.totalInvestment)}</p>
-          <p className="text-xs text-muted-foreground">{Math.round(totals.totalUnits).toLocaleString("es-CO")} unidades total</p>
+        <div className="rounded-xl border border-border bg-card p-4 space-y-1">
+          <p className="text-xs text-muted-foreground uppercase tracking-wider">Inversión OTB total</p>
+          <p className="text-2xl font-bold">{formatCurrency(totals.totalInvestment)}</p>
+          <p className="text-xs text-muted-foreground">sin aplicar frenos</p>
         </div>
         <div className="rounded-xl border border-border bg-card p-4 space-y-1">
           <p className="text-xs text-muted-foreground uppercase tracking-wider">Revenue proyectado</p>
@@ -85,8 +126,7 @@ export default async function ComprasPage({ searchParams }: PageProps) {
         </div>
         <div className="rounded-xl border border-border bg-card p-4 space-y-1">
           <p className="text-xs text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-            <TrendingUp className="h-3 w-3" />
-            ROI promedio
+            <TrendingUp className="h-3 w-3" /> ROI promedio
           </p>
           <p className={cn("text-2xl font-bold", totals.avgROI >= 30 ? "text-primary" : totals.avgROI >= 15 ? "text-foreground" : "text-warning")}>
             {totals.avgROI.toFixed(0)}%
@@ -95,34 +135,36 @@ export default async function ComprasPage({ searchParams }: PageProps) {
         </div>
       </div>
 
-      {/* Tabla por categoría */}
+      {/* Tabla de distribución */}
       <div className="rounded-xl border border-border bg-card overflow-hidden">
         <div className="px-5 py-3 border-b border-border flex items-center gap-2">
           <ShoppingBag className="h-4 w-4 text-primary" />
-          <h3 className="text-sm font-semibold">Detalle por Categoría</h3>
-          <span className="ml-auto text-xs text-muted-foreground">ordenado por revenue proyectado</span>
+          <h3 className="text-sm font-semibold">Distribución del Capital por Categoría</h3>
+          <span className="ml-auto text-xs text-muted-foreground">ordenado por participación en ventas</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-border text-muted-foreground bg-secondary/30">
                 <th className="px-4 py-2.5 text-left font-medium">Categoría</th>
-                <th className="px-4 py-2.5 text-right font-medium">Vel/día</th>
-                <th className="px-4 py-2.5 text-right font-medium">Stock actual</th>
-                <th className="px-4 py-2.5 text-right font-medium">Cobertura</th>
+                <th className="px-4 py-2.5 text-right font-medium">% Ventas</th>
+                <th className="px-4 py-2.5 text-right font-medium">Fondo asignado</th>
+                <th className="px-4 py-2.5 text-right font-medium">Cobertura actual</th>
+                <th className="px-4 py-2.5 text-center font-medium">Señal</th>
                 <th className="px-4 py-2.5 text-right font-medium">Unidades a comprar</th>
-                <th className="px-4 py-2.5 text-right font-medium">CMP prom</th>
-                <th className="px-4 py-2.5 text-right font-medium">Inversión</th>
+                <th className="px-4 py-2.5 text-right font-medium">Inversión OTB</th>
+                <th className="px-4 py-2.5 text-right font-medium">Ajustada</th>
                 <th className="px-4 py-2.5 text-right font-medium">ROI</th>
               </tr>
             </thead>
             <tbody>
-              {categories.map((c) => {
-                const coverageStatus =
-                  c.currentCoverageDays < 7 ? "destructive" : c.currentCoverageDays < 14 ? "warning" : c.currentCoverageDays > 60 ? "warning" : "ok";
+              {[...categories].sort((a, b) => b.salesParticipationPct - a.salesParticipationPct).map((c) => {
                 const coverageColor =
-                  coverageStatus === "destructive" ? "text-destructive" : coverageStatus === "warning" ? "text-warning" : "text-foreground";
+                  c.coverageBrake === "urgente" ? "text-destructive font-semibold"
+                  : c.coverageBrake === "freno" ? "text-warning"
+                  : "text-foreground";
                 const roiColor = c.estimatedROI >= 30 ? "text-primary" : c.estimatedROI >= 15 ? "text-foreground" : "text-warning";
+                const barWidth = Math.min(c.salesParticipationPct, 100);
 
                 return (
                   <tr key={c.category} className="border-b border-border last:border-0 hover:bg-secondary/20 group">
@@ -135,16 +177,34 @@ export default async function ComprasPage({ searchParams }: PageProps) {
                         <ChevronRight className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
                       </Link>
                     </td>
-                    <td className="px-4 py-3 text-right">{c.totalDailySales.toFixed(1)}</td>
-                    <td className="px-4 py-3 text-right">{Math.round(c.currentStockUnits).toLocaleString("es-CO")}</td>
-                    <td className={cn("px-4 py-3 text-right font-medium", coverageColor)}>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <div className="w-16 h-1.5 rounded-full bg-secondary overflow-hidden">
+                          <div className="h-full bg-primary/60 rounded-full" style={{ width: `${barWidth}%` }} />
+                        </div>
+                        <span className="font-medium w-10 text-right">{c.salesParticipationPct.toFixed(1)}%</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-right font-medium text-primary">
+                      {formatCurrency(c.reinvestmentShare)}
+                    </td>
+                    <td className={cn("px-4 py-3 text-right", coverageColor)}>
                       {c.currentCoverageDays.toFixed(0)}d
                     </td>
-                    <td className="px-4 py-3 text-right font-semibold text-primary">
+                    <td className="px-4 py-3 text-center">
+                      <BrakeBadge brake={c.coverageBrake} />
+                    </td>
+                    <td className="px-4 py-3 text-right font-semibold">
                       {Math.round(c.unitsToBuy).toLocaleString("es-CO")}
                     </td>
-                    <td className="px-4 py-3 text-right text-muted-foreground">{formatCurrency(c.avgCMP)}</td>
-                    <td className="px-4 py-3 text-right font-medium">{formatCurrency(c.estimatedInvestment)}</td>
+                    <td className="px-4 py-3 text-right text-muted-foreground">
+                      {formatCurrency(c.estimatedInvestment)}
+                    </td>
+                    <td className="px-4 py-3 text-right font-semibold">
+                      {c.coverageBrake === "freno"
+                        ? <span className="text-warning">{formatCurrency(c.adjustedInvestment)} <span className="text-xs opacity-70">(−50%)</span></span>
+                        : formatCurrency(c.adjustedInvestment)}
+                    </td>
                     <td className={cn("px-4 py-3 text-right font-semibold", roiColor)}>
                       {c.estimatedROI.toFixed(0)}%
                     </td>
@@ -159,22 +219,22 @@ export default async function ComprasPage({ searchParams }: PageProps) {
       {/* Nota metodológica */}
       <div className="rounded-xl border border-border bg-card p-4 flex items-start gap-3">
         <AlertCircle className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-        <div className="text-xs text-muted-foreground leading-relaxed space-y-1">
+        <div className="text-xs text-muted-foreground leading-relaxed space-y-1.5">
           <p>
-            <strong className="text-foreground">Fórmula:</strong>{" "}
+            <strong className="text-foreground">Fondo de Reposición:</strong> El COGS de los últimos 30 días no es utilidad — es el dinero que debe volver al inventario. El error común es usarlo para pagar gastos fijos y luego no tener capital para recomprar.
+          </p>
+          <p>
+            <strong className="text-foreground">Freno de mano:</strong> Cobertura {">"}60 días → inversión reducida al 50% (ya tenés demasiado stock). Cobertura {"<"}30 días → urgente, invertir el 100% de inmediato.
+          </p>
+          <p>
+            <strong className="text-foreground">Fórmula OTB:</strong>{" "}
             <code className="rounded bg-secondary px-1 py-0.5 text-foreground">
-              OTB = (velocidad/día × 30) + (velocidad/día × {coverageDaysTarget}) − stock_actual
+              (vel/día × 30) + (vel/día × {coverageDaysTarget}d objetivo) − stock_actual
             </code>
-          </p>
-          <p>
-            La <strong className="text-foreground">cobertura objetivo</strong> es el colchón de stock que querés tener al cierre del mes
-            (default 21 días). Subila si tu proveedor tarda, bajala si tu capital de trabajo está apretado.
-          </p>
-          <p>
-            <strong className="text-foreground">ROI</strong> compara la utilidad proyectada mensual contra la inversión sugerida. ROI &gt;30% mensual indica una categoría muy rentable.
           </p>
         </div>
       </div>
     </div>
   );
 }
+
