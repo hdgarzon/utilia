@@ -71,6 +71,7 @@ export async function getCategoryDetail(rawCategory: string | null): Promise<Cat
     select: {
       id: true,
       odooProductId: true,
+      odooTemplateId: true,
       name: true,
       stockQty: true,
       cmp: true,
@@ -87,7 +88,14 @@ export async function getCategoryDetail(rawCategory: string | null): Promise<Cat
   const inventoryValue = rows.reduce((s, p) => s + p.inventoryValue, 0);
   const retailValue = rows.reduce((s, p) => s + p.stockQty * p.salePrice, 0);
   const totalDailySales = rows.reduce((s, p) => s + p.avgDailySales7d, 0);
-  const activeProducts = rows.filter((p) => p.avgDailySales7d > 0).length;
+  // Conteo por template (no por variante), consistente con la página de listado
+  // de categorías, que también deduplica variantes con COALESCE(templateId, productId).
+  const dedupeKey = (p: { odooTemplateId: number | null; odooProductId: number }) =>
+    p.odooTemplateId ?? p.odooProductId;
+  const productCount = new Set(allProducts.map(dedupeKey)).size;
+  const activeProducts = new Set(
+    allProducts.filter((p) => p.avgDailySales7d > 0).map(dedupeKey)
+  ).size;
   // Margen ponderado por valor retail
   const totalRetailSpread = rows.reduce((s, p) => s + p.stockQty * (p.salePrice - p.cmp), 0);
   const avgMarginPct = retailValue > 0 ? (totalRetailSpread / retailValue) * 100 : 0;
@@ -121,7 +129,7 @@ export async function getCategoryDetail(rawCategory: string | null): Promise<Cat
     category: rawCategory ?? "Sin categoría",
     rawCategory,
     totals: {
-      productCount: rows.length,
+      productCount,
       activeProducts,
       inventoryValue,
       retailValue,
