@@ -62,12 +62,14 @@ export function SyncButton() {
           { description: `${parts.join(" · ")}${aiPart}` }
         );
         setLastResult("success");
-        // Refrescar la página actual con datos nuevos
-        router.refresh();
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         toast.error("Sync falló", { description: msg.slice(0, 120) });
         setLastResult("error");
+      } finally {
+        // Refrescar SIEMPRE, también si hubo error/timeout: el server pudo haber
+        // escrito parte de los datos, así la UI queda al día sin recargar a mano.
+        router.refresh();
       }
     });
   }

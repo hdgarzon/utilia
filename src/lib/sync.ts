@@ -42,10 +42,14 @@ export async function syncProducts() {
       return { synced: 0 };
     }
 
-    // Upserts en lotes paralelos de 25 (mejora de N+1 secuencial sin pasar el rate limit del pooler)
-    const CHUNK = 5;
+    // Upserts en lotes de 100 dentro de UNA transacción por lote = 1 round-trip
+    // por cada 100 productos. Antes: CHUNK=5 secuencial → ~320 round-trips para
+    // 1600 productos, lo que excedía el límite de la función serverless ANTES de
+    // llegar a recordSyncSuccess → lastSyncAt quedaba en epoch y cada sync
+    // reintentaba el catálogo completo (loop infinito de timeouts).
+    const CHUNK = 100;
     for (let i = 0; i < products.length; i += CHUNK) {
-      await Promise.all(
+      await prisma.$transaction(
         products.slice(i, i + CHUNK).map((p) =>
           prisma.productInsight.upsert({
             where: { odooProductId: p.id },
@@ -253,6 +257,9 @@ export async function syncSalesAndComputeMetrics() {
       return perDay;
     }
 
+    // Construir todos los upserts resolviendo gastos fijos ANTES de la tx
+    // (getFixedExpensesForDay está memoizado: máx ~4 consultas para 90 días).
+    const snapshotOps = [];
     for (const [dateKey, data] of salesByDate) {
       const date = startOfDay(new Date(dateKey));
       const avgTicket = data.tickets.reduce((a, b) => a + b, 0) / data.tickets.length;
@@ -260,31 +267,27 @@ export async function syncSalesAndComputeMetrics() {
       const fixedExpenses = await getFixedExpensesForDay(date);
       const netProfit = grossProfit - fixedExpenses;
       const netMarginPct = data.revenue > 0 ? (netProfit / data.revenue) * 100 : 0;
-
-      await prisma.financialSnapshot.upsert({
-        where: { date },
-        create: {
-          date,
-          totalRevenue: data.revenue,
-          totalCost: data.cost,
-          grossProfit,
-          fixedExpenses,
-          netProfit,
-          netMarginPct,
-          transactionCount: data.count,
-          avgTicket,
-        },
-        update: {
-          totalRevenue: data.revenue,
-          totalCost: data.cost,
-          grossProfit,
-          fixedExpenses,
-          netProfit,
-          netMarginPct,
-          transactionCount: data.count,
-          avgTicket,
-        },
-      });
+      const payload = {
+        totalRevenue: data.revenue,
+        totalCost: data.cost,
+        grossProfit,
+        fixedExpenses,
+        netProfit,
+        netMarginPct,
+        transactionCount: data.count,
+        avgTicket,
+      };
+      snapshotOps.push(
+        prisma.financialSnapshot.upsert({
+          where: { date },
+          create: { date, ...payload },
+          update: payload,
+        })
+      );
+    }
+    // Ejecutar en lotes: 1 round-trip por cada 100 días (antes: 1 por día)
+    for (let i = 0; i < snapshotOps.length; i += 100) {
+      await prisma.$transaction(snapshotOps.slice(i, i + 100));
     }
 
     // ── 3.5. Crear stubs para productos que referencian las líneas pero no
@@ -299,9 +302,9 @@ export async function syncSalesAndComputeMetrics() {
     const missingIds = referencedIds.filter((id) => !existingIds.has(id));
     if (missingIds.length > 0) {
       const stubs = await odoo.getProductsByIds(missingIds);
-      for (const p of stubs) {
+      const stubOps = stubs.map((p) => {
         const label = p.active ? p.name : `${p.name} (archivado)`;
-        await prisma.productInsight.upsert({
+        return prisma.productInsight.upsert({
           where: { odooProductId: p.id },
           create: {
             odooProductId: p.id,
@@ -316,29 +319,30 @@ export async function syncSalesAndComputeMetrics() {
           },
           update: { name: label, odooTemplateId: p.product_tmpl_id?.[0] ?? null, templateName: p.product_tmpl_id?.[1] ?? null },
         });
+      });
+      for (let i = 0; i < stubOps.length; i += 100) {
+        await prisma.$transaction(stubOps.slice(i, i + 100));
       }
     }
 
     // ── 4. Actualizar ventas promedio + rotación por producto ─────────────
     const now = new Date();
-    const productEntries = Array.from(productSales.entries());
-    const CHUNK = 5;
-    for (let i = 0; i < productEntries.length; i += CHUNK) {
-      await Promise.all(
-        productEntries.slice(i, i + CHUNK).map(([pid, data]) => {
-          const daysSinceSale = Math.floor((now.getTime() - data.lastSold.getTime()) / 86_400_000);
-          return prisma.productInsight.updateMany({
-            where: { odooProductId: pid },
-            data: {
-              avgDailySales7d: data.qty / 7,
-              avgDailySales14d: data.qty / 14,
-              avgDailySales30d: data.qty / 30,
-              lastSoldAt: data.lastSold,
-              rotationDays: daysSinceSale,
-            },
-          });
-        })
-      );
+    const productOps = Array.from(productSales.entries()).map(([pid, data]) => {
+      const daysSinceSale = Math.floor((now.getTime() - data.lastSold.getTime()) / 86_400_000);
+      return prisma.productInsight.updateMany({
+        where: { odooProductId: pid },
+        data: {
+          avgDailySales7d: data.qty / 7,
+          avgDailySales14d: data.qty / 14,
+          avgDailySales30d: data.qty / 30,
+          lastSoldAt: data.lastSold,
+          rotationDays: daysSinceSale,
+        },
+      });
+    });
+    // 1 round-trip por cada 100 productos (antes: CHUNK=5 → cientos de round-trips)
+    for (let i = 0; i < productOps.length; i += 100) {
+      await prisma.$transaction(productOps.slice(i, i + 100));
     }
 
     // ── 5. Recalcular días de stock para todos los productos con ventas ───
@@ -366,10 +370,20 @@ async function recomputeDaysOfStock() {
 }
 
 export async function runFullSync() {
-  const results = await Promise.allSettled([
-    syncProducts(),
-    syncStock(),
-    syncSalesAndComputeMetrics(),
-  ]);
+  // Secuencial (no Promise.allSettled) a propósito: los 3 jobs comparten el
+  // mismo pooler de Supabase (pgbouncer). En paralelo competían por conexiones
+  // y, sumado a los round-trips por fila, agotaban el presupuesto de la función
+  // (504/timeout). Con escrituras en lote cada job termina en segundos, así que
+  // en serie el total sigue siendo bajo y sin contención. Cada job maneja su
+  // propio estado, por eso un fallo no aborta los siguientes.
+  const jobs = [syncProducts, syncStock, syncSalesAndComputeMetrics];
+  const results: PromiseSettledResult<{ synced: number }>[] = [];
+  for (const job of jobs) {
+    try {
+      results.push({ status: "fulfilled", value: await job() });
+    } catch (reason) {
+      results.push({ status: "rejected", reason });
+    }
+  }
   return results;
 }
