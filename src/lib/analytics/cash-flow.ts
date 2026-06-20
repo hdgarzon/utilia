@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { colombiaDaysAgo } from "@/lib/timezone";
+import { colombiaStartOfMonth } from "@/lib/timezone";
 
 const CASH_BALANCE_KEY = "cash_balance";
 
@@ -51,7 +51,7 @@ export async function getCashFlowAnalysis(): Promise<CashFlowAnalysis> {
   const [cashRow, recent30] = await Promise.all([
     getCashBalance(),
     prisma.financialSnapshot.findMany({
-      where: { date: { gte: colombiaDaysAgo(30) } },
+      where: { date: { gte: colombiaStartOfMonth() } },
       select: { totalRevenue: true, totalCost: true, grossProfit: true, fixedExpenses: true, netProfit: true },
     }),
   ]);

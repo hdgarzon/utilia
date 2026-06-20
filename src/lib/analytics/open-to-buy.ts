@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { colombiaStartOfMonth, colombiaYearMonthDay } from "@/lib/timezone";
 
 export type CoverageBrake = "urgente" | "normal" | "freno";
 
@@ -54,10 +55,10 @@ export interface OTBPlan {
  * de compras del mes siguiente.
  */
 export async function getOpenToBuyPlan(coverageDaysTarget = 21): Promise<OTBPlan> {
-  // Fondo de Reposición: COGS real de los últimos 30 días desde FinancialSnapshot
-  const last30Start = new Date(Date.now() - 30 * 86_400_000);
+  // Fondo de Reposición: COGS real del mes actual (MTD) desde FinancialSnapshot
+  const { month, year } = colombiaYearMonthDay();
   const recentSnaps = await prisma.financialSnapshot.findMany({
-    where: { date: { gte: last30Start } },
+    where: { date: { gte: colombiaStartOfMonth() } },
     select: { totalCost: true },
   });
   const reinvestmentFund = recentSnaps.reduce((s, r) => s + r.totalCost, 0);

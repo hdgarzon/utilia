@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { colombiaToday, colombiaDaysAgo, colombiaYearMonthDay } from "@/lib/timezone";
+import { colombiaToday, colombiaStartOfMonth, colombiaYearMonthDay } from "@/lib/timezone";
 
 export interface BreakevenAnalysis {
   // Inputs base
@@ -37,7 +37,7 @@ export async function getBreakevenAnalysis(): Promise<BreakevenAnalysis> {
     prisma.expenseBudget.findMany({ where: { year, month } }),
     prisma.financialSnapshot.findUnique({ where: { date: today } }),
     prisma.financialSnapshot.findMany({
-      where: { date: { gte: colombiaDaysAgo(30) } },
+      where: { date: { gte: colombiaStartOfMonth() } },
       select: { totalRevenue: true, totalCost: true, transactionCount: true, avgTicket: true },
     }),
   ]);

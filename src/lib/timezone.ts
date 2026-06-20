@@ -31,3 +31,13 @@ export function colombiaYearMonthDay(): { year: number; month: number; day: numb
 export function colombiaDaysAgo(days: number): Date {
   return new Date(colombiaToday().getTime() - days * 86_400_000);
 }
+
+/**
+ * Retorna el primer día del mes actual en Colombia (medianoche UTC).
+ * Ej: cualquier momento de mayo → 2026-05-01T00:00:00.000Z
+ * Usar para rangos MTD (Month-to-Date) en vez de rolling 30 días.
+ */
+export function colombiaStartOfMonth(): Date {
+  const { year, month } = colombiaYearMonthDay();
+  return new Date(Date.UTC(year, month - 1, 1));
+}
