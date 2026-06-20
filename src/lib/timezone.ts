@@ -41,3 +41,15 @@ export function colombiaStartOfMonth(): Date {
   const { year, month } = colombiaYearMonthDay();
   return new Date(Date.UTC(year, month - 1, 1));
 }
+
+/**
+ * Primer día del MES ANTERIOR en Colombia (medianoche UTC).
+ * Ej: cualquier momento de junio → 2026-05-01T00:00:00.000Z.
+ * Date.UTC maneja el rollover de año si month-2 es negativo (enero → diciembre).
+ * Se usa como ventana de backfill del sync: cubre mes actual + mes anterior
+ * (suficiente para el comparativo mensual) sin traer 90 días de órdenes.
+ */
+export function colombiaStartOfPreviousMonth(): Date {
+  const { year, month } = colombiaYearMonthDay();
+  return new Date(Date.UTC(year, month - 2, 1));
+}
