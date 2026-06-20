@@ -1,24 +1,43 @@
 export const dynamic = 'force-dynamic';
 
 import { prisma } from "@/lib/prisma";
-import { formatCurrency, stockStatus } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { Package, AlertTriangle, XCircle, CheckCircle } from "lucide-react";
 
-async function getInventoryData() {
-  const [critical, warning, healthy, stale] = await Promise.all([
-    prisma.productInsight.findMany({ where: { daysOfStock: { lt: 5 } }, orderBy: { daysOfStock: "asc" } }),
-    prisma.productInsight.findMany({ where: { daysOfStock: { gte: 5, lt: 14 } }, orderBy: { daysOfStock: "asc" } }),
-    prisma.productInsight.findMany({ where: { daysOfStock: { gte: 14 } }, orderBy: { daysOfStock: "desc" }, take: 20 }),
-    prisma.productInsight.findMany({ where: { rotationDays: { gt: 30 } }, orderBy: { rotationDays: "desc" }, take: 10 }),
-  ]);
+// Clasifica por días de stock — coherente con las tarjetas KPI de arriba.
+function stockHealth(daysOfStock: number): "critical" | "warning" | "ok" {
+  if (daysOfStock < 5) return "critical";
+  if (daysOfStock < 14) return "warning";
+  return "ok";
+}
 
-  return { critical, warning, healthy, stale };
+async function getInventoryData() {
+  // `daysOfStock` solo tiene sentido para productos que venden. Para los que no
+  // venden, el sync deja daysOfStock=0 (sentinel). Por eso filtramos por
+  // avgDailySales7d>0 ANTES de clasificar: de lo contrario, todo el catálogo sin
+  // ventas (la mayoría de SKUs) caería en "<5 días" e inflaría el conteo crítico.
+  const withSales = await prisma.productInsight.findMany({
+    where: { avgDailySales7d: { gt: 0 } },
+    orderBy: { daysOfStock: "asc" },
+  });
+  // daysOfStock<5 incluye 0 = vende pero sin stock (lo más urgente de todo).
+  const critical = withSales.filter((p) => p.daysOfStock < 5);
+  const warning = withSales.filter((p) => p.daysOfStock >= 5 && p.daysOfStock < 14);
+  const healthy = withSales.filter((p) => p.daysOfStock >= 14);
+
+  // Stock muerto: con existencias pero sin rotación hace +30 días.
+  const stale = await prisma.productInsight.findMany({
+    where: { rotationDays: { gt: 30 }, stockQty: { gt: 0 } },
+    orderBy: { rotationDays: "desc" },
+    take: 15,
+  });
+
+  return { all: withSales, critical, warning, healthy, stale };
 }
 
 export default async function InventarioPage() {
-  const { critical, warning, healthy, stale } = await getInventoryData().catch(() => ({ critical: [] as Awaited<ReturnType<typeof getInventoryData>>["critical"], warning: [] as Awaited<ReturnType<typeof getInventoryData>>["warning"], healthy: [] as Awaited<ReturnType<typeof getInventoryData>>["healthy"], stale: [] as Awaited<ReturnType<typeof getInventoryData>>["stale"] }));
-  const all = [...critical, ...warning, ...healthy];
+  const { all, critical, warning, healthy, stale } = await getInventoryData().catch(() => ({ all: [] as Awaited<ReturnType<typeof getInventoryData>>["all"], critical: [] as Awaited<ReturnType<typeof getInventoryData>>["critical"], warning: [] as Awaited<ReturnType<typeof getInventoryData>>["warning"], healthy: [] as Awaited<ReturnType<typeof getInventoryData>>["healthy"], stale: [] as Awaited<ReturnType<typeof getInventoryData>>["stale"] }));
 
   return (
     <div className="space-y-6">
@@ -45,7 +64,8 @@ export default async function InventarioPage() {
       <div className="rounded-xl border border-border bg-card p-5 space-y-3">
         <div className="flex items-center gap-2">
           <Package className="h-4 w-4 text-primary" />
-          <h3 className="text-sm font-semibold">Todos los Productos</h3>
+          <h3 className="text-sm font-semibold">Productos con Rotación ({all.length})</h3>
+          <span className="ml-auto text-xs text-muted-foreground">ordenado por urgencia de reposición</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
@@ -60,7 +80,7 @@ export default async function InventarioPage() {
             </thead>
             <tbody>
               {all.map((p) => {
-                const status = stockStatus(p.stockQty, p.minStock);
+                const status = stockHealth(p.daysOfStock);
                 return (
                   <tr key={p.id} className="border-b border-border last:border-0">
                     <td className="py-2 font-medium max-w-48 truncate">{p.name}</td>

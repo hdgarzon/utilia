@@ -77,7 +77,7 @@ export function BreakevenCard({ data }: Props) {
         <Stat label="Margen bruto promedio" value={`${avgGrossMarginPct.toFixed(1)}%`} />
         <Stat label="Hoy: transacciones" value={`${todayTransactions} / ${breakevenTransactions}`} />
         <Stat
-          label="Consistencia 30d"
+          label="Consistencia (mes)"
           value={`${daysAboveBreakeven30d}/${daysObserved30d} días`}
           subtitle={`${consistencyPct.toFixed(0)}% por encima`}
         />
