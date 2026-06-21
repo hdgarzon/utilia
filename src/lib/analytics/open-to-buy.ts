@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { colombiaStartOfMonth, colombiaYearMonthDay } from "@/lib/timezone";
+import { colombiaDaysAgo } from "@/lib/timezone";
 
 export type CoverageBrake = "urgente" | "normal" | "freno";
 
@@ -55,10 +55,13 @@ export interface OTBPlan {
  * de compras del mes siguiente.
  */
 export async function getOpenToBuyPlan(coverageDaysTarget = 21): Promise<OTBPlan> {
-  // Fondo de Reposición: COGS real del mes actual (MTD) desde FinancialSnapshot
-  const { month, year } = colombiaYearMonthDay();
+  // Fondo de Reposición: COGS real de los ÚLTIMOS 30 DÍAS (ventana móvil, no MTD).
+  // A diferencia de los reportes (que sí son MTD), el fondo es una tasa de
+  // reposición: debe compararse contra la inversión proyectada a 30 días, así
+  // que ambos lados usan el mismo horizonte. Con MTD, a inicio de mes el fondo
+  // era ~0 y el "faltante de capital" se veía catastrófico sin serlo.
   const recentSnaps = await prisma.financialSnapshot.findMany({
-    where: { date: { gte: colombiaStartOfMonth() } },
+    where: { date: { gte: colombiaDaysAgo(30) } },
     select: { totalCost: true },
   });
   const reinvestmentFund = recentSnaps.reduce((s, r) => s + r.totalCost, 0);

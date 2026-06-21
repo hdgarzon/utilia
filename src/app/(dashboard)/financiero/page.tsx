@@ -10,7 +10,7 @@ import { getMonthComparison } from "@/lib/analytics/month-compare";
 import { getBreakevenAnalysis } from "@/lib/analytics/breakeven";
 import { getCashFlowAnalysis } from "@/lib/analytics/cash-flow";
 import { formatCurrency } from "@/lib/utils";
-import { DollarSign, TrendingUp, TrendingDown, AlertTriangle } from "lucide-react";
+import { DollarSign, TrendingUp, TrendingDown } from "lucide-react";
 import { colombiaStartOfMonth, colombiaYearMonthDay } from "@/lib/timezone";
 
 async function getFinancialData() {
@@ -40,20 +40,18 @@ async function getFinancialData() {
     transactions: s.transactionCount,
   }));
 
-  const lastSnapshot = snapshots[snapshots.length - 1];
-
-  return { totals, avgMargin, chartData, budgets, cashBalance: lastSnapshot?.cashBalance ?? 0, projected30d: lastSnapshot?.projectedCash30d ?? 0 };
+  return { totals, avgMargin, chartData, budgets };
 }
 
 export default async function FinancieroPage() {
   const fallbackTotals = { revenue: 0, cost: 0, profit: 0, expenses: 0, transactions: 0 };
   const [financial, monthCompare, breakeven, cashFlow] = await Promise.all([
-    getFinancialData().catch(() => ({ totals: fallbackTotals, avgMargin: 0, chartData: [] as Awaited<ReturnType<typeof getFinancialData>>["chartData"], budgets: [] as Awaited<ReturnType<typeof getFinancialData>>["budgets"], cashBalance: 0, projected30d: 0 })),
+    getFinancialData().catch(() => ({ totals: fallbackTotals, avgMargin: 0, chartData: [] as Awaited<ReturnType<typeof getFinancialData>>["chartData"], budgets: [] as Awaited<ReturnType<typeof getFinancialData>>["budgets"] })),
     getMonthComparison().catch(() => null),
     getBreakevenAnalysis().catch(() => null),
     getCashFlowAnalysis().catch(() => null),
   ]);
-  const { totals = fallbackTotals, avgMargin, chartData, budgets, cashBalance, projected30d } = financial;
+  const { totals = fallbackTotals, avgMargin, chartData, budgets } = financial;
 
   return (
     <div className="space-y-6">
@@ -66,34 +64,15 @@ export default async function FinancieroPage() {
       {monthCompare && <MonthCompare data={monthCompare} />}
 
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-        <KPICard title="Ingresos 30d" value={formatCurrency(totals.revenue)} icon={DollarSign} variant="success" />
-        <KPICard title="Utilidad Neta 30d" value={formatCurrency(totals.profit)}
+        <KPICard title="Ingresos (mes)" value={formatCurrency(totals.revenue)} icon={DollarSign} variant="success" />
+        <KPICard title="Utilidad Neta (mes)" value={formatCurrency(totals.profit)}
           variant={totals.profit > 0 ? "success" : "danger"} icon={TrendingUp} />
         <KPICard title="Margen Promedio" value={`${avgMargin.toFixed(1)}%`}
           variant={avgMargin >= 20 ? "success" : avgMargin >= 10 ? "warning" : "danger"} icon={TrendingUp} />
-        <KPICard title="Gastos Fijos 30d" value={formatCurrency(totals.expenses)} icon={TrendingDown} />
+        <KPICard title="Gastos Fijos (mes)" value={formatCurrency(totals.expenses)} icon={TrendingDown} />
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <div className="rounded-xl border border-border bg-card p-5 space-y-2">
-          <p className="text-xs text-muted-foreground uppercase tracking-wider">Saldo Actual</p>
-          <p className="text-2xl font-bold text-primary">{formatCurrency(cashBalance)}</p>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-5 space-y-2">
-          <p className="text-xs text-muted-foreground uppercase tracking-wider">Proyección 30 Días</p>
-          <p className={`text-2xl font-bold ${projected30d >= 0 ? "text-primary" : "text-destructive"}`}>
-            {formatCurrency(projected30d)}
-          </p>
-          {projected30d < 0 && (
-            <div className="flex items-center gap-1 text-xs text-destructive">
-              <AlertTriangle className="h-3 w-3" />
-              Flujo de caja negativo proyectado
-            </div>
-          )}
-        </div>
-      </div>
-
-      <SalesChart data={chartData} title="Utilidad Diaria — Últimos 30 Días" />
+      <SalesChart data={chartData} title="Utilidad Diaria — Mes Actual" />
 
       {budgets.length > 0 && (
         <div className="rounded-xl border border-border bg-card p-5 space-y-3">

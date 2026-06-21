@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { odoo } from "@/lib/odoo";
-import { startOfDay, subDays } from "date-fns";
+import { colombiaStartOfPreviousMonth } from "@/lib/timezone";
 
 // Sentinel: la primera vez no existe el registro, devolvemos undefined
 async function getLastSync(entity: string): Promise<Date | undefined> {
@@ -27,6 +28,125 @@ async function recordSyncSuccess(entity: string, syncedAt: Date = new Date()) {
   });
 }
 
+// ─── Escritura en lote (SQL crudo de UNA sola sentencia por lote) ────────────
+// Lección aprendida: prisma.$transaction([...]) hace un round-trip POR sentencia
+// (sin pipeline), así que para miles de filas (productos con variantes ~5000) un
+// solo job tardaba ~4 min y agotaba el presupuesto de la función serverless ANTES
+// de que el siguiente job (ventas) pudiera terminar. Estas funciones colapsan
+// cada lote en UNA sentencia (como ya hacía syncStock), pasando de miles de
+// round-trips a unos pocos. Los strings van parametrizados con Prisma.sql para
+// evitar inyección con nombres de producto que tengan comillas.
+
+type ProductRow = {
+  id: number;
+  templateId: number | null;
+  templateName: string | null;
+  internalRef: string | null;
+  name: string;
+  category: string | null;
+  stockQty: number;
+  cmp: number;
+  salePrice: number;
+};
+
+// id y updatedAt no tienen default en la BD (Prisma los genera en el cliente);
+// por eso los seteamos explícitos: gen_random_uuid()::text (PG15) y now().
+async function bulkUpsertProducts(rows: ProductRow[]) {
+  if (rows.length === 0) return;
+  const CHUNK = 500;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const values = rows.slice(i, i + CHUNK).map(
+      (r) => Prisma.sql`(gen_random_uuid()::text, ${r.id}, ${r.templateId}, ${r.templateName}, ${r.internalRef}, ${r.name}, ${r.category}, ${r.stockQty}, ${r.cmp}, ${r.salePrice}, now())`
+    );
+    await prisma.$executeRaw`
+      INSERT INTO "ProductInsight" (
+        "id", "odooProductId", "odooTemplateId", "templateName", "internalRef",
+        "name", "category", "stockQty", "cmp", "salePrice", "updatedAt"
+      )
+      VALUES ${Prisma.join(values)}
+      ON CONFLICT ("odooProductId") DO UPDATE SET
+        "odooTemplateId" = EXCLUDED."odooTemplateId",
+        "templateName"   = EXCLUDED."templateName",
+        "name"           = EXCLUDED."name",
+        "category"       = EXCLUDED."category",
+        "stockQty"       = EXCLUDED."stockQty",
+        "cmp"            = EXCLUDED."cmp",
+        "salePrice"      = EXCLUDED."salePrice",
+        "updatedAt"      = now()
+    `;
+  }
+}
+
+type SnapshotRow = {
+  dateKey: string; // "YYYY-MM-DD" — se castea a ::date para evitar ambigüedad de zona
+  totalRevenue: number;
+  totalCost: number;
+  grossProfit: number;
+  fixedExpenses: number;
+  netProfit: number;
+  netMarginPct: number;
+  transactionCount: number;
+  avgTicket: number;
+};
+
+async function bulkUpsertSnapshots(rows: SnapshotRow[]) {
+  if (rows.length === 0) return;
+  const CHUNK = 500;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const values = rows.slice(i, i + CHUNK).map(
+      (r) => Prisma.sql`(gen_random_uuid()::text, ${r.dateKey}::date, ${r.totalRevenue}, ${r.totalCost}, ${r.grossProfit}, ${r.fixedExpenses}, ${r.netProfit}, ${r.netMarginPct}, ${r.transactionCount}, ${r.avgTicket}, now())`
+    );
+    await prisma.$executeRaw`
+      INSERT INTO "FinancialSnapshot" (
+        "id", "date", "totalRevenue", "totalCost", "grossProfit",
+        "fixedExpenses", "netProfit", "netMarginPct", "transactionCount", "avgTicket", "updatedAt"
+      )
+      VALUES ${Prisma.join(values)}
+      ON CONFLICT ("date") DO UPDATE SET
+        "totalRevenue"     = EXCLUDED."totalRevenue",
+        "totalCost"        = EXCLUDED."totalCost",
+        "grossProfit"      = EXCLUDED."grossProfit",
+        "fixedExpenses"    = EXCLUDED."fixedExpenses",
+        "netProfit"        = EXCLUDED."netProfit",
+        "netMarginPct"     = EXCLUDED."netMarginPct",
+        "transactionCount" = EXCLUDED."transactionCount",
+        "avgTicket"        = EXCLUDED."avgTicket",
+        "updatedAt"        = now()
+    `;
+  }
+}
+
+type ProductSalesRow = {
+  pid: number;
+  v7: number;
+  v14: number;
+  v30: number;
+  lastSoldIso: string; // ISO-8601 con Z — cast a ::timestamptz, inequívoco
+  rotationDays: number;
+};
+
+async function bulkUpdateProductSales(rows: ProductSalesRow[]) {
+  if (rows.length === 0) return;
+  const CHUNK = 500;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    // Casts explícitos por fila: en `FROM (VALUES ...)` Postgres no infiere el
+    // tipo de los parámetros, así que hay que decírselo.
+    const values = rows.slice(i, i + CHUNK).map(
+      (r) => Prisma.sql`(${r.pid}::int, ${r.v7}::float8, ${r.v14}::float8, ${r.v30}::float8, ${r.lastSoldIso}::timestamptz, ${r.rotationDays}::int)`
+    );
+    await prisma.$executeRaw`
+      UPDATE "ProductInsight" p SET
+        "avgDailySales7d"  = v.v7,
+        "avgDailySales14d" = v.v14,
+        "avgDailySales30d" = v.v30,
+        "lastSoldAt"       = v.last_sold,
+        "rotationDays"     = v.rotation_days
+      FROM (VALUES ${Prisma.join(values)}) AS v("odooProductId", v7, v14, v30, last_sold, rotation_days)
+      WHERE p."odooProductId" = v."odooProductId"
+    `;
+  }
+}
+
 export async function syncProducts() {
   const runStart = new Date();
   // Leer el cutoff ANTES de marcar "syncing" para no machacarlo
@@ -42,41 +162,19 @@ export async function syncProducts() {
       return { synced: 0 };
     }
 
-    // Upserts en lotes de 100 dentro de UNA transacción por lote = 1 round-trip
-    // por cada 100 productos. Antes: CHUNK=5 secuencial → ~320 round-trips para
-    // 1600 productos, lo que excedía el límite de la función serverless ANTES de
-    // llegar a recordSyncSuccess → lastSyncAt quedaba en epoch y cada sync
-    // reintentaba el catálogo completo (loop infinito de timeouts).
-    const CHUNK = 100;
-    for (let i = 0; i < products.length; i += CHUNK) {
-      await prisma.$transaction(
-        products.slice(i, i + CHUNK).map((p) =>
-          prisma.productInsight.upsert({
-            where: { odooProductId: p.id },
-            create: {
-              odooProductId: p.id,
-              odooTemplateId: p.product_tmpl_id?.[0] ?? null,
-              templateName: p.product_tmpl_id?.[1] ?? null,
-              internalRef: p.default_code || null,
-              name: p.name,
-              category: p.categ_id?.[1] ?? null,
-              stockQty: p.qty_available,
-              cmp: p.standard_price,
-              salePrice: p.list_price,
-            },
-            update: {
-              odooTemplateId: p.product_tmpl_id?.[0] ?? null,
-              templateName: p.product_tmpl_id?.[1] ?? null,
-              name: p.name,
-              category: p.categ_id?.[1] ?? null,
-              stockQty: p.qty_available,
-              cmp: p.standard_price,
-              salePrice: p.list_price,
-            },
-          })
-        )
-      );
-    }
+    await bulkUpsertProducts(
+      products.map((p) => ({
+        id: p.id,
+        templateId: p.product_tmpl_id?.[0] ?? null,
+        templateName: p.product_tmpl_id?.[1] ?? null,
+        internalRef: p.default_code || null,
+        name: p.name,
+        category: p.categ_id?.[1] ?? null,
+        stockQty: p.qty_available,
+        cmp: p.standard_price,
+        salePrice: p.list_price,
+      }))
+    );
 
     await recordSyncSuccess("product_template", runStart);
     return { synced: products.length };
@@ -101,15 +199,11 @@ export async function syncStock() {
     }
 
     // Bulk update en una sola query SQL por lote de 1000 productos.
-    // Antes: 327 round-trips con CHUNK=5 → timeout en funciones serverless.
-    // Ahora: 2 round-trips máximo para 1634 productos.
+    // Sólo números (no strings), por eso es seguro construir el VALUES inline.
     const entries = Array.from(byProduct.entries());
     const SQL_CHUNK = 1000;
     for (let i = 0; i < entries.length; i += SQL_CHUNK) {
       const slice = entries.slice(i, i + SQL_CHUNK);
-      // Construye: UPDATE "ProductInsight" SET "stockQty" = v.qty
-      //            FROM (VALUES (id,qty),...) AS v("odooProductId", qty)
-      //            WHERE "ProductInsight"."odooProductId" = v."odooProductId"
       const values = slice.map(([id, qty]) => `(${id}, ${qty})`).join(",");
       await prisma.$executeRawUnsafe(`
         UPDATE "ProductInsight" p
@@ -143,12 +237,14 @@ export async function syncSalesAndComputeMetrics() {
     Date.UTC(nowCO.getUTCFullYear(), nowCO.getUTCMonth(), nowCO.getUTCDate()) + COLOMBIA_OFFSET_MS
   );
 
-  // Usar el más temprano entre lastSyncAt y inicio-de-hoy Colombia, con
-  // fallback a 90 días para el sync inicial.
+  // Usar el más temprano entre lastSyncAt y inicio-de-hoy Colombia. Para el sync
+  // inicial (lastSyncAt = epoch) hacemos backfill desde el inicio del mes
+  // anterior: cubre el reporte MTD y el comparativo mensual sin traer 90 días de
+  // órdenes (que no cabían en el límite de la función → timeout infinito).
   const since =
     sinceFromState && sinceFromState.getTime() > 0
       ? new Date(Math.min(sinceFromState.getTime(), startOfTodayCO.getTime()))
-      : subDays(new Date(), 90);
+      : colombiaStartOfPreviousMonth();
 
   await markSyncStatus("pos_order", "syncing");
 
@@ -240,34 +336,30 @@ export async function syncSalesAndComputeMetrics() {
     }
 
     // ── 3. Upsert snapshots financieros diarios con utilidad real ─────────
-    // Precarga presupuesto de gastos fijos por mes para prorratear (memoizado)
-    const fixedExpensesPerDay = new Map<string, number>();
-    async function getFixedExpensesForDay(date: Date): Promise<number> {
-      const key = `${date.getFullYear()}-${date.getMonth() + 1}`;
-      const cached = fixedExpensesPerDay.get(key);
+    // Gasto fijo prorrateado por mes (memoizado: máx ~2 meses en el backfill).
+    const fixedPerDayByMonth = new Map<string, number>();
+    async function getFixedPerDay(year: number, month: number): Promise<number> {
+      const key = `${year}-${month}`;
+      const cached = fixedPerDayByMonth.get(key);
       if (cached !== undefined) return cached;
-      const budgets = await prisma.expenseBudget.findMany({
-        where: { year: date.getFullYear(), month: date.getMonth() + 1 },
-      });
+      const budgets = await prisma.expenseBudget.findMany({ where: { year, month } });
       const totalMonthly = budgets.reduce((sum, b) => sum + b.budgetAmount, 0);
-      // días en el mes para distribuir uniformemente
-      const daysInMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+      const daysInMonth = new Date(year, month, 0).getDate();
       const perDay = totalMonthly / daysInMonth;
-      fixedExpensesPerDay.set(key, perDay);
+      fixedPerDayByMonth.set(key, perDay);
       return perDay;
     }
 
-    // Construir todos los upserts resolviendo gastos fijos ANTES de la tx
-    // (getFixedExpensesForDay está memoizado: máx ~4 consultas para 90 días).
-    const snapshotOps = [];
+    const snapshotRows: SnapshotRow[] = [];
     for (const [dateKey, data] of salesByDate) {
-      const date = startOfDay(new Date(dateKey));
+      const [year, month] = dateKey.split("-").map(Number);
       const avgTicket = data.tickets.reduce((a, b) => a + b, 0) / data.tickets.length;
       const grossProfit = data.revenue - data.cost;
-      const fixedExpenses = await getFixedExpensesForDay(date);
+      const fixedExpenses = await getFixedPerDay(year, month);
       const netProfit = grossProfit - fixedExpenses;
       const netMarginPct = data.revenue > 0 ? (netProfit / data.revenue) * 100 : 0;
-      const payload = {
+      snapshotRows.push({
+        dateKey,
         totalRevenue: data.revenue,
         totalCost: data.cost,
         grossProfit,
@@ -276,23 +368,13 @@ export async function syncSalesAndComputeMetrics() {
         netMarginPct,
         transactionCount: data.count,
         avgTicket,
-      };
-      snapshotOps.push(
-        prisma.financialSnapshot.upsert({
-          where: { date },
-          create: { date, ...payload },
-          update: payload,
-        })
-      );
+      });
     }
-    // Ejecutar en lotes: 1 round-trip por cada 100 días (antes: 1 por día)
-    for (let i = 0; i < snapshotOps.length; i += 100) {
-      await prisma.$transaction(snapshotOps.slice(i, i + 100));
-    }
+    await bulkUpsertSnapshots(snapshotRows);
 
     // ── 3.5. Crear stubs para productos que referencian las líneas pero no
     // están en nuestra BD (ej: productos archivados en Odoo). Sin stubs, el
-    // updateMany no hace nada y se pierden las métricas.
+    // update no encuentra la fila y se pierden las métricas.
     const referencedIds = Array.from(productSales.keys());
     const existing = await prisma.productInsight.findMany({
       where: { odooProductId: { in: referencedIds } },
@@ -302,48 +384,33 @@ export async function syncSalesAndComputeMetrics() {
     const missingIds = referencedIds.filter((id) => !existingIds.has(id));
     if (missingIds.length > 0) {
       const stubs = await odoo.getProductsByIds(missingIds);
-      const stubOps = stubs.map((p) => {
-        const label = p.active ? p.name : `${p.name} (archivado)`;
-        return prisma.productInsight.upsert({
-          where: { odooProductId: p.id },
-          create: {
-            odooProductId: p.id,
-            odooTemplateId: p.product_tmpl_id?.[0] ?? null,
-            templateName: p.product_tmpl_id?.[1] ?? null,
-            internalRef: p.default_code || null,
-            name: label,
-            category: p.categ_id?.[1] ?? null,
-            stockQty: p.qty_available,
-            cmp: p.standard_price,
-            salePrice: p.list_price,
-          },
-          update: { name: label, odooTemplateId: p.product_tmpl_id?.[0] ?? null, templateName: p.product_tmpl_id?.[1] ?? null },
-        });
-      });
-      for (let i = 0; i < stubOps.length; i += 100) {
-        await prisma.$transaction(stubOps.slice(i, i + 100));
-      }
+      await bulkUpsertProducts(
+        stubs.map((p) => ({
+          id: p.id,
+          templateId: p.product_tmpl_id?.[0] ?? null,
+          templateName: p.product_tmpl_id?.[1] ?? null,
+          internalRef: p.default_code || null,
+          name: p.active ? p.name : `${p.name} (archivado)`,
+          category: p.categ_id?.[1] ?? null,
+          stockQty: p.qty_available,
+          cmp: p.standard_price,
+          salePrice: p.list_price,
+        }))
+      );
     }
 
     // ── 4. Actualizar ventas promedio + rotación por producto ─────────────
     const now = new Date();
-    const productOps = Array.from(productSales.entries()).map(([pid, data]) => {
-      const daysSinceSale = Math.floor((now.getTime() - data.lastSold.getTime()) / 86_400_000);
-      return prisma.productInsight.updateMany({
-        where: { odooProductId: pid },
-        data: {
-          avgDailySales7d: data.qty / 7,
-          avgDailySales14d: data.qty / 14,
-          avgDailySales30d: data.qty / 30,
-          lastSoldAt: data.lastSold,
-          rotationDays: daysSinceSale,
-        },
-      });
-    });
-    // 1 round-trip por cada 100 productos (antes: CHUNK=5 → cientos de round-trips)
-    for (let i = 0; i < productOps.length; i += 100) {
-      await prisma.$transaction(productOps.slice(i, i + 100));
-    }
+    await bulkUpdateProductSales(
+      Array.from(productSales.entries()).map(([pid, data]) => ({
+        pid,
+        v7: data.qty / 7,
+        v14: data.qty / 14,
+        v30: data.qty / 30,
+        lastSoldIso: data.lastSold.toISOString(),
+        rotationDays: Math.floor((now.getTime() - data.lastSold.getTime()) / 86_400_000),
+      }))
+    );
 
     // ── 5. Recalcular días de stock para todos los productos con ventas ───
     await recomputeDaysOfStock();
@@ -371,11 +438,10 @@ async function recomputeDaysOfStock() {
 
 export async function runFullSync() {
   // Secuencial (no Promise.allSettled) a propósito: los 3 jobs comparten el
-  // mismo pooler de Supabase (pgbouncer). En paralelo competían por conexiones
-  // y, sumado a los round-trips por fila, agotaban el presupuesto de la función
-  // (504/timeout). Con escrituras en lote cada job termina en segundos, así que
-  // en serie el total sigue siendo bajo y sin contención. Cada job maneja su
-  // propio estado, por eso un fallo no aborta los siguientes.
+  // mismo pooler de Supabase (pgbouncer). En paralelo competían por conexiones.
+  // Con escrituras en lote (1 sentencia por lote) cada job termina en segundos,
+  // así que en serie el total es bajo. Cada job maneja su propio estado, por eso
+  // un fallo no aborta los siguientes.
   const jobs = [syncProducts, syncStock, syncSalesAndComputeMetrics];
   const results: PromiseSettledResult<{ synced: number }>[] = [];
   for (const job of jobs) {

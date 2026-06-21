@@ -12,7 +12,7 @@
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
-    "sync": "tsx src/jobs/sync.ts",
+    "sync": "tsx --env-file=.env.local scripts/run-sync-once.ts",
     "db:seed": "tsx prisma/seed.ts",
     "seed:demo": "tsx scripts/seed-demo-data.ts",
     "seed:demo:clear": "tsx scripts/seed-demo-data.ts clear"
