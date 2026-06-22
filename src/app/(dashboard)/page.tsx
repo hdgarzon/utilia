@@ -1,21 +1,28 @@
 export const dynamic = "force-dynamic";
 
-import { Suspense } from "react";
+import { Suspense, type ReactNode } from "react";
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { odoo } from "@/lib/odoo";
 import { getWeeklyPattern } from "@/lib/analytics/weekly-pattern";
+import { getMonthComparison } from "@/lib/analytics/month-compare";
+import { getOpenToBuyPlan } from "@/lib/analytics/open-to-buy";
+import { getOpportunities } from "@/lib/analytics/opportunities";
 import { KPICard } from "@/components/dashboard/KPICard";
 import { SalesChart } from "@/components/dashboard/SalesChart";
 import { StockAlert } from "@/components/dashboard/StockAlert";
 import { AIFeed } from "@/components/dashboard/AIFeed";
 import { WeeklyPattern } from "@/components/dashboard/WeeklyPattern";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, cn } from "@/lib/utils";
 import {
   ShoppingCart,
   DollarSign,
   TrendingUp,
   Package,
   AlertTriangle,
+  ShoppingBag,
+  Lightbulb,
+  ChevronRight,
 } from "lucide-react";
 
 async function getDashboardData() {
@@ -89,16 +96,30 @@ async function getDashboardData() {
 }
 
 export default async function DashboardPage() {
-  const data = await getDashboardData().catch(() => ({
-    today: null,
-    salesChange: 0,
-    ticketChange: 0,
-    criticalStock: [] as { id: string; name: string; qty: number; daysOfStock: number; minStock: number }[],
-    aiRecs: [] as { id: string; type: string; priority: string; title: string; content: string; impact?: number; applied: boolean; dismissed: boolean }[],
-    hourlyData: [] as { label: string; amount: number; transactions: number }[],
-    weeklyPattern: [] as Awaited<ReturnType<typeof getWeeklyPattern>>,
-  }));
+  const [data, monthCmp, otb, opps] = await Promise.all([
+    getDashboardData().catch(() => ({
+      today: null,
+      salesChange: 0,
+      ticketChange: 0,
+      criticalStock: [] as { id: string; name: string; qty: number; daysOfStock: number; minStock: number }[],
+      aiRecs: [] as { id: string; type: string; priority: string; title: string; content: string; impact?: number; applied: boolean; dismissed: boolean }[],
+      hourlyData: [] as { label: string; amount: number; transactions: number }[],
+      weeklyPattern: [] as Awaited<ReturnType<typeof getWeeklyPattern>>,
+    })),
+    getMonthComparison().catch(() => null),
+    getOpenToBuyPlan().catch(() => null),
+    getOpportunities().catch(() => null),
+  ]);
   const { today, salesChange, ticketChange, criticalStock, aiRecs, hourlyData, weeklyPattern } = data;
+
+  // Centro de mando: la respuesta a las 4 preguntas clave + enlaces al detalle.
+  const monthProfit = monthCmp?.current.netProfit ?? 0;
+  const monthMargin = monthCmp?.current.netMarginPct ?? 0;
+  const monthTone: "success" | "warning" | "danger" = monthProfit <= 0 ? "danger" : monthMargin < 10 ? "warning" : "success";
+  const otbInvest = otb?.totals.totalAdjustedInvestment ?? 0;
+  const otbCovered = otb ? otb.totals.totalAdjustedInvestment <= otb.reinvestmentFund : true;
+  const deadStock = opps?.deadStockTotal ?? 0;
+  const starCount = opps?.stars.length ?? 0;
 
   return (
     <div className="space-y-6">
@@ -107,6 +128,42 @@ export default async function DashboardPage() {
         <p className="text-xs text-muted-foreground mt-0.5">
           {new Date().toLocaleDateString("es-CO", { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "America/Bogota" })}
         </p>
+      </div>
+
+      {/* Centro de mando: ¿ganamos? · ¿en qué gastar? · oportunidades · alertas */}
+      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+        <CommandCard
+          href="/financiero"
+          label="¿Ganamos? (mes)"
+          value={formatCurrency(monthProfit)}
+          sub={`Margen ${monthMargin.toFixed(1)}%`}
+          icon={<DollarSign className="h-3.5 w-3.5" />}
+          tone={monthTone}
+        />
+        <CommandCard
+          href="/compras"
+          label="¿En qué gastar?"
+          value={formatCurrency(otbInvest)}
+          sub={otbCovered ? "el fondo lo cubre" : "revisar capital"}
+          icon={<ShoppingBag className="h-3.5 w-3.5" />}
+          tone={otbCovered ? "success" : "warning"}
+        />
+        <CommandCard
+          href="/abc"
+          label="Oportunidades"
+          value={formatCurrency(deadStock)}
+          sub={`capital muerto · ${starCount} estrellas`}
+          icon={<Lightbulb className="h-3.5 w-3.5" />}
+          tone={deadStock > 0 ? "warning" : "success"}
+        />
+        <CommandCard
+          href="/inventario"
+          label="Alertas de stock"
+          value={String(criticalStock.length)}
+          sub="productos críticos"
+          icon={<AlertTriangle className="h-3.5 w-3.5" />}
+          tone={criticalStock.length > 0 ? "danger" : "success"}
+        />
       </div>
 
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
@@ -167,5 +224,39 @@ export default async function DashboardPage() {
         <WeeklyPattern data={weeklyPattern} title="Patrón Semanal" windowDays={60} compact />
       </div>
     </div>
+  );
+}
+
+function CommandCard({
+  href,
+  label,
+  value,
+  sub,
+  icon,
+  tone,
+}: {
+  href: string;
+  label: string;
+  value: string;
+  sub: string;
+  icon: ReactNode;
+  tone: "success" | "warning" | "danger";
+}) {
+  const t = tone === "success" ? "text-primary" : tone === "warning" ? "text-warning" : "text-destructive";
+  return (
+    <Link
+      href={href}
+      className="group rounded-xl border border-border bg-card p-4 hover:bg-secondary/30 transition-colors"
+    >
+      <div className="flex items-center justify-between">
+        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span className={t}>{icon}</span>
+          {label}
+        </span>
+        <ChevronRight className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+      </div>
+      <p className={cn("text-xl font-bold mt-1", t)}>{value}</p>
+      <p className="text-xs text-muted-foreground truncate">{sub}</p>
+    </Link>
   );
 }
