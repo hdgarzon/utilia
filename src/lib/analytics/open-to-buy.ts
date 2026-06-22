@@ -1,6 +1,14 @@
 import { prisma } from "@/lib/prisma";
 import { colombiaDaysAgo } from "@/lib/timezone";
 
+// Categorías que NO son inventario físico reponible: servicios (fotocopias,
+// recargas…) y los buckets por defecto de Odoo. No entran al plan de compras OTB
+// porque no se "compran" como stock. Comparación case-insensitive.
+const EXCLUDED_OTB_CATEGORIES = new Set(["servicios", "all", "all / deliveries"]);
+function isExcludedFromOTB(category: string | null): boolean {
+  return category !== null && EXCLUDED_OTB_CATEGORIES.has(category.trim().toLowerCase());
+}
+
 export type CoverageBrake = "urgente" | "normal" | "freno";
 
 export interface OTBCategory {
@@ -96,10 +104,15 @@ export async function getOpenToBuyPlan(coverageDaysTarget = 21): Promise<OTBPlan
     ORDER BY revenue_proxy DESC NULLS LAST
   `;
 
-  // Paso 1: calcular métricas base por categoría
-  const totalRevenueAll = rows.reduce((s, r) => s + (r.revenue_proxy ?? 0), 0);
+  // Excluir categorías que no son inventario físico (servicios, defaults de Odoo)
+  // antes de calcular participaciones, para que los % se repartan solo entre las
+  // categorías que sí se reponen como stock.
+  const stockRows = rows.filter((r) => !isExcludedFromOTB(r.category));
 
-  const categories: OTBCategory[] = rows.map((r) => {
+  // Paso 1: calcular métricas base por categoría
+  const totalRevenueAll = stockRows.reduce((s, r) => s + (r.revenue_proxy ?? 0), 0);
+
+  const categories: OTBCategory[] = stockRows.map((r) => {
     const totalDailySales = r.total_daily_sales ?? 0;
     const projectedMonthlyUnits = totalDailySales * 30;
     const desiredEndingStockUnits = totalDailySales * coverageDaysTarget;
