@@ -1,8 +1,10 @@
 export const dynamic = "force-dynamic";
 
+import type { ReactNode } from "react";
 import { getABCAnalysis, type ABCTier } from "@/lib/analytics/abc";
+import { getOpportunities, type OppProduct } from "@/lib/analytics/opportunities";
 import { formatCurrency, cn } from "@/lib/utils";
-import { Trophy, BarChart3, Layers } from "lucide-react";
+import { Trophy, BarChart3, Layers, Lightbulb, Star, TrendingDown, Archive } from "lucide-react";
 
 const TIER_COLORS: Record<ABCTier, { bg: string; text: string; border: string; label: string; description: string }> = {
   A: {
@@ -29,7 +31,10 @@ const TIER_COLORS: Record<ABCTier, { bg: string; text: string; border: string; l
 };
 
 export default async function ABCPage() {
-  const data = await getABCAnalysis().catch(() => null);
+  const [data, opps] = await Promise.all([
+    getABCAnalysis().catch(() => null),
+    getOpportunities().catch(() => null),
+  ]);
 
   if (!data || data.products.length === 0) {
     return (
@@ -66,6 +71,42 @@ export default async function ABCPage() {
           </p>
         </div>
       </div>
+
+      {/* Oportunidades de acción */}
+      {opps && (opps.stars.length > 0 || opps.lowMargin.length > 0 || opps.deadStock.length > 0) && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Lightbulb className="h-4 w-4 text-primary" />
+            <h2 className="text-sm font-semibold">Oportunidades de acción</h2>
+          </div>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <OppCard
+              title="Impulsar — estrellas"
+              subtitle={`Venden y dejan margen · ${formatCurrency(opps.starsRevenue)}/mes`}
+              tone="primary"
+              icon={<Star className="h-4 w-4" />}
+              items={opps.stars}
+              metric="star"
+            />
+            <OppCard
+              title="Subir precio — margen bajo"
+              subtitle="Venden pero dejan muy poco"
+              tone="warning"
+              icon={<TrendingDown className="h-4 w-4" />}
+              items={opps.lowMargin}
+              metric="margin"
+            />
+            <OppCard
+              title="Liquidar — capital muerto"
+              subtitle={`${formatCurrency(opps.deadStockTotal)} sin rotar`}
+              tone="destructive"
+              icon={<Archive className="h-4 w-4" />}
+              items={opps.deadStock}
+              metric="dead"
+            />
+          </div>
+        </div>
+      )}
 
       {/* Tier summary cards */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
@@ -149,6 +190,58 @@ export default async function ABCPage() {
             </tbody>
           </table>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function OppCard({
+  title,
+  subtitle,
+  tone,
+  icon,
+  items,
+  metric,
+}: {
+  title: string;
+  subtitle: string;
+  tone: "primary" | "warning" | "destructive";
+  icon: ReactNode;
+  items: OppProduct[];
+  metric: "star" | "margin" | "dead";
+}) {
+  const c =
+    tone === "primary"
+      ? { text: "text-primary", bg: "bg-primary/5", border: "border-primary/40" }
+      : tone === "warning"
+        ? { text: "text-warning", bg: "bg-warning/5", border: "border-warning/40" }
+        : { text: "text-destructive", bg: "bg-destructive/5", border: "border-destructive/40" };
+  return (
+    <div className={cn("rounded-xl border p-4 space-y-3", c.border, c.bg)}>
+      <div className="flex items-start gap-2">
+        <span className={cn("mt-0.5", c.text)}>{icon}</span>
+        <div>
+          <p className={cn("text-sm font-semibold", c.text)}>{title}</p>
+          <p className="text-xs text-muted-foreground">{subtitle}</p>
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        {items.length === 0 ? (
+          <p className="text-xs text-muted-foreground py-2">Nada por aquí 👍</p>
+        ) : (
+          items.map((p) => (
+            <div key={p.key} className="flex items-center justify-between gap-2 text-xs border-b border-border/50 last:border-0 pb-1.5 last:pb-0">
+              <span className="truncate flex-1" title={p.name}>{p.name}</span>
+              <span className={cn("shrink-0 font-medium tabular-nums", c.text)}>
+                {metric === "star"
+                  ? `${p.velocity.toFixed(1)}/d · ${p.marginPct.toFixed(0)}%`
+                  : metric === "margin"
+                    ? `${p.marginPct.toFixed(0)}%`
+                    : formatCurrency(p.inventoryValue)}
+              </span>
+            </div>
+          ))
+        )}
       </div>
     </div>
   );

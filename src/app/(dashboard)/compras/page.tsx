@@ -55,6 +55,18 @@ export default async function ComprasPage({ searchParams }: PageProps) {
   const { categories, totals, coverageDaysTarget, reinvestmentFund, reinvestmentFundDays } = plan;
   const capitalGap = totals.totalAdjustedInvestment - reinvestmentFund;
 
+  // Síntesis para el titular "¿en qué gastar?"
+  const urgentNames = categories
+    .filter((c) => c.coverageBrake === "urgente" && c.unitsToBuy > 0)
+    .sort((a, b) => b.adjustedInvestment - a.adjustedInvestment)
+    .slice(0, 3)
+    .map((c) => c.category);
+  const frenoNames = categories
+    .filter((c) => c.coverageBrake === "freno")
+    .sort((a, b) => b.currentCoverageDays - a.currentCoverageDays)
+    .slice(0, 3)
+    .map((c) => c.category);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
@@ -80,6 +92,30 @@ export default async function ComprasPage({ searchParams }: PageProps) {
               {d}d
             </Link>
           ))}
+        </div>
+      </div>
+
+      {/* Titular: ¿en qué gastar este mes? */}
+      <div className="rounded-xl border border-primary/40 bg-primary/5 p-5">
+        <div className="flex items-start gap-3">
+          <ShoppingBag className="h-6 w-6 mt-0.5 shrink-0 text-primary" />
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground uppercase tracking-wider">¿En qué gastar este mes?</p>
+            <p className="text-lg font-bold text-primary">
+              {urgentNames.length > 0
+                ? `Prioriza: ${urgentNames.join(" · ")}`
+                : "Sin compras urgentes — vas bien de stock"}
+            </p>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Inversión sugerida <span className="font-semibold text-foreground">{formatCurrency(totals.totalAdjustedInvestment)}</span>
+              {capitalGap <= 0
+                ? <> · <span className="text-primary font-medium">tu fondo de reposición la cubre</span></>
+                : <> · <span className="text-destructive font-medium">faltan {formatCurrency(capitalGap)}</span> — empieza por las urgentes</>}
+              {frenoNames.length > 0 && (
+                <> · <span className="text-warning font-medium">frena (sobre-stock):</span> {frenoNames.join(", ")}</>
+              )}
+            </p>
+          </div>
         </div>
       </div>
 
