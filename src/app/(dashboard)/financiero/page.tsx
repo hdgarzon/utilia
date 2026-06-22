@@ -5,9 +5,11 @@ import { SalesChart } from "@/components/dashboard/SalesChart";
 import { MonthCompare } from "@/components/dashboard/MonthCompare";
 import { BreakevenCard } from "@/components/dashboard/BreakevenCard";
 import { CashFlowCard } from "@/components/dashboard/CashFlowCard";
+import { WaterfallCard } from "@/components/dashboard/WaterfallCard";
 import { getMonthComparison } from "@/lib/analytics/month-compare";
 import { getBreakevenAnalysis } from "@/lib/analytics/breakeven";
 import { getCashFlowAnalysis } from "@/lib/analytics/cash-flow";
+import { getRevenueWaterfall } from "@/lib/analytics/revenue-waterfall";
 import { formatCurrency } from "@/lib/utils";
 import { TrendingUp, TrendingDown, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { colombiaStartOfMonth, colombiaYearMonthDay } from "@/lib/timezone";
@@ -45,11 +47,12 @@ async function getFinancialData() {
 
 export default async function FinancieroPage() {
   const fallbackTotals = { revenue: 0, cost: 0, profit: 0, expenses: 0 };
-  const [financial, monthCompare, breakeven, cashFlow] = await Promise.all([
+  const [financial, monthCompare, breakeven, cashFlow, waterfall] = await Promise.all([
     getFinancialData().catch(() => ({ totals: fallbackTotals, netMarginPct: 0, chartData: [] as Awaited<ReturnType<typeof getFinancialData>>["chartData"], budgets: [] as Awaited<ReturnType<typeof getFinancialData>>["budgets"] })),
     getMonthComparison().catch(() => null),
     getBreakevenAnalysis().catch(() => null),
     getCashFlowAnalysis().catch(() => null),
+    getRevenueWaterfall().catch(() => null),
   ]);
   const { totals = fallbackTotals, netMarginPct, chartData, budgets } = financial;
 
@@ -112,6 +115,8 @@ export default async function FinancieroPage() {
           </div>
         </div>
       </div>
+
+      {waterfall && <WaterfallCard data={waterfall} />}
 
       {breakeven && <BreakevenCard data={breakeven} />}
 
