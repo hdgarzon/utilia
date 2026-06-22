@@ -8,6 +8,7 @@ import { RecordExpense } from "./RecordExpense";
 import { CloneBudgets } from "./CloneBudgets";
 import { DollarSign, AlertCircle, Calendar } from "lucide-react";
 import { colombiaYearMonthDay } from "@/lib/timezone";
+import { recomputeMonthFixedExpenses } from "@/lib/snapshots";
 
 const MONTHS = [
   "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -57,6 +58,9 @@ export default async function PresupuestosPage({
         })),
         skipDuplicates: true,
       });
+      // Los snapshots del mes pudieron crearse antes de existir el presupuesto
+      // (gasto fijo en 0). Recalcular para que utilidad/margen sean coherentes.
+      await recomputeMonthFixedExpenses(year, month);
       budgets = await prisma.expenseBudget.findMany({
         where: { month, year },
         orderBy: { budgetAmount: "desc" },

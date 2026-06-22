@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { recomputeMonthFixedExpenses } from "@/lib/snapshots";
 
 const upsertSchema = z.object({
   id: z.string().optional(),
@@ -66,6 +67,9 @@ export async function upsertBudget(formData: FormData) {
         },
       });
     }
+    // El gasto fijo cambió → recalcular los snapshots del mes para que la
+    // utilidad/margen del Centro Financiero queden coherentes.
+    await recomputeMonthFixedExpenses(data.year, data.month);
     revalidatePath("/presupuestos");
     revalidatePath("/financiero");
     return { ok: true };
@@ -199,6 +203,7 @@ export async function cloneBudgets(formData: FormData) {
         cloned += 1;
       }
     }
+    await recomputeMonthFixedExpenses(targetYear, targetMonth);
     revalidatePath("/presupuestos");
     revalidatePath("/financiero");
     return { ok: true, cloned, updated, total: source.length };
@@ -210,7 +215,10 @@ export async function cloneBudgets(formData: FormData) {
 export async function deleteBudget(id: string) {
   await requireSession();
   try {
+    // Leer mes/año antes de borrar para recalcular ese mes después.
+    const b = await prisma.expenseBudget.findUnique({ where: { id }, select: { year: true, month: true } });
     await prisma.expenseBudget.delete({ where: { id } });
+    if (b) await recomputeMonthFixedExpenses(b.year, b.month);
     revalidatePath("/presupuestos");
     revalidatePath("/financiero");
     return { ok: true };
