@@ -33,7 +33,7 @@ async function getDashboardData() {
   const today = new Date(Date.UTC(nowCO.getUTCFullYear(), nowCO.getUTCMonth(), nowCO.getUTCDate()));
   const yesterday = new Date(today.getTime() - 86_400_000);
 
-  const [todaySnapshot, yesterdaySnapshot, criticalStock, aiRecs, hourlyRaw, weeklyPattern] = await Promise.all([
+  const [todaySnapshot, yesterdaySnapshot, criticalStock, aiRecs, hourlyRaw, weeklyPattern, todaySold] = await Promise.all([
     prisma.financialSnapshot.findUnique({ where: { date: today } }),
     prisma.financialSnapshot.findUnique({ where: { date: yesterday } }),
     prisma.productInsight.findMany({
@@ -53,6 +53,7 @@ async function getDashboardData() {
     }),
     odoo.getTodayHourlySales().catch(() => [] as Awaited<ReturnType<typeof odoo.getTodayHourlySales>>),
     getWeeklyPattern(60).catch(() => []),
+    odoo.getTodaySoldProducts().catch(() => [] as Awaited<ReturnType<typeof odoo.getTodaySoldProducts>>),
   ]);
 
   const salesChange = todaySnapshot && yesterdaySnapshot && yesterdaySnapshot.totalRevenue > 0
@@ -92,6 +93,7 @@ async function getDashboardData() {
     })),
     hourlyData,
     weeklyPattern,
+    todaySold,
   };
 }
 
@@ -105,12 +107,14 @@ export default async function DashboardPage() {
       aiRecs: [] as { id: string; type: string; priority: string; title: string; content: string; impact?: number; applied: boolean; dismissed: boolean }[],
       hourlyData: [] as { label: string; amount: number; transactions: number }[],
       weeklyPattern: [] as Awaited<ReturnType<typeof getWeeklyPattern>>,
+      todaySold: [] as Awaited<ReturnType<typeof odoo.getTodaySoldProducts>>,
     })),
     getMonthComparison().catch(() => null),
     getOpenToBuyPlan().catch(() => null),
     getOpportunities().catch(() => null),
   ]);
-  const { today, salesChange, ticketChange, criticalStock, aiRecs, hourlyData, weeklyPattern } = data;
+  const { today, salesChange, ticketChange, criticalStock, aiRecs, hourlyData, weeklyPattern, todaySold } = data;
+  const todayUnits = todaySold.reduce((s, p) => s + p.qty, 0);
 
   // Centro de mando: la respuesta a las 4 preguntas clave + enlaces al detalle.
   const monthProfit = monthCmp?.current.netProfit ?? 0;
@@ -215,6 +219,44 @@ export default async function DashboardPage() {
           </Suspense>
         </div>
         <StockAlert items={criticalStock} />
+      </div>
+
+      <div className="rounded-xl border border-border bg-card p-5 space-y-3">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-2">
+            <ShoppingCart className="h-4 w-4 text-primary" />
+            <h3 className="text-sm font-semibold">Productos vendidos hoy</h3>
+          </div>
+          <span className="text-xs text-muted-foreground">
+            {todaySold.length} productos · {todayUnits.toLocaleString("es-CO", { maximumFractionDigits: 1 })} unidades
+          </span>
+        </div>
+        {todaySold.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-6 text-center">Aún no hay ventas registradas hoy</p>
+        ) : (
+          <div className="max-h-96 overflow-y-auto -mx-1 px-1">
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-card">
+                <tr className="text-muted-foreground border-b border-border">
+                  <th className="text-left py-2 font-medium w-6">#</th>
+                  <th className="text-left py-2 font-medium">Producto</th>
+                  <th className="text-right py-2 font-medium whitespace-nowrap">Cantidad</th>
+                  <th className="text-right py-2 font-medium">Venta</th>
+                </tr>
+              </thead>
+              <tbody>
+                {todaySold.map((p, i) => (
+                  <tr key={p.productId} className="border-b border-border/50 last:border-0">
+                    <td className="py-1.5 text-muted-foreground">{i + 1}</td>
+                    <td className="py-1.5 font-medium max-w-0 w-full truncate pr-3" title={p.name}>{p.name}</td>
+                    <td className="py-1.5 text-right whitespace-nowrap">{p.qty.toLocaleString("es-CO", { maximumFractionDigits: 1 })} ud</td>
+                    <td className="py-1.5 text-right font-medium text-primary whitespace-nowrap">{formatCurrency(p.revenue)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">

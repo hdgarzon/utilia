@@ -356,6 +356,42 @@ export const odoo = {
       .map(([hour, data]) => ({ hour, ...data }));
   },
 
+  /** Productos vendidos HOY (UTC-5), agregados por producto. En vivo desde Odoo. */
+  async getTodaySoldProducts(): Promise<Array<{ productId: number; name: string; qty: number; revenue: number }>> {
+    const COLOMBIA_OFFSET_MS = 5 * 60 * 60 * 1000;
+    const nowMs = Date.now();
+    const colombiaNow = new Date(nowMs - COLOMBIA_OFFSET_MS);
+    const colombiaMidnight = new Date(colombiaNow);
+    colombiaMidnight.setUTCHours(0, 0, 0, 0);
+    const start = new Date(colombiaMidnight.getTime() + COLOMBIA_OFFSET_MS);
+    const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+
+    const orders = await searchRead<{ id: number }>(
+      "pos.order",
+      [
+        ["state", "in", ["paid", "done", "invoiced"]],
+        ["date_order", ">=", formatOdooDate(start)],
+        ["date_order", "<", formatOdooDate(end)],
+      ],
+      ["id"],
+      { limit: 1000, order: "id desc" }
+    );
+    if (orders.length === 0) return [];
+
+    const lines = await this.getPosOrderLines(orders.map((o) => o.id));
+    const byProduct = new Map<number, { name: string; qty: number; revenue: number }>();
+    for (const l of lines) {
+      const pid = l.product_id[0];
+      const e = byProduct.get(pid) ?? { name: l.product_id[1], qty: 0, revenue: 0 };
+      e.qty += l.qty;
+      e.revenue += l.price_subtotal;
+      byProduct.set(pid, e);
+    }
+    return Array.from(byProduct.entries())
+      .map(([productId, e]) => ({ productId, ...e }))
+      .sort((a, b) => b.qty - a.qty);
+  },
+
   async getPosOrderLines(orderIds: number[]): Promise<OdooPosOrderLine[]> {
     if (orderIds.length === 0) return [];
     // Chunking en lotes de 500 para evitar payload gigante en la respuesta
