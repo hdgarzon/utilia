@@ -261,7 +261,7 @@ export async function syncSalesAndComputeMetrics() {
 
     if (orders.length === 0) {
       await recordSyncSuccess("pos_order", runStart);
-      await recomputeDaysOfStock();
+      await recomputeVelocities();
       return { synced: 0 };
     }
 
@@ -417,8 +417,11 @@ export async function syncSalesAndComputeMetrics() {
       }))
     );
 
-    // ── 5. Recalcular días de stock para todos los productos con ventas ───
-    await recomputeDaysOfStock();
+    // ── 5. Velocidad de venta real (ventana fija 7/14/30 días) + días de stock.
+    // OJO: la sección 4 calcula velocidad sobre la ventana incremental (mal: el
+    // backfill divide ~50 días entre 7). recomputeVelocities la sobreescribe con
+    // el cálculo correcto sobre ventanas fijas. (La sección 4 quedará para limpiar.)
+    await recomputeVelocities();
 
     await recordSyncSuccess("pos_order", runStart);
     return { synced: orders.length };
@@ -439,6 +442,91 @@ async function recomputeDaysOfStock() {
       ELSE 0
     END
   `;
+}
+
+/**
+ * Recalcula la velocidad de venta REAL por producto sobre ventanas fijas de
+ * 7/14/30 días (no sobre la ventana incremental del sync). Es la fuente de
+ * verdad para OTB, ABC, criticidad de inventario y proyecciones.
+ *
+ * Antes se hacía `qty_ventana / 7`: con el backfill (~50 días) eso inflaba la
+ * velocidad ~7×. Aquí se cuenta lo vendido dentro de cada ventana y se divide
+ * por la ventana correcta. Productos sin ventas en 30 días → velocidad 0.
+ */
+export async function recomputeVelocities() {
+  const nowMs = Date.now();
+  const since = new Date(nowMs - 30 * 86_400_000);
+  const posOrders = await odoo.getPosOrders(since);
+
+  if (posOrders.length === 0) {
+    await prisma.$executeRaw`UPDATE "ProductInsight" SET "avgDailySales7d" = 0, "avgDailySales14d" = 0, "avgDailySales30d" = 0`;
+    await recomputeDaysOfStock();
+    return;
+  }
+
+  // Timestamp (UTC) de cada orden para ubicarla en su ventana.
+  const orderMs = new Map<number, number>();
+  for (const o of posOrders) orderMs.set(o.id, new Date(o.date_order + "Z").getTime());
+
+  const lines = await odoo.getPosOrderLines(posOrders.map((o) => o.id));
+  const c7 = nowMs - 7 * 86_400_000;
+  const c14 = nowMs - 14 * 86_400_000;
+  const c30 = nowMs - 30 * 86_400_000;
+
+  const byProduct = new Map<number, { q7: number; q14: number; q30: number; last: number }>();
+  for (const l of lines) {
+    const t = orderMs.get(l.order_id[0]);
+    if (t === undefined || t < c30) continue;
+    const pid = l.product_id[0];
+    const e = byProduct.get(pid) ?? { q7: 0, q14: 0, q30: 0, last: 0 };
+    e.q30 += l.qty;
+    if (t >= c14) e.q14 += l.qty;
+    if (t >= c7) e.q7 += l.qty;
+    if (t > e.last) e.last = t;
+    byProduct.set(pid, e);
+  }
+
+  // Stubs para productos vendidos que no estén en la BD (archivados, etc.)
+  const ids = Array.from(byProduct.keys());
+  const existing = await prisma.productInsight.findMany({
+    where: { odooProductId: { in: ids } },
+    select: { odooProductId: true },
+  });
+  const existingIds = new Set(existing.map((e) => e.odooProductId));
+  const missing = ids.filter((id) => !existingIds.has(id));
+  if (missing.length > 0) {
+    const stubs = await odoo.getProductsByIds(missing);
+    await bulkUpsertProducts(
+      stubs.map((p) => {
+        const label = p.display_name || p.name;
+        return {
+          id: p.id,
+          templateId: p.product_tmpl_id?.[0] ?? null,
+          templateName: p.product_tmpl_id?.[1] ?? null,
+          internalRef: p.default_code || null,
+          name: p.active ? label : `${label} (archivado)`,
+          category: p.categ_id?.[1] ?? null,
+          stockQty: p.qty_available,
+          cmp: p.standard_price,
+          salePrice: p.list_price,
+        };
+      })
+    );
+  }
+
+  // Resetear velocidades de TODOS y aplicar las reales a los vendidos en 30d.
+  await prisma.$executeRaw`UPDATE "ProductInsight" SET "avgDailySales7d" = 0, "avgDailySales14d" = 0, "avgDailySales30d" = 0`;
+  await bulkUpdateProductSales(
+    Array.from(byProduct.entries()).map(([pid, e]) => ({
+      pid,
+      v7: e.q7 / 7,
+      v14: e.q14 / 14,
+      v30: e.q30 / 30,
+      lastSoldIso: new Date(e.last).toISOString(),
+      rotationDays: Math.floor((nowMs - e.last) / 86_400_000),
+    }))
+  );
+  await recomputeDaysOfStock();
 }
 
 export async function runFullSync() {
