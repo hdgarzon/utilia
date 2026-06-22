@@ -23,6 +23,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         month: "short",
         hour: "2-digit",
         minute: "2-digit",
+        timeZone: "America/Bogota",
       })
     : null;
 
