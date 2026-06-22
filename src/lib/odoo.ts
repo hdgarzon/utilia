@@ -143,6 +143,10 @@ export interface OdooStockQuant {
 export interface OdooProduct {
   id: number;
   name: string;
+  // display_name incluye los atributos de la variante, ej:
+  // "VELA CUMPLEAÑOS NUMERO METALIZADA 0-9 (Número: 5)". `name` solo trae el
+  // nombre del template (igual para todas las variantes), por eso usamos este.
+  display_name: string;
   default_code: string | false;
   categ_id: [number, string];
   product_tmpl_id: [number, string];
@@ -274,7 +278,7 @@ export const odoo = {
     return searchRead<OdooProduct>(
       "product.product",
       domain,
-      ["id", "name", "default_code", "categ_id", "product_tmpl_id", "list_price", "standard_price", "qty_available", "active"],
+      ["id", "name", "display_name", "default_code", "categ_id", "product_tmpl_id", "list_price", "standard_price", "qty_available", "active"],
       { limit: 5000 }
     );
   },
@@ -285,7 +289,7 @@ export const odoo = {
     const result = await searchRead<OdooProduct>(
       "product.product",
       ["|", ["active", "=", true], ["active", "=", false], ["id", "in", ids]],
-      ["id", "name", "default_code", "categ_id", "product_tmpl_id", "list_price", "standard_price", "qty_available", "active"],
+      ["id", "name", "display_name", "default_code", "categ_id", "product_tmpl_id", "list_price", "standard_price", "qty_available", "active"],
       { limit: ids.length }
     );
     // Odoo no garantiza el orden; devolvemos en orden solicitado

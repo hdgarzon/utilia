@@ -8,6 +8,7 @@ import { RecordExpense } from "./RecordExpense";
 import { CloneBudgets } from "./CloneBudgets";
 import { DollarSign, AlertCircle, Calendar } from "lucide-react";
 import { colombiaYearMonthDay } from "@/lib/timezone";
+import { recomputeMonthFixedExpenses } from "@/lib/snapshots";
 
 const MONTHS = [
   "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
@@ -23,11 +24,49 @@ export default async function PresupuestosPage({
   const { month: currentMonth, year: currentYear } = colombiaYearMonthDay();
   const month = Number(params.month) || currentMonth;
   const year = Number(params.year) || currentYear;
+  const isCurrentMonth = month === currentMonth && year === currentYear;
 
-  const budgets = await prisma.expenseBudget.findMany({
+  let budgets = await prisma.expenseBudget.findMany({
     where: { month, year },
     orderBy: { budgetAmount: "desc" },
   });
+
+  // Permanencia: si el MES ACTUAL está vacío, hereda los gastos del mes más
+  // reciente que sí tenga (los gastos fijos se repiten mes a mes). Cada mes nuevo
+  // aparece poblado solo, sin tener que reingresar nada — y se pueden editar o
+  // eliminar individualmente. Idempotente: createMany skipDuplicates + el unique
+  // (category, month, year). Solo el mes actual, para no sembrar meses que se
+  // naveguen a propósito.
+  if (isCurrentMonth && budgets.length === 0) {
+    const prior = await prisma.expenseBudget.findFirst({
+      where: { OR: [{ year: { lt: year } }, { year, month: { lt: month } }] },
+      orderBy: [{ year: "desc" }, { month: "desc" }],
+      select: { month: true, year: true },
+    });
+    if (prior) {
+      const source = await prisma.expenseBudget.findMany({
+        where: { month: prior.month, year: prior.year },
+      });
+      await prisma.expenseBudget.createMany({
+        data: source.map((s) => ({
+          category: s.category,
+          month,
+          year,
+          budgetAmount: s.budgetAmount,
+          alertPct: s.alertPct,
+          actualAmount: 0, // mes nuevo arranca sin ejecutado
+        })),
+        skipDuplicates: true,
+      });
+      // Los snapshots del mes pudieron crearse antes de existir el presupuesto
+      // (gasto fijo en 0). Recalcular para que utilidad/margen sean coherentes.
+      await recomputeMonthFixedExpenses(year, month);
+      budgets = await prisma.expenseBudget.findMany({
+        where: { month, year },
+        orderBy: { budgetAmount: "desc" },
+      });
+    }
+  }
 
   const totalBudget = budgets.reduce((s, b) => s + b.budgetAmount, 0);
   const totalActual = budgets.reduce((s, b) => s + b.actualAmount, 0);

@@ -1,7 +1,6 @@
 export const dynamic = 'force-dynamic';
 
 import { prisma } from "@/lib/prisma";
-import { KPICard } from "@/components/dashboard/KPICard";
 import { SalesChart } from "@/components/dashboard/SalesChart";
 import { MonthCompare } from "@/components/dashboard/MonthCompare";
 import { BreakevenCard } from "@/components/dashboard/BreakevenCard";
@@ -10,7 +9,7 @@ import { getMonthComparison } from "@/lib/analytics/month-compare";
 import { getBreakevenAnalysis } from "@/lib/analytics/breakeven";
 import { getCashFlowAnalysis } from "@/lib/analytics/cash-flow";
 import { formatCurrency } from "@/lib/utils";
-import { DollarSign, TrendingUp, TrendingDown } from "lucide-react";
+import { TrendingUp, TrendingDown, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { colombiaStartOfMonth, colombiaYearMonthDay } from "@/lib/timezone";
 
 async function getFinancialData() {
@@ -30,9 +29,10 @@ async function getFinancialData() {
     { revenue: 0, cost: 0, profit: 0, expenses: 0 }
   );
 
-  const avgMargin = snapshots.length > 0
-    ? snapshots.reduce((sum, s) => sum + s.netMarginPct, 0) / snapshots.length
-    : 0;
+  // Margen agregado del mes (utilidad total / ingresos totales). NO el promedio
+  // de los % diarios: promediar porcentajes sobreponderaría los días flojos y
+  // daba cifras engañosas (ej. −9% cuando en total sí hubo utilidad).
+  const netMarginPct = totals.revenue > 0 ? (totals.profit / totals.revenue) * 100 : 0;
 
   const chartData = snapshots.map((s) => ({
     label: new Date(s.date).toLocaleDateString("es-CO", { day: "2-digit", month: "short" }),
@@ -40,37 +40,84 @@ async function getFinancialData() {
     transactions: s.transactionCount,
   }));
 
-  return { totals, avgMargin, chartData, budgets };
+  return { totals, netMarginPct, chartData, budgets };
 }
 
 export default async function FinancieroPage() {
-  const fallbackTotals = { revenue: 0, cost: 0, profit: 0, expenses: 0, transactions: 0 };
+  const fallbackTotals = { revenue: 0, cost: 0, profit: 0, expenses: 0 };
   const [financial, monthCompare, breakeven, cashFlow] = await Promise.all([
-    getFinancialData().catch(() => ({ totals: fallbackTotals, avgMargin: 0, chartData: [] as Awaited<ReturnType<typeof getFinancialData>>["chartData"], budgets: [] as Awaited<ReturnType<typeof getFinancialData>>["budgets"] })),
+    getFinancialData().catch(() => ({ totals: fallbackTotals, netMarginPct: 0, chartData: [] as Awaited<ReturnType<typeof getFinancialData>>["chartData"], budgets: [] as Awaited<ReturnType<typeof getFinancialData>>["budgets"] })),
     getMonthComparison().catch(() => null),
     getBreakevenAnalysis().catch(() => null),
     getCashFlowAnalysis().catch(() => null),
   ]);
-  const { totals = fallbackTotals, avgMargin, chartData, budgets } = financial;
+  const { totals = fallbackTotals, netMarginPct, chartData, budgets } = financial;
+
+  // Veredicto "¿estamos ganando?" — semáforo honesto:
+  //   pérdida (rojo) · margen < 10% (ámbar: ganas pero ajustado) · ≥ 10% (verde)
+  const profitable = totals.profit > 0;
+  const tier: "good" | "thin" | "loss" = !profitable ? "loss" : netMarginPct < 10 ? "thin" : "good";
+  const tone =
+    tier === "good"
+      ? { text: "text-primary", bg: "bg-primary/5", border: "border-primary/40" }
+      : tier === "thin"
+        ? { text: "text-warning", bg: "bg-warning/5", border: "border-warning/40" }
+        : { text: "text-destructive", bg: "bg-destructive/5", border: "border-destructive/40" };
+  const VerdictIcon = tier === "good" ? CheckCircle2 : tier === "loss" ? TrendingDown : AlertTriangle;
+  const verdictTitle = tier === "good" ? "Sí, vas ganando" : tier === "thin" ? "Vas ganando, pero ajustado" : "Estás en pérdida este mes";
+  const monthDelta = monthCompare?.deltas.netProfit ?? null;
 
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-bold">Centro Financiero</h1>
 
-      {cashFlow && <CashFlowCard data={cashFlow} />}
+      {/* Veredicto: responde "¿estamos ganando?" de un vistazo */}
+      <div className={`rounded-xl border p-5 ${tone.border} ${tone.bg}`}>
+        <div className="flex items-start gap-3">
+          <VerdictIcon className={`h-6 w-6 mt-0.5 shrink-0 ${tone.text}`} />
+          <div className="flex-1 space-y-1">
+            <p className="text-xs text-muted-foreground uppercase tracking-wider">¿Estamos ganando este mes?</p>
+            <p className={`text-lg font-bold ${tone.text}`}>{verdictTitle}</p>
+            <p className={`text-3xl font-bold ${tone.text}`}>{formatCurrency(totals.profit)}</p>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              {profitable ? (
+                <>De cada $100 que vendes, te quedan <span className="font-semibold text-foreground">${netMarginPct.toFixed(0)}</span> de utilidad neta (después de costos y gastos fijos).</>
+              ) : (
+                <>Por cada $100 que vendes, pierdes <span className="font-semibold text-destructive">${Math.abs(netMarginPct).toFixed(0)}</span> después de costos y gastos fijos.</>
+              )}
+              {monthDelta !== null && (
+                <>
+                  {" · "}
+                  <span className={monthDelta >= 0 ? "text-primary font-medium" : "text-destructive font-medium"}>
+                    {monthDelta >= 0 ? "▲" : "▼"} {Math.abs(monthDelta).toFixed(0)}%
+                  </span>{" "}
+                  vs mismo punto del mes pasado
+                </>
+              )}
+            </p>
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-3 mt-4 pt-4 border-t border-border">
+          <div>
+            <p className="text-xs text-muted-foreground">Ingresos (mes)</p>
+            <p className="text-sm font-semibold">{formatCurrency(totals.revenue)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Gastos fijos (mes)</p>
+            <p className="text-sm font-semibold">{formatCurrency(totals.expenses)}</p>
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">Margen neto</p>
+            <p className={`text-sm font-semibold ${tone.text}`}>{netMarginPct.toFixed(1)}%</p>
+          </div>
+        </div>
+      </div>
 
       {breakeven && <BreakevenCard data={breakeven} />}
 
-      {monthCompare && <MonthCompare data={monthCompare} />}
+      {cashFlow && <CashFlowCard data={cashFlow} />}
 
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-        <KPICard title="Ingresos (mes)" value={formatCurrency(totals.revenue)} icon={DollarSign} variant="success" />
-        <KPICard title="Utilidad Neta (mes)" value={formatCurrency(totals.profit)}
-          variant={totals.profit > 0 ? "success" : "danger"} icon={TrendingUp} />
-        <KPICard title="Margen Promedio" value={`${avgMargin.toFixed(1)}%`}
-          variant={avgMargin >= 20 ? "success" : avgMargin >= 10 ? "warning" : "danger"} icon={TrendingUp} />
-        <KPICard title="Gastos Fijos (mes)" value={formatCurrency(totals.expenses)} icon={TrendingDown} />
-      </div>
+      {monthCompare && <MonthCompare data={monthCompare} />}
 
       <SalesChart data={chartData} title="Utilidad Diaria — Mes Actual" />
 

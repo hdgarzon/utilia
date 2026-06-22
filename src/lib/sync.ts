@@ -168,7 +168,9 @@ export async function syncProducts() {
         templateId: p.product_tmpl_id?.[0] ?? null,
         templateName: p.product_tmpl_id?.[1] ?? null,
         internalRef: p.default_code || null,
-        name: p.name,
+        // display_name distingue cada variante (atributos incluidos); el nombre
+        // de la familia queda en templateName para las vistas consolidadas.
+        name: p.display_name || p.name,
         category: p.categ_id?.[1] ?? null,
         stockQty: p.qty_available,
         cmp: p.standard_price,
@@ -385,17 +387,20 @@ export async function syncSalesAndComputeMetrics() {
     if (missingIds.length > 0) {
       const stubs = await odoo.getProductsByIds(missingIds);
       await bulkUpsertProducts(
-        stubs.map((p) => ({
-          id: p.id,
-          templateId: p.product_tmpl_id?.[0] ?? null,
-          templateName: p.product_tmpl_id?.[1] ?? null,
-          internalRef: p.default_code || null,
-          name: p.active ? p.name : `${p.name} (archivado)`,
-          category: p.categ_id?.[1] ?? null,
-          stockQty: p.qty_available,
-          cmp: p.standard_price,
-          salePrice: p.list_price,
-        }))
+        stubs.map((p) => {
+          const label = p.display_name || p.name;
+          return {
+            id: p.id,
+            templateId: p.product_tmpl_id?.[0] ?? null,
+            templateName: p.product_tmpl_id?.[1] ?? null,
+            internalRef: p.default_code || null,
+            name: p.active ? label : `${label} (archivado)`,
+            category: p.categ_id?.[1] ?? null,
+            stockQty: p.qty_available,
+            cmp: p.standard_price,
+            salePrice: p.list_price,
+          };
+        })
       );
     }
 
