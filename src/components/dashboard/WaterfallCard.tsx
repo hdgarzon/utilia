@@ -1,6 +1,7 @@
 import { formatCurrency } from "@/lib/utils";
 import { cn } from "@/lib/utils";
-import { ArrowDown, ArrowRight } from "lucide-react";
+import { ArrowDown } from "lucide-react";
+import { SectionCard } from "./SectionCard";
 import type { RevenueWaterfall } from "@/lib/analytics/revenue-waterfall";
 
 interface Props {
@@ -20,10 +21,10 @@ export function WaterfallCard({ data }: Props) {
   } = data;
 
   const netTone = netProfit > 0 ? "text-primary" : "text-destructive";
-  const netBg = netProfit > 0 ? "bg-primary/10 border-primary/30" : "bg-destructive/10 border-destructive/30";
+  const netBg = netProfit > 0 ? "bg-primary/10" : "bg-destructive/10";
 
   return (
-    <div className="rounded-xl border border-border bg-card p-5 space-y-5">
+    <SectionCard bodyClassName="space-y-5">
       <div>
         <h3 className="text-sm font-semibold">¿A dónde va tu dinero?</h3>
         <p className="text-xs text-muted-foreground mt-0.5">
@@ -32,36 +33,11 @@ export function WaterfallCard({ data }: Props) {
       </div>
 
       {/* Cascada visual: ingresos → COGS → gastos fijos → utilidad */}
-      <div className="grid grid-cols-4 gap-2 text-center text-xs">
-        <Step
-          label="Ingresos"
-          value={formatCurrency(totalRevenue)}
-          pct="100%"
-          tone="text-foreground"
-          bg="bg-secondary"
-        />
-        <Step
-          label="Reposición"
-          value={formatCurrency(totalCogs)}
-          pct={`−$${Math.round(cogsPctOfRevenue)}`}
-          tone="text-warning"
-          bg="bg-warning/10"
-        />
-        <Step
-          label="Gastos fijos"
-          value={formatCurrency(totalFixedExpenses)}
-          pct={`−$${Math.round(fixedPctOfRevenue)}`}
-          tone="text-muted-foreground"
-          bg="bg-secondary"
-        />
-        <Step
-          label="Utilidad neta"
-          value={formatCurrency(Math.abs(netProfit))}
-          pct={`${netProfit >= 0 ? "" : "−"}$${Math.abs(Math.round(netPctOfRevenue))}`}
-          tone={netTone}
-          bg={netBg}
-          bold
-        />
+      <div className="grid grid-cols-2 gap-2 text-center text-xs md:grid-cols-4">
+        <Step label="Ingresos" value={formatCurrency(totalRevenue)} pct="100%" tone="text-foreground" bg="bg-secondary" />
+        <Step label="Reposición" value={formatCurrency(totalCogs)} pct={`−$${Math.round(cogsPctOfRevenue)}`} tone="text-warning" bg="bg-warning/10" />
+        <Step label="Gastos fijos" value={formatCurrency(totalFixedExpenses)} pct={`−$${Math.round(fixedPctOfRevenue)}`} tone="text-muted-foreground" bg="bg-secondary" />
+        <Step label="Utilidad neta" value={formatCurrency(Math.abs(netProfit))} pct={`${netProfit >= 0 ? "" : "−"}$${Math.abs(Math.round(netPctOfRevenue))}`} tone={netTone} bg={netBg} bold />
       </div>
 
       {/* Barra proporcional */}
@@ -72,9 +48,9 @@ export function WaterfallCard({ data }: Props) {
           <div className="bg-muted-foreground/30" style={{ width: `${fixedPctOfRevenue}%` }} title={`Gastos fijos ${fixedPctOfRevenue.toFixed(0)}%`} />
           <div className={cn(netProfit >= 0 ? "bg-primary" : "bg-destructive", "min-w-[2px]")} style={{ width: `${Math.max(Math.abs(netPctOfRevenue), 1)}%` }} title={`Utilidad ${netPctOfRevenue.toFixed(0)}%`} />
         </div>
-        <div className="flex justify-between text-[10px] text-muted-foreground">
+        <div className="flex justify-between text-xs text-muted-foreground">
           <span>Reposición ({cogsPctOfRevenue.toFixed(0)}%)</span>
-          <span>Gastos fijos ({fixedPctOfRevenue.toFixed(0)}%)</span>
+          <span className="hidden sm:inline">Gastos fijos ({fixedPctOfRevenue.toFixed(0)}%)</span>
           <span className={netTone}>Utilidad ({netPctOfRevenue.toFixed(0)}%)</span>
         </div>
       </div>
@@ -91,14 +67,14 @@ export function WaterfallCard({ data }: Props) {
             const cogsPct = totalCogs > 0 ? (c.cogs / totalCogs) * 100 : 0;
             return (
               <div key={c.category} className="space-y-0.5">
-                <div className="flex items-center justify-between text-xs">
+                <div className="flex items-center justify-between gap-2 text-xs">
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="truncate font-medium">{c.category}</span>
-                    <span className="text-muted-foreground shrink-0">{c.revenuePct.toFixed(0)}% ventas</span>
+                    <span className="text-muted-foreground shrink-0 hidden sm:inline">{c.revenuePct.toFixed(0)}% ventas</span>
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
                     <span className="text-muted-foreground">{formatCurrency(c.cogs)}</span>
-                    <span className={cn("font-medium", c.marginPct >= 40 ? "text-primary" : c.marginPct >= 20 ? "text-foreground" : "text-warning")}>
+                    <span className={cn("font-medium w-9 text-right", c.marginPct >= 40 ? "text-primary" : c.marginPct >= 20 ? "text-foreground" : "text-warning")}>
                       {c.marginPct.toFixed(0)}%
                     </span>
                   </div>
@@ -111,7 +87,7 @@ export function WaterfallCard({ data }: Props) {
           })}
         </div>
       </div>
-    </div>
+    </SectionCard>
   );
 }
 
@@ -131,8 +107,8 @@ function Step({
   bold?: boolean;
 }) {
   return (
-    <div className={cn("rounded-lg border p-3 space-y-1", bg, "border-transparent")}>
-      <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{label}</p>
+    <div className={cn("rounded-lg p-3 space-y-1", bg)}>
+      <p className="text-xs text-muted-foreground uppercase tracking-wider truncate">{label}</p>
       <p className={cn("text-sm tabular-nums", tone, bold && "font-bold")}>{value}</p>
       <p className={cn("text-xs tabular-nums", tone)}>{pct}</p>
     </div>

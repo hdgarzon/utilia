@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 import { LucideIcon, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { SectionCard } from "./SectionCard";
 
 interface KPICardProps {
   title: string;
@@ -29,14 +30,14 @@ export function KPICard({ title, value, subvalue, change, icon: Icon, variant = 
     : "text-destructive";
 
   return (
-    <div className="rounded-xl border border-border bg-card p-5 space-y-3">
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{title}</p>
-        <Icon className={cn("h-4 w-4", variantClass)} />
+    <SectionCard bodyClassName="space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground truncate">{title}</p>
+        <Icon className={cn("h-4 w-4 shrink-0", variantClass)} />
       </div>
 
       <div className="space-y-1">
-        <p className={cn("text-2xl font-bold tracking-tight", variantClass)}>{value}</p>
+        <p className={cn("text-xl md:text-2xl font-bold tracking-tight tabular-nums truncate", variantClass)}>{value}</p>
         {subvalue && <p className="text-xs text-muted-foreground">{subvalue}</p>}
       </div>
 
@@ -52,6 +53,6 @@ export function KPICard({ title, value, subvalue, change, icon: Icon, variant = 
         )}
         {action && <div className="ml-auto">{action}</div>}
       </div>
-    </div>
+    </SectionCard>
   );
 }

@@ -221,7 +221,7 @@ export default async function DashboardPage() {
         <StockAlert items={criticalStock} />
       </div>
 
-      <div className="rounded-xl border border-border bg-card p-5 space-y-3">
+      <div className="rounded-xl border border-border bg-card p-4 md:p-5 space-y-3">
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2">
             <ShoppingCart className="h-4 w-4 text-primary" />

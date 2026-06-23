@@ -3,6 +3,7 @@
 import { Zap, ChevronRight, CheckCircle, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { SectionCard } from "./SectionCard";
 
 interface AIRecommendation {
   id: string;
@@ -48,17 +49,16 @@ export function AIFeed({ recommendations }: AIFeedProps) {
   const active = recommendations.filter((r) => !r.applied && !r.dismissed);
 
   return (
-    <div className="rounded-xl border border-border bg-card p-5 space-y-3">
-      <div className="flex items-center gap-2">
-        <Zap className="h-4 w-4 text-primary" />
-        <h3 className="text-sm font-semibold">Recomendaciones IA</h3>
-        {active.length > 0 && (
-          <span className="ml-auto rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-            {active.length}
-          </span>
-        )}
-      </div>
-
+    <SectionCard
+      title="Recomendaciones IA"
+      icon={<Zap />}
+      action={
+        active.length > 0 ? (
+          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">{active.length}</span>
+        ) : undefined
+      }
+      bodyClassName="space-y-3"
+    >
       {active.length === 0 && (
         <p className="text-xs text-muted-foreground">Sin recomendaciones nuevas</p>
       )}
@@ -96,6 +96,6 @@ export function AIFeed({ recommendations }: AIFeedProps) {
           </div>
         ))}
       </div>
-    </div>
+    </SectionCard>
   );
 }

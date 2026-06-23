@@ -24,7 +24,7 @@ interface SalesChartProps {
 
 export function SalesChart({ data, title = "Ventas por Hora" }: SalesChartProps) {
   return (
-    <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+    <div className="rounded-xl border border-border bg-card p-4 md:p-5 space-y-4">
       <h3 className="text-sm font-semibold">{title}</h3>
       <ResponsiveContainer width="100%" height={200}>
         <LineChart data={data} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>

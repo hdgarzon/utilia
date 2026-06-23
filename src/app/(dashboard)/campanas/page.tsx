@@ -89,7 +89,7 @@ export default async function CampanasPage() {
           </Link>
         </div>
       ) : (
-        <div className="rounded-xl border border-border bg-card p-5 space-y-3">
+        <div className="rounded-xl border border-border bg-card p-4 md:p-5 space-y-3">
           <h3 className="text-sm font-semibold">Campañas Recientes</h3>
           <div className="space-y-3">
             {campaigns.map((c) => (

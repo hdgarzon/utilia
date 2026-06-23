@@ -105,7 +105,7 @@ export function CashFlowCard({ data }: Props) {
       </div>
 
       {/* Detalle de ingresos/gastos mensuales */}
-      <div className="rounded-xl border border-border bg-card p-5 space-y-3">
+      <div className="rounded-xl border border-border bg-card p-4 md:p-5 space-y-3">
         <div className="flex items-center gap-2">
           <Wallet className="h-4 w-4 text-primary" />
           <h3 className="text-sm font-semibold">Flujo Operativo Mensual (promedio últimos {daysObserved}d)</h3>
