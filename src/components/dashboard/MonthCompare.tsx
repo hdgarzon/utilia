@@ -83,7 +83,7 @@ export function MonthCompare({ data }: Props) {
       </div>
 
       {/* Resumen del mes cerrado */}
-      <div className="rounded-xl border border-border bg-card p-5 space-y-3">
+      <div className="rounded-xl border border-border bg-card p-4 md:p-5 space-y-3">
         <p className="text-xs text-muted-foreground uppercase tracking-wider">
           Mes anterior cerrado — {previous.label}
         </p>

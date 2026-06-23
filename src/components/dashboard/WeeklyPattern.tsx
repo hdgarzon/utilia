@@ -13,7 +13,7 @@ export function WeeklyPattern({ data, title = "Patrón Semanal", windowDays = 60
   const observed = data.filter((d) => d.daysObserved > 0);
   if (observed.length === 0) {
     return (
-      <div className="rounded-xl border border-border bg-card p-5 space-y-2">
+      <div className="rounded-xl border border-border bg-card p-4 md:p-5 space-y-2">
         <div className="flex items-center gap-2">
           <CalendarDays className="h-4 w-4 text-primary" />
           <h3 className="text-sm font-semibold">{title}</h3>
@@ -33,7 +33,7 @@ export function WeeklyPattern({ data, title = "Patrón Semanal", windowDays = 60
   const weakDays = observed.filter((d) => d.isWeakDay);
 
   return (
-    <div className="rounded-xl border border-border bg-card p-5 space-y-4">
+    <div className="rounded-xl border border-border bg-card p-4 md:p-5 space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <CalendarDays className="h-4 w-4 text-primary" />

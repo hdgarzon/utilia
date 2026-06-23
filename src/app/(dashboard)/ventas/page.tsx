@@ -78,7 +78,7 @@ export default async function VentasPage() {
 
       <WeeklyPattern data={weeklyPattern} title="Patrón Semanal — Identifica días débiles" windowDays={60} />
 
-      <div className="rounded-xl border border-border bg-card p-5 space-y-3">
+      <div className="rounded-xl border border-border bg-card p-4 md:p-5 space-y-3">
         <h3 className="text-sm font-semibold">Top 10 Productos por Velocidad de Venta</h3>
         <div className="space-y-2">
           {topProducts.map((p, i) => (

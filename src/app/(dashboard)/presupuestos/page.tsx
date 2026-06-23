@@ -126,27 +126,29 @@ export default async function PresupuestosPage({
         </div>
       ) : (
         <div className="rounded-xl border border-border bg-card overflow-hidden">
-          <div className="px-5 py-3 border-b border-border flex items-center gap-2">
+          <div className="px-4 md:px-5 py-3 border-b border-border flex items-center gap-2">
             <DollarSign className="h-4 w-4 text-primary" />
             <h3 className="text-sm font-semibold">Detalle por Categoría</h3>
           </div>
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-border text-muted-foreground bg-secondary/30">
-                <th className="px-4 py-2.5 text-left font-medium">Categoría</th>
-                <th className="px-4 py-2.5 text-right font-medium">Presupuesto</th>
-                <th className="px-4 py-2.5 text-right font-medium">Ejecutado</th>
-                <th className="px-4 py-2.5 text-left font-medium">Avance</th>
-                <th className="px-4 py-2.5 text-right font-medium">Alerta a</th>
-                <th className="px-4 py-2.5 text-right font-medium">Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {budgets.map((b) => (
-                <BudgetRow key={b.id} budget={b} />
-              ))}
-            </tbody>
-          </table>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs min-w-[640px]">
+              <thead>
+                <tr className="border-b border-border text-muted-foreground bg-secondary/30">
+                  <th className="px-4 py-2.5 text-left font-medium">Categoría</th>
+                  <th className="px-4 py-2.5 text-right font-medium">Presupuesto</th>
+                  <th className="px-4 py-2.5 text-right font-medium">Ejecutado</th>
+                  <th className="px-4 py-2.5 text-left font-medium">Avance</th>
+                  <th className="px-4 py-2.5 text-right font-medium">Alerta a</th>
+                  <th className="px-4 py-2.5 text-right font-medium">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {budgets.map((b) => (
+                  <BudgetRow key={b.id} budget={b} />
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

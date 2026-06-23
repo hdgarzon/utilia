@@ -127,7 +127,7 @@ export default async function FinancieroPage() {
       <SalesChart data={chartData} title="Utilidad Diaria — Mes Actual" />
 
       {budgets.length > 0 && (
-        <div className="rounded-xl border border-border bg-card p-5 space-y-3">
+        <div className="rounded-xl border border-border bg-card p-4 md:p-5 space-y-3">
           <h3 className="text-sm font-semibold">Presupuesto por Categoría — Mes Actual</h3>
           <div className="space-y-3">
             {budgets.map((b) => {

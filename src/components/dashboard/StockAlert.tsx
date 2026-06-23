@@ -1,5 +1,6 @@
 import { AlertTriangle, XCircle, Package } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SectionCard } from "./SectionCard";
 
 interface StockItem {
   id: string;
@@ -16,26 +17,23 @@ interface StockAlertProps {
 export function StockAlert({ items }: StockAlertProps) {
   if (items.length === 0) {
     return (
-      <div className="rounded-xl border border-border bg-card p-5">
-        <div className="flex items-center gap-2 mb-3">
-          <Package className="h-4 w-4 text-primary" />
-          <h3 className="text-sm font-semibold">Alertas de Stock</h3>
-        </div>
+      <SectionCard title="Alertas de Stock" icon={<Package />}>
         <p className="text-xs text-muted-foreground">Sin alertas críticas</p>
-      </div>
+      </SectionCard>
     );
   }
 
   return (
-    <div className="rounded-xl border border-border bg-card p-5 space-y-3">
-      <div className="flex items-center gap-2">
-        <AlertTriangle className="h-4 w-4 text-warning" />
-        <h3 className="text-sm font-semibold">Alertas de Stock</h3>
-        <span className="ml-auto rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
+    <SectionCard
+      title="Alertas de Stock"
+      icon={<AlertTriangle className="text-warning" />}
+      action={
+        <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
           {items.length}
         </span>
-      </div>
-
+      }
+      bodyClassName="space-y-3"
+    >
       <div className="space-y-2">
         {items.slice(0, 5).map((item) => {
           const isCritical = item.qty === 0 || item.qty <= item.minStock;
@@ -64,10 +62,9 @@ export function StockAlert({ items }: StockAlertProps) {
           );
         })}
       </div>
-
       {items.length > 5 && (
         <p className="text-xs text-muted-foreground">+{items.length - 5} productos más con alerta</p>
       )}
-    </div>
+    </SectionCard>
   );
 }
