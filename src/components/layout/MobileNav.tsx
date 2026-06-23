@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, createContext, useContext } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
@@ -8,22 +8,24 @@ import { cn } from "@/lib/utils";
 import { Menu, X, LogOut } from "lucide-react";
 import { navItems, BrandMark } from "./nav-config";
 
-export function MobileNav() {
+const MobileNavContext = createContext<() => void>(() => {});
+
+/**
+ * Envuelve todo el layout del dashboard. El overlay del menú se renderiza FUERA
+ * del header (que tiene `backdrop-blur`): un elemento con `backdrop-filter` crea
+ * un containing block para descendientes `position: fixed`, lo que atrapaba el
+ * menú en una cajita pegada al header en vez de cubrir el viewport. Al colgar el
+ * overlay como hermano del contenedor principal, `fixed inset-0` se resuelve
+ * contra el viewport y `z-[9999]` lo mantiene por encima de todo.
+ */
+export function MobileNavProvider({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
   return (
     <>
-      <button
-        onClick={() => setOpen(true)}
-        className="md:hidden grid h-9 w-9 place-items-center rounded-lg border border-border text-foreground hover:bg-secondary transition-colors"
-        aria-label="Abrir menú"
-      >
-        <Menu className="h-5 w-5" />
-      </button>
-
       {open && (
-        <div className="fixed inset-0 z-50 md:hidden">
+        <div className="fixed inset-0 z-[9999] md:hidden">
           <div className="absolute inset-0 bg-black/40" onClick={() => setOpen(false)} aria-hidden="true" />
           <aside className="absolute left-0 top-0 h-full w-64 flex flex-col bg-sidebar text-sidebar-foreground shadow-xl">
             <div className="flex items-center justify-between px-5 py-5 border-b border-white/10">
@@ -65,6 +67,24 @@ export function MobileNav() {
           </aside>
         </div>
       )}
+      <MobileNavContext.Provider value={() => setOpen(true)}>
+        {children}
+      </MobileNavContext.Provider>
     </>
+  );
+}
+
+/** Botón hamburguesa que vive dentro del header y abre el menú vía contexto. */
+export function MobileNavTrigger() {
+  const openMenu = useContext(MobileNavContext);
+
+  return (
+    <button
+      onClick={openMenu}
+      className="md:hidden grid h-9 w-9 place-items-center rounded-lg border border-border text-foreground hover:bg-secondary transition-colors"
+      aria-label="Abrir menú"
+    >
+      <Menu className="h-5 w-5" />
+    </button>
   );
 }
