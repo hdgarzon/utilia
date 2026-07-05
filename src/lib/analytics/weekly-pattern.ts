@@ -17,6 +17,10 @@ const DAY_NAMES = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Vierne
 /**
  * Agrega FinancialSnapshot por día de semana sobre una ventana de `days`.
  * Devuelve estadísticos por DOW + ranking.
+ *
+ * avg_margin = SUM(netProfit)/SUM(totalRevenue), NO AVG(netMarginPct): promediar
+ * el % diario sobrepondera los días de bajo revenue (ej. un domingo con $5.000
+ * de venta y -200% de margen distorsiona tanto como un domingo típico de $500.000).
  */
 export async function getWeeklyPattern(days = 60): Promise<WeeklyDayStat[]> {
   const since = new Date();
@@ -39,7 +43,10 @@ export async function getWeeklyPattern(days = 60): Promise<WeeklyDayStat[]> {
       AVG("totalRevenue")                     AS avg_revenue,
       AVG("transactionCount")::float          AS avg_txn,
       AVG("netProfit")                        AS avg_net,
-      AVG("netMarginPct")                     AS avg_margin
+      CASE WHEN SUM("totalRevenue") > 0
+        THEN (SUM("netProfit") / SUM("totalRevenue")) * 100
+        ELSE 0
+      END                                    AS avg_margin
     FROM "FinancialSnapshot"
     WHERE "date" >= ${since}
       AND "transactionCount" > 0

@@ -163,7 +163,11 @@ export async function getOpenToBuyPlan(coverageDaysTarget = 21): Promise<OTBPlan
     totalProjectedProfit: categories.reduce((s, c) => s + c.estimatedProfit, 0),
     avgROI: 0,
   };
-  totals.avgROI = totals.totalInvestment > 0 ? (totals.totalProjectedProfit / totals.totalInvestment) * 100 : 0;
+  // Solo cuenta la utilidad de categorías donde SÍ se invierte este mes — de lo
+  // contrario, categorías frenadas o sin compra (estimatedInvestment=0) inflan
+  // el ROI agregado con utilidad de dinero que no se está arriesgando.
+  const investedProfit = categories.reduce((s, c) => s + (c.estimatedInvestment > 0 ? c.estimatedProfit : 0), 0);
+  totals.avgROI = totals.totalInvestment > 0 ? (investedProfit / totals.totalInvestment) * 100 : 0;
 
   return { coverageDaysTarget, categories, totals, reinvestmentFund, reinvestmentFundDays };
 }

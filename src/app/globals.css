@@ -27,7 +27,7 @@
   --color-border: oklch(0.91 0.006 250);
   --color-input: oklch(0.92 0.006 250);
   --color-ring: oklch(0.55 0.15 142);
-  --color-warning: oklch(0.70 0.16 65);
+  --color-warning: oklch(0.55 0.16 65);
   --color-warning-foreground: oklch(0.25 0.02 255);
   --color-success: oklch(0.55 0.15 142);
   --color-success-foreground: oklch(1 0 0);
