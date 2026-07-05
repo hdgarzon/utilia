@@ -54,15 +54,20 @@ async function getSalesData() {
   const totalTransactions = snapshots.reduce((sum, s) => sum + s.transactionCount, 0);
   const avgTicket = totalTransactions > 0 ? totalRevenue30d / totalTransactions : 0;
 
-  return { dailyData, topProducts, totalRevenue30d, totalTransactions, avgTicket };
+  // Productos activos = templates distintos con ventas recientes (ya
+  // consolidados por variante). Antes se mostraba topProducts.length, que
+  // siempre daba ≤10 por el slice y no reflejaba el catálogo activo real.
+  const activeProductCount = templateMap.size;
+
+  return { dailyData, topProducts, activeProductCount, totalRevenue30d, totalTransactions, avgTicket };
 }
 
 export default async function VentasPage() {
   const [salesData, weeklyPattern] = await Promise.all([
-    getSalesData().catch(() => ({ dailyData: [] as Awaited<ReturnType<typeof getSalesData>>["dailyData"], topProducts: [] as Awaited<ReturnType<typeof getSalesData>>["topProducts"], totalRevenue30d: 0, totalTransactions: 0, avgTicket: 0 })),
+    getSalesData().catch(() => ({ dailyData: [] as Awaited<ReturnType<typeof getSalesData>>["dailyData"], topProducts: [] as Awaited<ReturnType<typeof getSalesData>>["topProducts"], activeProductCount: 0, totalRevenue30d: 0, totalTransactions: 0, avgTicket: 0 })),
     getWeeklyPattern(60).catch(() => []),
   ]);
-  const { dailyData, topProducts, totalRevenue30d, totalTransactions, avgTicket } = salesData;
+  const { dailyData, topProducts, activeProductCount, totalRevenue30d, totalTransactions, avgTicket } = salesData;
 
   return (
     <div className="space-y-6">
@@ -72,7 +77,7 @@ export default async function VentasPage() {
         <KPICard title="Ingresos mes actual" value={formatCurrency(totalRevenue30d)} icon={DollarSign} variant="success" />
         <KPICard title="Transacciones mes" value={String(totalTransactions)} icon={ShoppingCart} />
         <KPICard title="Ticket Promedio" value={formatCurrency(avgTicket)} icon={TrendingUp} />
-        <KPICard title="Productos Activos" value={String(topProducts.length)} subvalue="con ventas recientes" icon={Users} />
+        <KPICard title="Productos Activos" value={String(activeProductCount)} subvalue="con ventas recientes" icon={Users} />
       </div>
 
       <SalesChart data={dailyData} title="Ventas Diarias — Mes Actual" />

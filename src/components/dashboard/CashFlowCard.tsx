@@ -18,6 +18,9 @@ export function CashFlowCard({ data }: Props) {
     burnRateMonthly,
     isBurning,
     runwayMonths,
+    lowConfidence,
+    balanceStale,
+    daysSinceBalanceUpdate,
     projected30dCash,
     projected90dCash,
     daysObserved,
@@ -74,6 +77,20 @@ export function CashFlowCard({ data }: Props) {
             <>
               <p className="text-2xl font-bold text-primary">∞</p>
               <p className="text-xs text-muted-foreground">Operación rentable, sin riesgo</p>
+            </>
+          ) : balanceStale ? (
+            <>
+              <p className="text-sm font-medium text-muted-foreground">Saldo desactualizado</p>
+              <p className="text-xs text-muted-foreground">
+                hace {daysSinceBalanceUpdate}d → actualízalo para calcular el runway
+              </p>
+            </>
+          ) : lowConfidence ? (
+            <>
+              <p className="text-sm font-medium text-muted-foreground">Datos insuficientes</p>
+              <p className="text-xs text-muted-foreground">
+                {daysObserved}d de historia · runway confiable desde {14}d
+              </p>
             </>
           ) : (
             <>
