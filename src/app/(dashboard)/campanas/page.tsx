@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 import { prisma } from "@/lib/prisma";
 import { formatCurrency } from "@/lib/utils";
 import { cn } from "@/lib/utils";
-import { MessageSquare, Plus, Send, Pause } from "lucide-react";
+import { MessageSquare, Plus } from "lucide-react";
 import Link from "next/link";
 
 async function getCampaignsData() {
@@ -105,18 +105,6 @@ export default async function CampanasPage() {
                     {c.totalSent} enviados · {c.totalRead} leídos
                     {c.revenueAttr > 0 && ` · ${formatCurrency(c.revenueAttr)} atribuidos`}
                   </p>
-                </div>
-                <div className="flex items-center gap-2 ml-4">
-                  {c.status === "DRAFT" && (
-                    <button className="rounded p-1.5 text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors">
-                      <Send className="h-3.5 w-3.5" />
-                    </button>
-                  )}
-                  {c.status === "RUNNING" && (
-                    <button className="rounded p-1.5 text-muted-foreground hover:bg-warning/10 hover:text-warning transition-colors">
-                      <Pause className="h-3.5 w-3.5" />
-                    </button>
-                  )}
                 </div>
               </div>
             ))}
