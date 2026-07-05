@@ -8,6 +8,7 @@ import {
   Wallet,
   BarChart3,
   ShoppingBag,
+  PackageX,
   type LucideIcon,
 } from "lucide-react";
 
@@ -20,6 +21,7 @@ export const navItems: { href: string; label: string; icon: LucideIcon }[] = [
   { href: "/financiero", label: "Financiero", icon: DollarSign },
   { href: "/presupuestos", label: "Presupuestos", icon: Wallet },
   { href: "/compras", label: "Compras", icon: ShoppingBag },
+  { href: "/liquidacion", label: "Liquidación", icon: PackageX },
   { href: "/campanas", label: "Campañas", icon: MessageSquare },
 ];
 
