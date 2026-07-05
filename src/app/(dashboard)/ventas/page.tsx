@@ -44,7 +44,8 @@ async function getSalesData() {
     .slice(0, 10);
 
   const dailyData = snapshots.map((s) => ({
-    label: new Date(s.date).toLocaleDateString("es-CO", { day: "2-digit", month: "short" }),
+    // date es DATE puro (medianoche UTC): formatear en UTC o el día se corre hacia atrás en servidores ≠ UTC
+    label: new Date(s.date).toLocaleDateString("es-CO", { day: "2-digit", month: "short", timeZone: "UTC" }),
     amount: s.totalRevenue,
     transactions: s.transactionCount,
   }));

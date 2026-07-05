@@ -81,7 +81,7 @@ export function CashFlowCard({ data }: Props) {
                 {runwayMonths!.toFixed(1)} <span className="text-sm">meses</span>
               </p>
               <p className="text-xs text-muted-foreground">
-                hasta {new Date(Date.now() + runwayMonths! * 30 * 86400000).toLocaleDateString("es-CO", { month: "short", year: "numeric" })}
+                hasta {new Date(Date.now() + runwayMonths! * 30 * 86400000).toLocaleDateString("es-CO", { month: "short", year: "numeric", timeZone: "America/Bogota" })}
               </p>
             </>
           )}

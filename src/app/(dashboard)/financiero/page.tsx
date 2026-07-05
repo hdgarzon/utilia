@@ -37,7 +37,8 @@ async function getFinancialData() {
   const netMarginPct = totals.revenue > 0 ? (totals.profit / totals.revenue) * 100 : 0;
 
   const chartData = snapshots.map((s) => ({
-    label: new Date(s.date).toLocaleDateString("es-CO", { day: "2-digit", month: "short" }),
+    // date es DATE puro (medianoche UTC): formatear en UTC o el día se corre hacia atrás en servidores ≠ UTC
+    label: new Date(s.date).toLocaleDateString("es-CO", { day: "2-digit", month: "short", timeZone: "UTC" }),
     amount: s.netProfit,
     transactions: s.transactionCount,
   }));
