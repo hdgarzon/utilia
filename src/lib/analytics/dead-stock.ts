@@ -29,13 +29,6 @@ export interface DeadStockAnalysis {
   byCategory: DeadStockByCategory[]; // ordenado por investedCapital desc
 }
 
-/**
- * Capital muerto = productos con stock que no se han vendido en 30+ días
- * (rotationDays > 30 AND stockQty > 0). Sin consolidar variantes por
- * template: liquidar es una acción física por SKU concreto (el color/talla
- * exacto que sobra), a diferencia del análisis de revenue en ABC/Oportunidades
- * donde promediar variantes por velocidad sí tiene sentido.
- */
 export async function getDeadStockAnalysis(): Promise<DeadStockAnalysis> {
   const [deadRows, allRows] = await Promise.all([
     prisma.productInsight.findMany({
