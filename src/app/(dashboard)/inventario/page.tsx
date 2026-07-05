@@ -1,10 +1,9 @@
 export const dynamic = 'force-dynamic';
 
 import { prisma } from "@/lib/prisma";
-import { formatCurrency } from "@/lib/utils";
-import { cn } from "@/lib/utils";
 import { isServiceCategory } from "@/lib/service-categories";
-import { Package, AlertTriangle, XCircle, CheckCircle, HelpCircle } from "lucide-react";
+import { InventoryTable, type InventoryRow } from "@/components/dashboard/InventoryTable";
+import { AlertTriangle, XCircle, CheckCircle, HelpCircle } from "lucide-react";
 
 // Umbrales de salud de stock — unificados con el resumen (Home): "crítico" =
 // menos de una semana de cobertura.
@@ -88,52 +87,17 @@ export default async function InventarioPage() {
         </div>
       )}
 
-      <div className="rounded-xl border border-border bg-card p-4 md:p-5 space-y-3">
-        <div className="flex items-center gap-2">
-          <Package className="h-4 w-4 text-primary" />
-          <h3 className="text-sm font-semibold">Productos con Rotación ({all.length})</h3>
-          <span className="ml-auto text-xs text-muted-foreground">ordenado por urgencia de reposición</span>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-border text-muted-foreground">
-                <th className="py-2 text-left font-medium">Producto</th>
-                <th className="py-2 text-right font-medium">Stock</th>
-                <th className="py-2 text-right font-medium">Días Stock</th>
-                <th className="py-2 text-right font-medium">Precio</th>
-                <th className="py-2 text-right font-medium">Estado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {all.map((p) => {
-                const status = stockHealth(p.daysOfStock);
-                return (
-                  <tr key={p.id} className="border-b border-border last:border-0">
-                    <td className="py-2 font-medium max-w-48 truncate">{p.name}</td>
-                    <td className="py-2 text-right">{p.stockQty.toFixed(0)}</td>
-                    <td className={cn("py-2 text-right font-medium",
-                      status === "critical" ? "text-destructive" : status === "warning" ? "text-warning" : "text-primary"
-                    )}>
-                      {p.daysOfStock.toFixed(0)}d
-                    </td>
-                    <td className="py-2 text-right text-muted-foreground">{formatCurrency(p.salePrice)}</td>
-                    <td className="py-2 text-right">
-                      <span className={cn("rounded px-1.5 py-0.5 text-xs font-medium",
-                        status === "critical" ? "bg-destructive/10 text-destructive"
-                        : status === "warning" ? "bg-warning/10 text-warning"
-                        : "bg-primary/10 text-primary"
-                      )}>
-                        {status === "critical" ? "Crítico" : status === "warning" ? "Bajo" : "OK"}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <InventoryTable
+        rows={all.map((p): InventoryRow => ({
+          id: p.id,
+          name: p.name,
+          category: p.category,
+          stockQty: p.stockQty,
+          daysOfStock: p.daysOfStock,
+          salePrice: p.salePrice,
+          status: stockHealth(p.daysOfStock),
+        }))}
+      />
 
       {stale.length > 0 && (
         <div className="rounded-xl border border-border bg-card p-4 md:p-5 space-y-3">
