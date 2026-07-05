@@ -13,6 +13,7 @@ import { SalesChart } from "@/components/dashboard/SalesChart";
 import { StockAlert } from "@/components/dashboard/StockAlert";
 import { AIFeed } from "@/components/dashboard/AIFeed";
 import { WeeklyPattern } from "@/components/dashboard/WeeklyPattern";
+import { isServiceCategory } from "@/lib/service-categories";
 import { formatCurrency, cn } from "@/lib/utils";
 import {
   ShoppingCart,
@@ -38,13 +39,11 @@ async function getDashboardData() {
     prisma.financialSnapshot.findUnique({ where: { date: yesterday } }),
     prisma.productInsight.findMany({
       where: {
-        AND: [
-          { avgDailySales7d: { gt: 0 } },
-          { daysOfStock: { gt: 0, lt: 7 } },
-        ],
+        avgDailySales7d: { gt: 0 },
+        daysOfStock: { lt: 7 },
+        stockQty: { gte: 0 },
       },
       orderBy: { daysOfStock: "asc" },
-      take: 10,
     }),
     prisma.aIRecommendation.findMany({
       where: { applied: false, dismissed: false },
@@ -56,31 +55,48 @@ async function getDashboardData() {
     odoo.getTodaySoldProducts().catch(() => [] as Awaited<ReturnType<typeof odoo.getTodaySoldProducts>>),
   ]);
 
-  const salesChange = todaySnapshot && yesterdaySnapshot && yesterdaySnapshot.totalRevenue > 0
-    ? ((todaySnapshot.totalRevenue - yesterdaySnapshot.totalRevenue) / yesterdaySnapshot.totalRevenue) * 100
-    : 0;
-
-  const ticketChange = todaySnapshot && yesterdaySnapshot && yesterdaySnapshot.avgTicket > 0
-    ? ((todaySnapshot.avgTicket - yesterdaySnapshot.avgTicket) / yesterdaySnapshot.avgTicket) * 100
-    : 0;
-
   const hourlyData = hourlyRaw.map((h) => ({
     label: `${String(h.hour).padStart(2, "0")}:00`,
     amount: h.revenue,
     transactions: h.transactions,
   }));
 
+  // "Hoy" en vivo desde Odoo (misma base —amount_total— que el gráfico horario y
+  // que el snapshot del sync). Evita la contradicción de mostrar $0 en los KPIs
+  // mientras el gráfico y la tabla ya reflejan ventas del día. Si Odoo no
+  // responde (hourly vacío), cae al último snapshot sincronizado.
+  const liveRevenue = hourlyData.reduce((s, h) => s + h.amount, 0);
+  const liveTransactions = hourlyData.reduce((s, h) => s + h.transactions, 0);
+  const isLiveToday = liveTransactions > 0;
+
+  const todayRevenue = isLiveToday ? liveRevenue : (todaySnapshot?.totalRevenue ?? 0);
+  const todayTransactions = isLiveToday ? liveTransactions : (todaySnapshot?.transactionCount ?? 0);
+  const todayTicket = todayTransactions > 0 ? todayRevenue / todayTransactions : 0;
+
+  const salesChange = yesterdaySnapshot && yesterdaySnapshot.totalRevenue > 0
+    ? ((todayRevenue - yesterdaySnapshot.totalRevenue) / yesterdaySnapshot.totalRevenue) * 100
+    : 0;
+  const ticketChange = yesterdaySnapshot && yesterdaySnapshot.avgTicket > 0
+    ? ((todayTicket - yesterdaySnapshot.avgTicket) / yesterdaySnapshot.avgTicket) * 100
+    : 0;
+
   return {
     today: todaySnapshot,
+    todayRevenue,
+    todayTransactions,
+    todayTicket,
+    isLiveToday,
     salesChange,
     ticketChange,
-    criticalStock: criticalStock.map((p) => ({
-      id: p.id,
-      name: p.name,
-      qty: p.stockQty,
-      daysOfStock: p.daysOfStock,
-      minStock: p.minStock,
-    })),
+    criticalStock: criticalStock
+      .filter((p) => !isServiceCategory(p.category))
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        qty: p.stockQty,
+        daysOfStock: p.daysOfStock,
+        minStock: p.minStock,
+      })),
     aiRecs: aiRecs.map((r) => ({
       id: r.id,
       type: r.type,
@@ -101,6 +117,10 @@ export default async function DashboardPage() {
   const [data, monthCmp, otb, opps] = await Promise.all([
     getDashboardData().catch(() => ({
       today: null,
+      todayRevenue: 0,
+      todayTransactions: 0,
+      todayTicket: 0,
+      isLiveToday: false,
       salesChange: 0,
       ticketChange: 0,
       criticalStock: [] as { id: string; name: string; qty: number; daysOfStock: number; minStock: number }[],
@@ -113,8 +133,22 @@ export default async function DashboardPage() {
     getOpenToBuyPlan().catch(() => null),
     getOpportunities().catch(() => null),
   ]);
-  const { today, salesChange, ticketChange, criticalStock, aiRecs, hourlyData, weeklyPattern, todaySold } = data;
+  const { today, todayRevenue, todayTransactions, todayTicket, isLiveToday, salesChange, ticketChange, criticalStock, aiRecs, hourlyData, weeklyPattern, todaySold } = data;
   const todayUnits = todaySold.reduce((s, p) => s + p.qty, 0);
+
+  // Utilidad del día ESTIMADA sobre la venta en vivo: margen bruto reciente del
+  // mes × ingresos de hoy − gasto fijo prorrateado del día. Mantiene coherencia
+  // con los ingresos en vivo (no leer un netProfit de un snapshot viejo/ausente).
+  const grossMarginPct = monthCmp && monthCmp.current.totalRevenue > 0
+    ? monthCmp.current.grossProfit / monthCmp.current.totalRevenue
+    : 0;
+  const fixedPerDay = monthCmp && monthCmp.current.daysWithData > 0
+    ? monthCmp.current.totalFixedExpenses / monthCmp.current.daysWithData
+    : 0;
+  const todayNet = isLiveToday
+    ? todayRevenue * grossMarginPct - fixedPerDay
+    : (today?.netProfit ?? 0);
+  const todayMargin = todayRevenue > 0 ? (todayNet / todayRevenue) * 100 : 0;
 
   // Centro de mando: la respuesta a las 4 preguntas clave + enlaces al detalle.
   const monthProfit = monthCmp?.current.netProfit ?? 0;
@@ -173,31 +207,32 @@ export default async function DashboardPage() {
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         <KPICard
           title="Ventas del Día"
-          value={formatCurrency(today?.totalRevenue ?? 0)}
+          value={formatCurrency(todayRevenue)}
           change={salesChange}
           icon={DollarSign}
-          variant={today?.totalRevenue ? "success" : "default"}
+          variant={todayRevenue > 0 ? "success" : "default"}
         />
         <KPICard
           title="Ticket Promedio"
-          value={formatCurrency(today?.avgTicket ?? 0)}
+          value={formatCurrency(todayTicket)}
           change={ticketChange}
           icon={ShoppingCart}
         />
         <KPICard
           title="Transacciones"
-          value={String(today?.transactionCount ?? 0)}
-          subvalue="ventas procesadas hoy"
+          value={String(todayTransactions)}
+          subvalue={isLiveToday ? "ventas de hoy (en vivo)" : "ventas procesadas hoy"}
           icon={TrendingUp}
         />
         <KPICard
           title="Utilidad Estimada"
-          value={formatCurrency(today?.netProfit ?? 0)}
-          subvalue={`Margen: ${((today?.netMarginPct ?? 0)).toFixed(1)}%`}
+          value={todayRevenue > 0 ? formatCurrency(todayNet) : "—"}
+          subvalue={todayRevenue > 0 ? `Margen: ${todayMargin.toFixed(1)}%` : "sin ventas aún hoy"}
           icon={Package}
           variant={
-            (today?.netMarginPct ?? 0) >= 20 ? "success"
-            : (today?.netMarginPct ?? 0) >= 10 ? "warning"
+            todayRevenue === 0 ? "default"
+            : todayMargin >= 20 ? "success"
+            : todayMargin >= 10 ? "warning"
             : "danger"
           }
         />

@@ -1,7 +1,13 @@
 import { prisma } from "@/lib/prisma";
-import { colombiaStartOfMonth } from "@/lib/timezone";
+import { colombiaDaysAgo } from "@/lib/timezone";
 
 const CASH_BALANCE_KEY = "cash_balance";
+
+// Runway = saldo / burn. Solo tiene sentido con suficiente historia y un saldo
+// razonablemente actual; si no, un burn extrapolado de pocos días o un saldo
+// viejo produce un "0.2 meses" alarmante y falso.
+const MIN_DAYS_FOR_RUNWAY = 14;
+const STALE_BALANCE_DAYS = 21;
 
 export interface CashFlowAnalysis {
   // Saldo
@@ -16,7 +22,11 @@ export interface CashFlowAnalysis {
   // Burn rate & runway
   burnRateMonthly: number;         // si negativo (quemás plata), runway aplica
   isBurning: boolean;              // true cuando burnRateMonthly < 0
-  runwayMonths: number | null;     // null si no quemás plata (sobra al final del mes)
+  runwayMonths: number | null;     // null si no aplica: no quemás, datos insuficientes o saldo viejo
+  runwayReliable: boolean;         // true solo si el runway es confiable (ver guardas)
+  lowConfidence: boolean;          // < MIN_DAYS_FOR_RUNWAY días de historia
+  balanceStale: boolean;           // saldo sin actualizar hace > STALE_BALANCE_DAYS
+  daysSinceBalanceUpdate: number | null;
   // Proyección
   projected30dCash: number;        // saldo + netProfit avg mensual
   projected90dCash: number;
@@ -48,10 +58,13 @@ export async function setCashBalance(amount: number): Promise<void> {
  * runway = saldo_actual / burn_rate_mes
  */
 export async function getCashFlowAnalysis(): Promise<CashFlowAnalysis> {
+  // Ventana MÓVIL real de 30 días (no MTD): el burn/runway es una TASA y debe
+  // medirse sobre un horizonte estable. Con MTD, a inicio de mes se extrapolaba
+  // el promedio de 2-3 días × 30 y el runway salía catastróficamente bajo.
   const [cashRow, recent30] = await Promise.all([
     getCashBalance(),
     prisma.financialSnapshot.findMany({
-      where: { date: { gte: colombiaStartOfMonth() } },
+      where: { date: { gte: colombiaDaysAgo(30) } },
       select: { totalRevenue: true, totalCost: true, grossProfit: true, fixedExpenses: true, netProfit: true },
     }),
   ]);
@@ -74,7 +87,15 @@ export async function getCashFlowAnalysis(): Promise<CashFlowAnalysis> {
   // Si grossProfit cubre los fixedExpenses, no hay burn.
   const burnRateMonthly = avgMonthlyFixedExpenses - avgMonthlyGrossProfit;
   const isBurning = burnRateMonthly > 0;
-  const runwayMonths = isBurning && cashRow.value > 0 ? cashRow.value / burnRateMonthly : null;
+
+  // Guardas de confiabilidad del runway.
+  const daysSinceBalanceUpdate = cashRow.updatedAt
+    ? Math.floor((Date.now() - cashRow.updatedAt.getTime()) / 86_400_000)
+    : null;
+  const balanceStale = daysSinceBalanceUpdate !== null && daysSinceBalanceUpdate > STALE_BALANCE_DAYS;
+  const lowConfidence = days < MIN_DAYS_FOR_RUNWAY;
+  const runwayReliable = isBurning && cashRow.value > 0 && !lowConfidence && !balanceStale;
+  const runwayMonths = runwayReliable ? cashRow.value / burnRateMonthly : null;
 
   // Proyección
   const projected30dCash = cashRow.value + avgMonthlyNetProfit;
@@ -91,6 +112,10 @@ export async function getCashFlowAnalysis(): Promise<CashFlowAnalysis> {
     burnRateMonthly,
     isBurning,
     runwayMonths,
+    runwayReliable,
+    lowConfidence,
+    balanceStale,
+    daysSinceBalanceUpdate,
     projected30dCash,
     projected90dCash,
     daysObserved: days,
