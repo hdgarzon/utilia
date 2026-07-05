@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { formatCurrency, cn } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils";
 import { buildCsv, downloadCsv } from "@/lib/csv";
 import { FilterChip, SortableHeader } from "./table-controls";
 import type { DeadStockProduct } from "@/lib/analytics/dead-stock";

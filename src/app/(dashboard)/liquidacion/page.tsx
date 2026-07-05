@@ -9,7 +9,7 @@ import { PackageX, AlertTriangle } from "lucide-react";
 export default async function LiquidacionPage() {
   const analysis = await getDeadStockAnalysis().catch(() => null);
 
-  if (!analysis || analysis.products.length === 0) {
+  if (!analysis) {
     return (
       <div className="space-y-4">
         <h1 className="text-xl font-bold">Plan de Liquidación</h1>
@@ -21,12 +21,44 @@ export default async function LiquidacionPage() {
     );
   }
 
+  // Se fija ANTES del chequeo de "sin capital muerto": si hay una meta
+  // fijada, llegar a $0 de capital muerto es justo el momento en que se
+  // cumplió — hay que mostrarlo, no ocultar la meta detrás del empty state.
   const goal = await getLiquidationGoal(analysis.totalInvestedCapital).catch(() => ({
     goalAmount: 0,
     baseline: 0,
     updatedAt: null,
     currentDeadStock: analysis.totalInvestedCapital,
   }));
+
+  if (analysis.products.length === 0) {
+    if (goal.goalAmount > 0) {
+      return (
+        <div className="space-y-6">
+          <h1 className="text-xl font-bold">Plan de Liquidación de Capital Muerto</h1>
+          <div className="rounded-xl border border-primary/40 bg-primary/5 p-8 text-center space-y-2">
+            <PackageX className="h-8 w-8 text-primary mx-auto" />
+            <p className="text-sm font-semibold text-primary">¡Meta cumplida! Ya no tienes capital muerto.</p>
+          </div>
+          <LiquidationGoalEditor
+            goalAmount={goal.goalAmount}
+            baseline={goal.baseline}
+            currentDeadStock={goal.currentDeadStock}
+            updatedAt={goal.updatedAt}
+          />
+        </div>
+      );
+    }
+    return (
+      <div className="space-y-4">
+        <h1 className="text-xl font-bold">Plan de Liquidación</h1>
+        <div className="rounded-xl border border-border bg-card p-8 text-center">
+          <PackageX className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+          <p className="text-sm text-muted-foreground">Sin capital muerto detectado — todo tu inventario rota bien 👍</p>
+        </div>
+      </div>
+    );
+  }
 
   const severity = analysis.deadStockPctOfInventory > 50 ? "destructive" : analysis.deadStockPctOfInventory > 25 ? "warning" : "primary";
   const tone = {
