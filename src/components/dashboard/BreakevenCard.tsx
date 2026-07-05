@@ -14,6 +14,7 @@ export function BreakevenCard({ data }: Props) {
     breakevenTransactions,
     todayRevenue,
     todayTransactions,
+    isLiveToday,
     todayProgress,
     todayDelta,
     daysAboveBreakeven30d,
@@ -56,6 +57,7 @@ export function BreakevenCard({ data }: Props) {
             {(todayProgress * 100).toFixed(0)}%
           </div>
         </div>
+        {isLiveToday && <p className="text-xs text-muted-foreground">datos en vivo · aún puede subir</p>}
         <div className="relative h-3 w-full rounded-full bg-secondary/40 overflow-hidden">
           <div
             className={cn("h-full transition-all", colors.bar)}
