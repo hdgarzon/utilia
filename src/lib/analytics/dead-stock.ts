@@ -105,10 +105,11 @@ export interface LiquidationGoal {
  * local de conexiones y hace fallar otras queries en silencio).
  */
 export async function getLiquidationGoal(currentDeadStock: number): Promise<LiquidationGoal> {
-  const [goalRow, baselineRow] = await Promise.all([
-    prisma.setting.findUnique({ where: { key: GOAL_AMOUNT_KEY } }),
-    prisma.setting.findUnique({ where: { key: GOAL_BASELINE_KEY } }),
-  ]);
+  const rows = await prisma.setting.findMany({
+    where: { key: { in: [GOAL_AMOUNT_KEY, GOAL_BASELINE_KEY] } },
+  });
+  const goalRow = rows.find((r) => r.key === GOAL_AMOUNT_KEY);
+  const baselineRow = rows.find((r) => r.key === GOAL_BASELINE_KEY);
   const goalAmount = goalRow ? Number(goalRow.value) : 0;
   const baseline = baselineRow ? Number(baselineRow.value) : 0;
   return {
