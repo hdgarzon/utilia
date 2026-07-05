@@ -13,9 +13,10 @@ interface MetricCardProps {
   delta: number;
   inverse?: boolean; // si true, baja es buena (ej: costos)
   isPercent?: boolean; // si el delta es en pp en vez de %
+  deltaOverride?: string; // reemplaza el texto del delta (ej: pesos en vez de % cuando hay pérdida de por medio)
 }
 
-function MetricCompareCard({ label, currentValue, previousValue, delta, inverse, isPercent }: MetricCardProps) {
+function MetricCompareCard({ label, currentValue, previousValue, delta, inverse, isPercent, deltaOverride }: MetricCardProps) {
   const isNeutral = Math.abs(delta) < 0.5;
   const isPositive = isNeutral ? false : inverse ? delta < 0 : delta > 0;
   const Icon = isNeutral ? Minus : isPositive ? TrendingUp : TrendingDown;
@@ -33,7 +34,7 @@ function MetricCompareCard({ label, currentValue, previousValue, delta, inverse,
         <p className="text-xs text-muted-foreground">vs {previousValue}</p>
         <div className={cn("flex items-center gap-1 text-xs font-medium", tone)}>
           <Icon className="h-3 w-3" />
-          {isPercent ? `${delta >= 0 ? "+" : ""}${delta.toFixed(1)}pp` : formatPercent(delta)}
+          {deltaOverride ?? (isPercent ? `${delta >= 0 ? "+" : ""}${delta.toFixed(1)}pp` : formatPercent(delta))}
         </div>
       </div>
     </div>
@@ -42,6 +43,15 @@ function MetricCompareCard({ label, currentValue, previousValue, delta, inverse,
 
 export function MonthCompare({ data }: Props) {
   const { currentMTD, previousMTD, current, previous, deltas } = data;
+
+  // Un % sobre una base en pérdida es difícil de leer de un vistazo (ej. "▲147%"
+  // no dice si mejoraste o solo perdiste menos). Con pérdida de por medio,
+  // mostramos el delta en pesos — inequívoco.
+  const profitInLoss = currentMTD.netProfit < 0 || previousMTD.netProfit < 0;
+  const netProfitDeltaPesos = currentMTD.netProfit - previousMTD.netProfit;
+  const netProfitDeltaOverride = profitInLoss
+    ? `${netProfitDeltaPesos >= 0 ? "+" : "-"}${formatCurrency(Math.abs(netProfitDeltaPesos))}`
+    : undefined;
 
   return (
     <div className="space-y-4">
@@ -79,6 +89,7 @@ export function MonthCompare({ data }: Props) {
           currentValue={formatCurrency(currentMTD.netProfit)}
           previousValue={formatCurrency(previousMTD.netProfit)}
           delta={deltas.netProfit}
+          deltaOverride={netProfitDeltaOverride}
         />
       </div>
 
