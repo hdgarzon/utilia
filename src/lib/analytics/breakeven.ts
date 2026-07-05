@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { odoo } from "@/lib/odoo";
 import { colombiaToday, colombiaStartOfMonth, colombiaYearMonthDay } from "@/lib/timezone";
 
 export interface BreakevenAnalysis {
@@ -12,6 +13,7 @@ export interface BreakevenAnalysis {
   // Estado de hoy
   todayRevenue: number;
   todayTransactions: number;
+  isLiveToday: boolean;              // true si viene de Odoo en vivo, no de un snapshot desactualizado
   todayProgress: number;             // 0–1 (porcentaje cubierto del breakeven)
   todayDelta: number;                // diferencia COP vs breakeven (negativo = aún falta)
   // Contexto histórico
@@ -33,13 +35,14 @@ export async function getBreakevenAnalysis(): Promise<BreakevenAnalysis> {
   const daysInMonth = new Date(year, month, 0).getDate();
   const today = colombiaToday();
 
-  const [budgets, todaySnap, recent30] = await Promise.all([
+  const [budgets, todaySnap, recent30, hourlyRaw] = await Promise.all([
     prisma.expenseBudget.findMany({ where: { year, month } }),
     prisma.financialSnapshot.findUnique({ where: { date: today } }),
     prisma.financialSnapshot.findMany({
       where: { date: { gte: colombiaStartOfMonth() } },
       select: { totalRevenue: true, totalCost: true, transactionCount: true, avgTicket: true },
     }),
+    odoo.getTodayHourlySales().catch(() => [] as Awaited<ReturnType<typeof odoo.getTodayHourlySales>>),
   ]);
 
   const fixedExpensesMonthly = budgets.reduce((s, b) => s + b.budgetAmount, 0);
@@ -60,9 +63,15 @@ export async function getBreakevenAnalysis(): Promise<BreakevenAnalysis> {
   const breakevenTransactions =
     avgTicketRecent > 0 ? Math.ceil(breakevenRevenue / avgTicketRecent) : 0;
 
-  // Estado de hoy
-  const todayRevenue = todaySnap?.totalRevenue ?? 0;
-  const todayTransactions = todaySnap?.transactionCount ?? 0;
+  // Estado de hoy: en vivo desde Odoo (misma base que el gráfico horario y el
+  // sync) en vez del snapshot, que solo se actualiza al sincronizar y podía
+  // mostrar "te faltan $X" con la tienda ya vendiendo.
+  const liveRevenue = hourlyRaw.reduce((s, h) => s + h.revenue, 0);
+  const liveTransactions = hourlyRaw.reduce((s, h) => s + h.transactions, 0);
+  const isLiveToday = liveTransactions > 0;
+
+  const todayRevenue = isLiveToday ? liveRevenue : (todaySnap?.totalRevenue ?? 0);
+  const todayTransactions = isLiveToday ? liveTransactions : (todaySnap?.transactionCount ?? 0);
   const todayProgress = breakevenRevenue > 0 ? todayRevenue / breakevenRevenue : 0;
   const todayDelta = todayRevenue - breakevenRevenue;
 
@@ -77,6 +86,7 @@ export async function getBreakevenAnalysis(): Promise<BreakevenAnalysis> {
     breakevenTransactions,
     todayRevenue,
     todayTransactions,
+    isLiveToday,
     todayProgress,
     todayDelta,
     daysAboveBreakeven30d,

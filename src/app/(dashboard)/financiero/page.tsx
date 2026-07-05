@@ -10,6 +10,7 @@ import { getMonthComparison } from "@/lib/analytics/month-compare";
 import { getBreakevenAnalysis } from "@/lib/analytics/breakeven";
 import { getCashFlowAnalysis } from "@/lib/analytics/cash-flow";
 import { getRevenueWaterfall } from "@/lib/analytics/revenue-waterfall";
+import { computeMonthEndProjection, type MonthEndProjection } from "@/lib/analytics/month-projection";
 import { formatCurrency } from "@/lib/utils";
 import { TrendingUp, TrendingDown, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { colombiaStartOfMonth, colombiaYearMonthDay } from "@/lib/timezone";
@@ -43,24 +44,45 @@ async function getFinancialData() {
     transactions: s.transactionCount,
   }));
 
-  return { totals, netMarginPct, chartData, budgets };
+  // Proyección de cierre de mes reutilizando snapshots/budgets ya cargados
+  // arriba — sin disparar otra consulta concurrente (el pool de conexiones es
+  // compartido con breakeven/cashFlow/monthCompare en el mismo Promise.all).
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const fixedExpensesMonthly = budgets.reduce((s, b) => s + b.budgetAmount, 0);
+  const projection = computeMonthEndProjection({
+    daysElapsed: snapshots.length,
+    daysInMonth,
+    mtdRevenue: totals.revenue,
+    mtdCost: totals.cost,
+    fixedExpensesMonthly,
+  });
+
+  return { totals, netMarginPct, chartData, budgets, projection };
 }
 
 export default async function FinancieroPage() {
   const fallbackTotals = { revenue: 0, cost: 0, profit: 0, expenses: 0 };
   const [financial, monthCompare, breakeven, cashFlow, waterfall] = await Promise.all([
-    getFinancialData().catch(() => ({ totals: fallbackTotals, netMarginPct: 0, chartData: [] as Awaited<ReturnType<typeof getFinancialData>>["chartData"], budgets: [] as Awaited<ReturnType<typeof getFinancialData>>["budgets"] })),
+    getFinancialData().catch(() => ({ totals: fallbackTotals, netMarginPct: 0, chartData: [] as Awaited<ReturnType<typeof getFinancialData>>["chartData"], budgets: [] as Awaited<ReturnType<typeof getFinancialData>>["budgets"], projection: null as MonthEndProjection | null })),
     getMonthComparison().catch(() => null),
     getBreakevenAnalysis().catch(() => null),
     getCashFlowAnalysis().catch(() => null),
     getRevenueWaterfall().catch(() => null),
   ]);
-  const { totals = fallbackTotals, netMarginPct, chartData, budgets } = financial;
+  const { totals = fallbackTotals, netMarginPct, chartData, budgets, projection } = financial;
+
+  // Los primeros días del mes, la utilidad MTD cruda casi siempre se ve en
+  // pérdida (pocos días de ingresos contra gastos fijos ya prorrateados) sin
+  // que nada esté mal. Con pocos días de historia, el veredicto responde
+  // "a este ritmo, ¿cómo cerrarías?" en vez de juzgar sobre datos parciales.
+  const useProjection = projection !== null && projection.lowConfidence && projection.daysElapsed > 0;
+  const headlineProfit = useProjection ? projection!.projectedNetProfit : totals.profit;
+  const headlineMarginPct = useProjection ? projection!.projectedMarginPct : netMarginPct;
 
   // Veredicto "¿estamos ganando?" — semáforo honesto:
   //   pérdida (rojo) · margen < 10% (ámbar: ganas pero ajustado) · ≥ 10% (verde)
-  const profitable = totals.profit > 0;
-  const tier: "good" | "thin" | "loss" = !profitable ? "loss" : netMarginPct < 10 ? "thin" : "good";
+  const profitable = headlineProfit > 0;
+  const tier: "good" | "thin" | "loss" = !profitable ? "loss" : headlineMarginPct < 10 ? "thin" : "good";
   const tone =
     tier === "good"
       ? { text: "text-primary", bg: "bg-primary/5", border: "border-primary/40" }
@@ -80,16 +102,25 @@ export default async function FinancieroPage() {
         <div className="flex items-start gap-3">
           <VerdictIcon className={`h-6 w-6 mt-0.5 shrink-0 ${tone.text}`} />
           <div className="flex-1 space-y-1">
-            <p className="text-xs text-muted-foreground uppercase tracking-wider">¿Estamos ganando este mes?</p>
-            <p className={`text-lg font-bold ${tone.text}`}>{verdictTitle}</p>
-            <p className={`text-3xl font-bold ${tone.text}`}>{formatCurrency(totals.profit)}</p>
+            <p className="text-xs text-muted-foreground uppercase tracking-wider">
+              {useProjection ? "¿Cómo cerrarías el mes a este ritmo?" : "¿Estamos ganando este mes?"}
+            </p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className={`text-lg font-bold ${tone.text}`}>{verdictTitle}</p>
+              {useProjection && (
+                <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                  proyectado
+                </span>
+              )}
+            </div>
+            <p className={`text-3xl font-bold ${tone.text}`}>{formatCurrency(headlineProfit)}</p>
             <p className="text-xs text-muted-foreground leading-relaxed">
               {profitable ? (
-                <>De cada $100 que vendes, te quedan <span className="font-semibold text-foreground">${netMarginPct.toFixed(0)}</span> de utilidad neta (después de costos y gastos fijos).</>
+                <>De cada $100 que vendes, {useProjection ? "quedarían" : "te quedan"} <span className="font-semibold text-foreground">${headlineMarginPct.toFixed(0)}</span> de utilidad neta (después de costos y gastos fijos).</>
               ) : (
-                <>Por cada $100 que vendes, pierdes <span className="font-semibold text-destructive">${Math.abs(netMarginPct).toFixed(0)}</span> después de costos y gastos fijos.</>
+                <>Por cada $100 que vendes, {useProjection ? "proyectas perder" : "pierdes"} <span className="font-semibold text-destructive">${Math.abs(headlineMarginPct).toFixed(0)}</span> después de costos y gastos fijos.</>
               )}
-              {monthDelta !== null && (
+              {!useProjection && monthDelta !== null && (
                 <>
                   {" · "}
                   <span className={monthDelta >= 0 ? "text-primary font-medium" : "text-destructive font-medium"}>
@@ -99,19 +130,25 @@ export default async function FinancieroPage() {
                 </>
               )}
             </p>
+            {useProjection && (
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Proyección con tu ritmo de estos {projection!.daysElapsed} día{projection!.daysElapsed !== 1 ? "s" : ""} · llevas{" "}
+                <span className="font-medium text-foreground">{formatCurrency(totals.revenue)}</span> reales · faltan {projection!.daysRemaining} días para cerrar el mes.
+              </p>
+            )}
           </div>
         </div>
         <div className="grid grid-cols-3 gap-3 mt-4 pt-4 border-t border-border">
           <div>
-            <p className="text-xs text-muted-foreground">Ingresos (mes)</p>
+            <p className="text-xs text-muted-foreground">{useProjection ? "Ingresos (MTD real)" : "Ingresos (mes)"}</p>
             <p className="text-sm font-semibold">{formatCurrency(totals.revenue)}</p>
           </div>
           <div>
             <p className="text-xs text-muted-foreground">Gastos fijos (mes)</p>
-            <p className="text-sm font-semibold">{formatCurrency(totals.expenses)}</p>
+            <p className="text-sm font-semibold">{formatCurrency(useProjection ? projection!.fixedExpensesMonthly : totals.expenses)}</p>
           </div>
           <div>
-            <p className="text-xs text-muted-foreground">Margen neto</p>
+            <p className="text-xs text-muted-foreground">{useProjection ? "Margen (MTD real)" : "Margen neto"}</p>
             <p className={`text-sm font-semibold ${tone.text}`}>{netMarginPct.toFixed(1)}%</p>
           </div>
         </div>
