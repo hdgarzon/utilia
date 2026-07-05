@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import type { ReactNode } from "react";
 import { getABCAnalysis, type ABCTier } from "@/lib/analytics/abc";
 import { getOpportunities, type OppProduct } from "@/lib/analytics/opportunities";
+import { ABCTable } from "@/components/dashboard/ABCTable";
 import { formatCurrency, cn } from "@/lib/utils";
 import { Trophy, BarChart3, Layers, Lightbulb, Star, TrendingDown, Archive } from "lucide-react";
 
@@ -140,57 +141,7 @@ export default async function ABCPage() {
         })}
       </div>
 
-      {/* Top 30 productos */}
-      <div className="rounded-xl border border-border bg-card overflow-hidden">
-        <div className="px-5 py-3 border-b border-border flex items-center gap-2">
-          <BarChart3 className="h-4 w-4 text-primary" />
-          <h3 className="text-sm font-semibold">Top 30 Productos por Revenue Proyectado</h3>
-          <span className="ml-auto text-xs text-muted-foreground">
-            Total mensual proyectado: {formatCurrency(totalMonthlyRevenue)} · utilidad {formatCurrency(totalMonthlyProfit)}
-          </span>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-border text-muted-foreground bg-secondary/30">
-                <th className="px-3 py-2 text-left font-medium w-10">#</th>
-                <th className="px-3 py-2 text-center font-medium w-10">Tier</th>
-                <th className="px-3 py-2 text-left font-medium">Producto</th>
-                <th className="px-3 py-2 text-left font-medium">Categoría</th>
-                <th className="px-3 py-2 text-right font-medium">Vel/día</th>
-                <th className="px-3 py-2 text-right font-medium">Stock</th>
-                <th className="px-3 py-2 text-right font-medium">Margen</th>
-                <th className="px-3 py-2 text-right font-medium">Rev mes</th>
-                <th className="px-3 py-2 text-right font-medium">Acum %</th>
-              </tr>
-            </thead>
-            <tbody>
-              {products.slice(0, 30).map((p) => {
-                const c = TIER_COLORS[p.tier];
-                return (
-                  <tr key={p.id} className="border-b border-border last:border-0 hover:bg-secondary/20">
-                    <td className="px-3 py-2 text-muted-foreground">{p.rank}</td>
-                    <td className="px-3 py-2 text-center">
-                      <span className={cn("inline-flex items-center justify-center w-6 h-6 rounded-full font-bold", c.bg, c.text)}>
-                        {p.tier}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 font-medium max-w-64 truncate">{p.name}</td>
-                    <td className="px-3 py-2 text-muted-foreground">{p.category ?? "—"}</td>
-                    <td className="px-3 py-2 text-right">{p.avgDailySales7d.toFixed(2)}</td>
-                    <td className="px-3 py-2 text-right">{Math.round(p.stockQty)}</td>
-                    <td className={cn("px-3 py-2 text-right font-medium", p.marginPct < 0 ? "text-destructive" : p.marginPct < 20 ? "text-warning" : "text-foreground")}>
-                      {p.marginPct.toFixed(0)}%
-                    </td>
-                    <td className="px-3 py-2 text-right font-medium">{formatCurrency(p.monthlyRevenueProxy)}</td>
-                    <td className="px-3 py-2 text-right text-muted-foreground">{p.cumulativeRevenuePct.toFixed(1)}%</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <ABCTable products={products} totalMonthlyRevenue={totalMonthlyRevenue} totalMonthlyProfit={totalMonthlyProfit} />
     </div>
   );
 }
