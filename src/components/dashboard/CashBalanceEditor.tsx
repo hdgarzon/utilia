@@ -36,6 +36,7 @@ export function CashBalanceEditor({ currentBalance, updatedAt }: Props) {
         month: "short",
         hour: "2-digit",
         minute: "2-digit",
+        timeZone: "America/Bogota",
       })
     : null;
 
