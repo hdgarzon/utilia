@@ -1,34 +1,10 @@
 export const dynamic = "force-dynamic";
 
 import Link from "next/link";
-import { getOpenToBuyPlan, type CoverageBrake } from "@/lib/analytics/open-to-buy";
+import { getOpenToBuyPlan } from "@/lib/analytics/open-to-buy";
+import { ComprasTable } from "@/components/dashboard/ComprasTable";
 import { formatCurrency, cn } from "@/lib/utils";
-import { ShoppingBag, TrendingUp, AlertCircle, Wallet, ChevronRight, AlertTriangle, Zap, Minus } from "lucide-react";
-
-const SENTINEL_NULL = "_sin_categoria";
-
-function categoryHref(rawCategory: string | null): string {
-  const slug = rawCategory === null ? SENTINEL_NULL : encodeURIComponent(rawCategory);
-  return `/categorias/${slug}`;
-}
-
-function BrakeBadge({ brake }: { brake: CoverageBrake }) {
-  if (brake === "urgente") return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-destructive/10 px-2 py-0.5 text-destructive font-semibold text-xs">
-      <Zap className="h-2.5 w-2.5" /> Urgente
-    </span>
-  );
-  if (brake === "freno") return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-warning/10 px-2 py-0.5 text-warning font-semibold text-xs">
-      <AlertTriangle className="h-2.5 w-2.5" /> Freno
-    </span>
-  );
-  return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-muted-foreground text-xs">
-      <Minus className="h-2.5 w-2.5" /> Normal
-    </span>
-  );
-}
+import { ShoppingBag, TrendingUp, AlertCircle, Wallet } from "lucide-react";
 
 interface PageProps {
   searchParams: Promise<{ coverage?: string }>;
@@ -171,86 +147,7 @@ export default async function ComprasPage({ searchParams }: PageProps) {
         </div>
       </div>
 
-      {/* Tabla de distribución */}
-      <div className="rounded-xl border border-border bg-card overflow-hidden">
-        <div className="px-5 py-3 border-b border-border flex items-center gap-2">
-          <ShoppingBag className="h-4 w-4 text-primary" />
-          <h3 className="text-sm font-semibold">Distribución del Capital por Categoría</h3>
-          <span className="ml-auto text-xs text-muted-foreground">ordenado por participación en ventas</span>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-border text-muted-foreground bg-secondary/30">
-                <th className="px-4 py-2.5 text-left font-medium">Categoría</th>
-                <th className="px-4 py-2.5 text-right font-medium">% Ventas</th>
-                <th className="px-4 py-2.5 text-right font-medium">Fondo asignado</th>
-                <th className="px-4 py-2.5 text-right font-medium">Cobertura actual</th>
-                <th className="px-4 py-2.5 text-center font-medium">Señal</th>
-                <th className="px-4 py-2.5 text-right font-medium">Unidades a comprar</th>
-                <th className="px-4 py-2.5 text-right font-medium">Inversión OTB</th>
-                <th className="px-4 py-2.5 text-right font-medium">Ajustada</th>
-                <th className="px-4 py-2.5 text-right font-medium">ROI</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...categories].sort((a, b) => b.salesParticipationPct - a.salesParticipationPct).map((c) => {
-                const coverageColor =
-                  c.coverageBrake === "urgente" ? "text-destructive font-semibold"
-                  : c.coverageBrake === "freno" ? "text-warning"
-                  : "text-foreground";
-                const roiColor = c.estimatedROI >= 30 ? "text-primary" : c.estimatedROI >= 15 ? "text-foreground" : "text-warning";
-                const barWidth = Math.min(c.salesParticipationPct, 100);
-
-                return (
-                  <tr key={c.category} className="border-b border-border last:border-0 hover:bg-secondary/20 group">
-                    <td className="px-4 py-3 font-medium">
-                      <Link
-                        href={categoryHref(c.rawCategory)}
-                        className="inline-flex items-center gap-1 hover:text-primary transition-colors"
-                      >
-                        {c.category}
-                        <ChevronRight className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <div className="w-16 h-1.5 rounded-full bg-secondary overflow-hidden">
-                          <div className="h-full bg-primary/60 rounded-full" style={{ width: `${barWidth}%` }} />
-                        </div>
-                        <span className="font-medium w-10 text-right">{c.salesParticipationPct.toFixed(1)}%</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-right font-medium text-primary">
-                      {formatCurrency(c.reinvestmentShare)}
-                    </td>
-                    <td className={cn("px-4 py-3 text-right", coverageColor)}>
-                      {c.currentCoverageDays.toFixed(0)}d
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <BrakeBadge brake={c.coverageBrake} />
-                    </td>
-                    <td className="px-4 py-3 text-right font-semibold">
-                      {Math.round(c.unitsToBuy).toLocaleString("es-CO")}
-                    </td>
-                    <td className="px-4 py-3 text-right text-muted-foreground">
-                      {formatCurrency(c.estimatedInvestment)}
-                    </td>
-                    <td className="px-4 py-3 text-right font-semibold">
-                      {c.coverageBrake === "freno"
-                        ? <span className="text-warning">{formatCurrency(c.adjustedInvestment)} <span className="text-xs opacity-70">(−50%)</span></span>
-                        : formatCurrency(c.adjustedInvestment)}
-                    </td>
-                    <td className={cn("px-4 py-3 text-right font-semibold", roiColor)}>
-                      {c.estimatedROI.toFixed(0)}%
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <ComprasTable categories={categories} />
 
       {/* Nota metodológica */}
       <div className="rounded-xl border border-border bg-card p-4 flex items-start gap-3">
