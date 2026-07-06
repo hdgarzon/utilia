@@ -15,12 +15,11 @@ const ALLOWED_PATHS = new Set(["/ventas", "/financiero", "/presupuestos"]);
 interface Props {
   month: number;
   year: number;
-  isCurrentPeriod: boolean;
   realMonth: number;
   realYear: number;
 }
 
-export function PeriodSelector({ month, year, isCurrentPeriod, realMonth, realYear }: Props) {
+export function PeriodSelector({ month, year, realMonth, realYear }: Props) {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
