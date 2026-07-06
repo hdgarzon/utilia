@@ -5,6 +5,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { odoo } from "@/lib/odoo";
 import { getWeeklyPattern } from "@/lib/analytics/weekly-pattern";
+import { colombiaYearMonthDay } from "@/lib/timezone";
 import { getMonthComparison } from "@/lib/analytics/month-compare";
 import { getOpenToBuyPlan } from "@/lib/analytics/open-to-buy";
 import { getOpportunities } from "@/lib/analytics/opportunities";
@@ -114,6 +115,7 @@ async function getDashboardData() {
 }
 
 export default async function DashboardPage() {
+  const { year: currentYear, month: currentMonth } = colombiaYearMonthDay();
   const [data, monthCmp, otb, opps] = await Promise.all([
     getDashboardData().catch(() => ({
       today: null,
@@ -129,7 +131,7 @@ export default async function DashboardPage() {
       weeklyPattern: [] as Awaited<ReturnType<typeof getWeeklyPattern>>,
       todaySold: [] as Awaited<ReturnType<typeof odoo.getTodaySoldProducts>>,
     })),
-    getMonthComparison().catch(() => null),
+    getMonthComparison(currentYear, currentMonth).catch(() => null),
     getOpenToBuyPlan().catch(() => null),
     getOpportunities().catch(() => null),
   ]);
