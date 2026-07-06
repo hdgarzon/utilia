@@ -1,5 +1,4 @@
 import { prisma } from "@/lib/prisma";
-import { colombiaStartOfMonth } from "@/lib/timezone";
 
 export interface CategoryCost {
   category: string;
@@ -30,10 +29,12 @@ export interface RevenueWaterfall {
  * el desglose por categoría). Las categorías se calculan desde la velocidad de
  * venta × costo/precio × 30d (proxy mensual consistente con el OTB).
  */
-export async function getRevenueWaterfall(): Promise<RevenueWaterfall> {
+export async function getRevenueWaterfall(year: number, month: number): Promise<RevenueWaterfall> {
+  const start = new Date(Date.UTC(year, month - 1, 1));
+  const end = new Date(Date.UTC(year, month, 1));
   const [snapshots, catRows] = await Promise.all([
     prisma.financialSnapshot.findMany({
-      where: { date: { gte: colombiaStartOfMonth() } },
+      where: { date: { gte: start, lt: end } },
       select: { totalRevenue: true, totalCost: true, fixedExpenses: true },
     }),
     prisma.$queryRaw<
