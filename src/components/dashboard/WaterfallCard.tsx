@@ -6,9 +6,10 @@ import type { RevenueWaterfall } from "@/lib/analytics/revenue-waterfall";
 
 interface Props {
   data: RevenueWaterfall;
+  categoryBreakdownNote?: string;
 }
 
-export function WaterfallCard({ data }: Props) {
+export function WaterfallCard({ data, categoryBreakdownNote }: Props) {
   const {
     totalRevenue,
     totalCogs,
@@ -62,6 +63,9 @@ export function WaterfallCard({ data }: Props) {
           <p className="text-xs font-semibold">Reposición por categoría</p>
           <span className="ml-auto text-xs text-muted-foreground">{formatCurrency(totalCogs)} total</span>
         </div>
+        {categoryBreakdownNote && (
+          <p className="text-xs text-muted-foreground italic">{categoryBreakdownNote}</p>
+        )}
         <div className="space-y-1.5">
           {categories.map((c) => {
             const cogsPct = totalCogs > 0 ? (c.cogs / totalCogs) * 100 : 0;
