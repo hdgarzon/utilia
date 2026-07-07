@@ -13,12 +13,18 @@ import { getRevenueWaterfall } from "@/lib/analytics/revenue-waterfall";
 import { computeMonthEndProjection, type MonthEndProjection } from "@/lib/analytics/month-projection";
 import { formatCurrency } from "@/lib/utils";
 import { TrendingUp, TrendingDown, AlertTriangle, CheckCircle2 } from "lucide-react";
-import { colombiaStartOfMonth, colombiaYearMonthDay } from "@/lib/timezone";
+import { getSelectedPeriod } from "@/lib/period";
 
-async function getFinancialData() {
-  const { year, month } = colombiaYearMonthDay();
+const MONTHS = [
+  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+];
+
+async function getFinancialData(year: number, month: number) {
+  const start = new Date(Date.UTC(year, month - 1, 1));
+  const end = new Date(Date.UTC(year, month, 1));
   const [snapshots, budgets] = await Promise.all([
-    prisma.financialSnapshot.findMany({ where: { date: { gte: colombiaStartOfMonth() } }, orderBy: { date: "asc" } }),
+    prisma.financialSnapshot.findMany({ where: { date: { gte: start, lt: end } }, orderBy: { date: "asc" } }),
     prisma.expenseBudget.findMany({ where: { year, month } }),
   ]);
 
@@ -61,13 +67,16 @@ async function getFinancialData() {
 }
 
 export default async function FinancieroPage() {
+  const { month, year, isCurrentPeriod } = await getSelectedPeriod();
+  const periodLabel = `${MONTHS[month - 1]} ${year}`;
+
   const fallbackTotals = { revenue: 0, cost: 0, profit: 0, expenses: 0 };
   const [financial, monthCompare, breakeven, cashFlow, waterfall] = await Promise.all([
-    getFinancialData().catch(() => ({ totals: fallbackTotals, netMarginPct: 0, chartData: [] as Awaited<ReturnType<typeof getFinancialData>>["chartData"], budgets: [] as Awaited<ReturnType<typeof getFinancialData>>["budgets"], projection: null as MonthEndProjection | null })),
-    getMonthComparison().catch(() => null),
+    getFinancialData(year, month).catch(() => ({ totals: fallbackTotals, netMarginPct: 0, chartData: [] as Awaited<ReturnType<typeof getFinancialData>>["chartData"], budgets: [] as Awaited<ReturnType<typeof getFinancialData>>["budgets"], projection: null as MonthEndProjection | null })),
+    getMonthComparison(year, month).catch(() => null),
     getBreakevenAnalysis().catch(() => null),
     getCashFlowAnalysis().catch(() => null),
-    getRevenueWaterfall().catch(() => null),
+    getRevenueWaterfall(year, month).catch(() => null),
   ]);
   const { totals = fallbackTotals, netMarginPct, chartData, budgets, projection } = financial;
 
@@ -75,7 +84,8 @@ export default async function FinancieroPage() {
   // pérdida (pocos días de ingresos contra gastos fijos ya prorrateados) sin
   // que nada esté mal. Con pocos días de historia, el veredicto responde
   // "a este ritmo, ¿cómo cerrarías?" en vez de juzgar sobre datos parciales.
-  const useProjection = projection !== null && projection.lowConfidence && projection.daysElapsed > 0;
+  // Solo aplica al mes real en curso — un mes pasado ya cerrado no se "proyecta".
+  const useProjection = isCurrentPeriod && projection !== null && projection.lowConfidence && projection.daysElapsed > 0;
   const headlineProfit = useProjection ? projection!.projectedNetProfit : totals.profit;
   const headlineMarginPct = useProjection ? projection!.projectedMarginPct : netMarginPct;
 
@@ -95,7 +105,9 @@ export default async function FinancieroPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-bold">Centro Financiero</h1>
+      <h1 className="text-xl font-bold">
+        Centro Financiero{!isCurrentPeriod && <span className="text-muted-foreground font-normal"> — {periodLabel}</span>}
+      </h1>
 
       {/* Veredicto: responde "¿estamos ganando?" de un vistazo */}
       <div className={`rounded-xl border p-5 ${tone.border} ${tone.bg}`}>
@@ -154,19 +166,38 @@ export default async function FinancieroPage() {
         </div>
       </div>
 
-      {waterfall && <WaterfallCard data={waterfall} />}
+      {waterfall && (
+        <WaterfallCard
+          data={waterfall}
+          categoryBreakdownNote={!isCurrentPeriod ? "Desglose por categoría basado en velocidad de venta actual, no en datos históricos de este mes." : undefined}
+        />
+      )}
 
-      {breakeven && <BreakevenCard data={breakeven} />}
+      {breakeven && (
+        <div className="space-y-2">
+          {!isCurrentPeriod && (
+            <p className="text-xs text-muted-foreground italic">Este punto de equilibrio es de hoy, no de {periodLabel}.</p>
+          )}
+          <BreakevenCard data={breakeven} />
+        </div>
+      )}
 
-      {cashFlow && <CashFlowCard data={cashFlow} />}
+      {cashFlow && (
+        <div className="space-y-2">
+          {!isCurrentPeriod && (
+            <p className="text-xs text-muted-foreground italic">Este flujo de caja es de ahora mismo, no de {periodLabel}.</p>
+          )}
+          <CashFlowCard data={cashFlow} />
+        </div>
+      )}
 
-      {monthCompare && <MonthCompare data={monthCompare} />}
+      {monthCompare && <MonthCompare data={monthCompare} isCurrentPeriod={isCurrentPeriod} />}
 
-      <SalesChart data={chartData} title="Utilidad Diaria — Mes Actual" />
+      <SalesChart data={chartData} title={isCurrentPeriod ? "Utilidad Diaria — Mes Actual" : `Utilidad Diaria — ${periodLabel}`} />
 
       {budgets.length > 0 && (
         <div className="rounded-xl border border-border bg-card p-4 md:p-5 space-y-3">
-          <h3 className="text-sm font-semibold">Presupuesto por Categoría — Mes Actual</h3>
+          <h3 className="text-sm font-semibold">Presupuesto por Categoría — {isCurrentPeriod ? "Mes Actual" : periodLabel}</h3>
           <div className="space-y-3">
             {budgets.map((b) => {
               const pct = b.budgetAmount > 0 ? (b.actualAmount / b.budgetAmount) * 100 : 0;

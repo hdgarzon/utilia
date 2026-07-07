@@ -89,19 +89,28 @@ function pctChange(current: number, previous: number): number {
 }
 
 /**
- * Compara mes actual vs mes anterior, total y también MTD (mismos N días desde el 1).
+ * Compara el mes indicado (`year`, `month`) contra el mes anterior a ese.
+ * Si el mes indicado ES el mes real en curso, la comparación "MTD" cap al día
+ * de hoy (mismos N días transcurridos en ambos meses — justa para un mes que
+ * aún no cierra). Si es un mes pasado ya cerrado, capar al día de hoy no
+ * tiene sentido (ej. comparar junio solo hasta el "día 5" porque hoy es 5 de
+ * julio sería arbitrario) — en ese caso `currentMTD`/`previousMTD` son los
+ * meses completos, iguales a `current`/`previous`.
  */
-export async function getMonthComparison(): Promise<MonthComparison> {
-  const { year: curYear, month: curMonth, day: curDay } = colombiaYearMonthDay();
-  const prevDate = new Date(curYear, curMonth - 2, 1);
+export async function getMonthComparison(year: number, month: number): Promise<MonthComparison> {
+  const { year: realYear, month: realMonth, day: realDay } = colombiaYearMonthDay();
+  const isRealCurrentMonth = year === realYear && month === realMonth;
+  const dayCap = isRealCurrentMonth ? realDay : undefined;
+
+  const prevDate = new Date(year, month - 2, 1);
   const prevYear = prevDate.getFullYear();
   const prevMonth = prevDate.getMonth() + 1;
 
   const [current, previous, currentMTD, previousMTD] = await Promise.all([
-    aggregateMonth(curYear, curMonth),
+    aggregateMonth(year, month),
     aggregateMonth(prevYear, prevMonth),
-    aggregateMonth(curYear, curMonth, curDay),
-    aggregateMonth(prevYear, prevMonth, curDay),
+    aggregateMonth(year, month, dayCap),
+    aggregateMonth(prevYear, prevMonth, dayCap),
   ]);
 
   return {

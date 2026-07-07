@@ -4,6 +4,7 @@ import type { MonthComparison } from "@/lib/analytics/month-compare";
 
 interface Props {
   data: MonthComparison;
+  isCurrentPeriod: boolean;
 }
 
 interface MetricCardProps {
@@ -41,8 +42,9 @@ function MetricCompareCard({ label, currentValue, previousValue, delta, inverse,
   );
 }
 
-export function MonthCompare({ data }: Props) {
+export function MonthCompare({ data, isCurrentPeriod }: Props) {
   const { currentMTD, previousMTD, current, previous, deltas } = data;
+  const periodSuffix = isCurrentPeriod ? "MTD" : "del mes";
 
   // Un % sobre una base en pérdida es difícil de leer de un vistazo (ej. "▲147%"
   // no dice si mejoraste o solo perdiste menos). Con pérdida de por medio,
@@ -61,31 +63,31 @@ export function MonthCompare({ data }: Props) {
           {current.label} vs {previous.label}
         </h2>
         <span className="text-xs text-muted-foreground">
-          MTD: {currentMTD.daysWithData} días vs {previousMTD.daysWithData} días
+          {isCurrentPeriod ? "MTD" : "Mes completo"}: {currentMTD.daysWithData} días vs {previousMTD.daysWithData} días
         </span>
       </div>
 
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         <MetricCompareCard
-          label="Ingresos MTD"
+          label={`Ingresos ${periodSuffix}`}
           currentValue={formatCurrency(currentMTD.totalRevenue)}
           previousValue={formatCurrency(previousMTD.totalRevenue)}
           delta={deltas.revenue}
         />
         <MetricCompareCard
-          label="Transacciones MTD"
+          label={`Transacciones ${periodSuffix}`}
           currentValue={currentMTD.totalTransactions.toLocaleString("es-CO")}
           previousValue={previousMTD.totalTransactions.toLocaleString("es-CO")}
           delta={deltas.transactions}
         />
         <MetricCompareCard
-          label="Ticket Promedio MTD"
+          label={`Ticket Promedio ${periodSuffix}`}
           currentValue={formatCurrency(currentMTD.avgTicket)}
           previousValue={formatCurrency(previousMTD.avgTicket)}
           delta={deltas.avgTicket}
         />
         <MetricCompareCard
-          label="Utilidad Neta MTD"
+          label={`Utilidad Neta ${periodSuffix}`}
           currentValue={formatCurrency(currentMTD.netProfit)}
           previousValue={formatCurrency(previousMTD.netProfit)}
           delta={deltas.netProfit}
