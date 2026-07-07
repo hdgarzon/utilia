@@ -1,8 +1,10 @@
 export const dynamic = "force-dynamic";
 
 import { getDeadStockAnalysis, getLiquidationGoal } from "@/lib/analytics/dead-stock";
+import { getOrCreateTodayStatusPosts } from "@/lib/analytics/status-posts";
 import { LiquidationGoalEditor } from "@/components/dashboard/LiquidationGoalEditor";
 import { LiquidationWorkspace } from "@/components/dashboard/LiquidationWorkspace";
+import { StatusPostsToday, type StatusPostView } from "@/components/dashboard/StatusPostsToday";
 import { formatCurrency, cn } from "@/lib/utils";
 import { PackageX, AlertTriangle } from "lucide-react";
 
@@ -67,6 +69,20 @@ export default async function LiquidacionPage() {
     primary: { text: "text-primary", bg: "bg-primary/5", border: "border-primary/40" },
   }[severity];
 
+  const statusPosts = await getOrCreateTodayStatusPosts().catch(() => []);
+  const statusView: StatusPostView[] = statusPosts.map((p) => ({
+    id: p.id,
+    slot: p.slot,
+    productName: p.productName,
+    stockQty: p.stockQty,
+    salePrice: p.salePrice,
+    discountPct: p.discountPct,
+    finalPrice: p.finalPrice,
+    copy: p.copy,
+    posted: p.posted,
+    version: new Date(p.updatedAt).getTime(),
+  }));
+
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-bold">Plan de Liquidación de Capital Muerto</h1>
@@ -92,6 +108,8 @@ export default async function LiquidacionPage() {
         currentDeadStock={goal.currentDeadStock}
         updatedAt={goal.updatedAt}
       />
+
+      <StatusPostsToday posts={statusView} />
 
       <LiquidationWorkspace products={analysis.products} />
 
