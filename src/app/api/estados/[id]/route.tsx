@@ -1,6 +1,7 @@
 import { ImageResponse } from "next/og";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import sharp from "sharp";
 import { prisma } from "@/lib/prisma";
 import { odoo } from "@/lib/odoo";
 
@@ -22,8 +23,18 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const post = await prisma.statusPost.findUnique({ where: { id } });
   if (!post) return new Response("Not found", { status: 404 });
 
+  // Odoo entrega las imágenes en WebP, que Satori (next/og) no decodifica.
+  // Las normalizamos a PNG con sharp (que detecta el formato de entrada solo).
   const img = await odoo.getProductImage(post.odooProductId).catch(() => null);
-  const photoSrc = img ? `data:image/png;base64,${img}` : null;
+  let photoSrc: string | null = null;
+  if (img) {
+    try {
+      const png = await sharp(Buffer.from(img, "base64")).png().toBuffer();
+      photoSrc = `data:image/png;base64,${png.toString("base64")}`;
+    } catch {
+      photoSrc = null;
+    }
+  }
 
   return new ImageResponse(
     (
