@@ -48,7 +48,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
               </Suspense>
               <div className="flex items-center gap-3">
                 {lastSyncLabel && (
-                  <span className="text-xs text-muted-foreground">
+                  <span className="hidden sm:inline text-xs text-muted-foreground">
                     Último sync: <span className="text-foreground">{lastSyncLabel}</span>
                   </span>
                 )}
