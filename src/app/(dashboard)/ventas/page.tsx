@@ -7,11 +7,18 @@ import { WeeklyPattern } from "@/components/dashboard/WeeklyPattern";
 import { getWeeklyPattern } from "@/lib/analytics/weekly-pattern";
 import { formatCurrency } from "@/lib/utils";
 import { DollarSign, ShoppingCart, TrendingUp, Users } from "lucide-react";
-import { colombiaStartOfMonth } from "@/lib/timezone";
+import { getSelectedPeriod } from "@/lib/period";
 
-async function getSalesData() {
+const MONTHS = [
+  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+];
+
+async function getSalesData(year: number, month: number) {
+  const start = new Date(Date.UTC(year, month - 1, 1));
+  const end = new Date(Date.UTC(year, month, 1));
   const snapshots = await prisma.financialSnapshot.findMany({
-    where: { date: { gte: colombiaStartOfMonth() } },
+    where: { date: { gte: start, lt: end } },
     orderBy: { date: "asc" },
   });
 
@@ -63,24 +70,26 @@ async function getSalesData() {
 }
 
 export default async function VentasPage() {
+  const { month, year, isCurrentPeriod } = await getSelectedPeriod();
   const [salesData, weeklyPattern] = await Promise.all([
-    getSalesData().catch(() => ({ dailyData: [] as Awaited<ReturnType<typeof getSalesData>>["dailyData"], topProducts: [] as Awaited<ReturnType<typeof getSalesData>>["topProducts"], activeProductCount: 0, totalRevenue30d: 0, totalTransactions: 0, avgTicket: 0 })),
+    getSalesData(year, month).catch(() => ({ dailyData: [] as Awaited<ReturnType<typeof getSalesData>>["dailyData"], topProducts: [] as Awaited<ReturnType<typeof getSalesData>>["topProducts"], activeProductCount: 0, totalRevenue30d: 0, totalTransactions: 0, avgTicket: 0 })),
     getWeeklyPattern(60).catch(() => []),
   ]);
   const { dailyData, topProducts, activeProductCount, totalRevenue30d, totalTransactions, avgTicket } = salesData;
+  const periodLabel = `${MONTHS[month - 1]} ${year}`;
 
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-bold">Analítica de Ventas</h1>
 
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-        <KPICard title="Ingresos mes actual" value={formatCurrency(totalRevenue30d)} icon={DollarSign} variant="success" />
-        <KPICard title="Transacciones mes" value={String(totalTransactions)} icon={ShoppingCart} />
+        <KPICard title={isCurrentPeriod ? "Ingresos mes actual" : `Ingresos — ${periodLabel}`} value={formatCurrency(totalRevenue30d)} icon={DollarSign} variant="success" />
+        <KPICard title={isCurrentPeriod ? "Transacciones mes" : `Transacciones — ${periodLabel}`} value={String(totalTransactions)} icon={ShoppingCart} />
         <KPICard title="Ticket Promedio" value={formatCurrency(avgTicket)} icon={TrendingUp} />
         <KPICard title="Productos Activos" value={String(activeProductCount)} subvalue="con ventas recientes" icon={Users} />
       </div>
 
-      <SalesChart data={dailyData} title="Ventas Diarias — Mes Actual" />
+      <SalesChart data={dailyData} title={isCurrentPeriod ? "Ventas Diarias — Mes Actual" : `Ventas Diarias — ${periodLabel}`} />
 
       <WeeklyPattern data={weeklyPattern} title="Patrón Semanal — Identifica días débiles" windowDays={60} />
 
