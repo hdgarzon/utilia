@@ -7,6 +7,7 @@ import {
   regenerateStatusPostCopy,
   updateStatusPostDiscount,
   markStatusPostPosted,
+  updateStatusPostTemplate,
 } from "@/lib/analytics/status-posts";
 
 async function requireSession() {
@@ -51,6 +52,20 @@ export async function markPostedAction(id: string, posted: boolean) {
   try {
     await requireSession();
     await markStatusPostPosted(id, posted);
+    revalidatePath("/campanas");
+    return { ok: true as const };
+  } catch (err) {
+    return { ok: false as const, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function setTemplateAction(id: string, template: string) {
+  try {
+    await requireSession();
+    if (template !== "A" && template !== "B" && template !== "C") {
+      return { ok: false as const, error: "Plantilla inválida" };
+    }
+    await updateStatusPostTemplate(id, template);
     revalidatePath("/campanas");
     return { ok: true as const };
   } catch (err) {
