@@ -252,3 +252,11 @@ export async function markStatusPostPosted(id: string, posted: boolean): Promise
     data: { posted, postedAt: posted ? new Date() : null },
   });
 }
+
+/** Cambia la plantilla visual (A/B/C) de un estado. */
+export async function updateStatusPostTemplate(
+  id: string,
+  template: "A" | "B" | "C"
+): Promise<StatusPost> {
+  return prisma.statusPost.update({ where: { id }, data: { template } });
+}
