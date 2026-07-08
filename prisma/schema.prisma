@@ -220,6 +220,7 @@ model StatusPost {
   discountPct   Float // 20 o 30 (editable)
   finalPrice    Float // precio con descuento, redondeado
   copy          String // línea de urgencia (IA)
+  template      String    @default("A")       // "A" | "B" | "C"
   posted        Boolean   @default(false)
   postedAt      DateTime?
   createdAt     DateTime  @default(now())
