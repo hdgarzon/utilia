@@ -297,6 +297,18 @@ export const odoo = {
     return ids.map((id) => byId.get(id)).filter(Boolean) as OdooProduct[];
   },
 
+  /** Trae la imagen base64 (`image_1920`) de un producto por ID. `null` si no tiene. */
+  async getProductImage(productId: number): Promise<string | null> {
+    const rows = await searchRead<{ id: number; image_1920: string | false }>(
+      "product.product",
+      ["|", ["active", "=", true], ["active", "=", false], ["id", "=", productId]],
+      ["id", "image_1920"],
+      { limit: 1 }
+    );
+    const img = rows[0]?.image_1920;
+    return typeof img === "string" ? img : null;
+  },
+
   /** Trae órdenes POS pagadas/cerradas. Paginado porque pueden ser miles. */
   async getPosOrders(since?: Date, limit = 5000): Promise<OdooPosOrder[]> {
     const domain: unknown[] = [["state", "in", ["paid", "done", "invoiced"]]];
