@@ -5,6 +5,8 @@ import { formatCurrency } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { MessageSquare, Plus } from "lucide-react";
 import Link from "next/link";
+import { getOrCreateTodayStatusPosts } from "@/lib/analytics/status-posts";
+import { StatusPostsToday, type StatusPostView } from "@/components/dashboard/StatusPostsToday";
 
 async function getCampaignsData() {
   const campaigns = await prisma.campaign.findMany({
@@ -43,6 +45,20 @@ export default async function CampanasPage() {
     totalRevenue: campaigns.reduce((sum, c) => sum + c.revenueAttr, 0),
   };
 
+  const statusPosts = await getOrCreateTodayStatusPosts().catch(() => []);
+  const statusView: StatusPostView[] = statusPosts.map((p) => ({
+    id: p.id,
+    slot: p.slot,
+    productName: p.productName,
+    stockQty: p.stockQty,
+    salePrice: p.salePrice,
+    discountPct: p.discountPct,
+    finalPrice: p.finalPrice,
+    copy: p.copy,
+    posted: p.posted,
+    version: new Date(p.updatedAt).getTime(),
+  }));
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -74,6 +90,8 @@ export default async function CampanasPage() {
           <p className="text-2xl font-bold text-primary">{formatCurrency(stats.totalRevenue)}</p>
         </div>
       </div>
+
+      <StatusPostsToday posts={statusView} />
 
       {campaigns.length === 0 ? (
         <div className="rounded-xl border border-border bg-card p-12 text-center space-y-3">

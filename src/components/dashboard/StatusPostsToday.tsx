@@ -10,7 +10,7 @@ import {
   regenerateCopyAction,
   updateDiscountAction,
   markPostedAction,
-} from "@/app/(dashboard)/liquidacion/status-actions";
+} from "@/app/(dashboard)/campanas/status-actions";
 
 export interface StatusPostView {
   id: string;
