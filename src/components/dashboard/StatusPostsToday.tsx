@@ -10,6 +10,7 @@ import {
   regenerateCopyAction,
   updateDiscountAction,
   markPostedAction,
+  setTemplateAction,
 } from "@/app/(dashboard)/campanas/status-actions";
 
 export interface StatusPostView {
@@ -22,6 +23,7 @@ export interface StatusPostView {
   finalPrice: number;
   copy: string;
   posted: boolean;
+  template: "A" | "B" | "C";
   version: number; // updatedAt en ms, para cache-bust de la imagen
 }
 
@@ -63,6 +65,27 @@ function StatusCard({ post }: { post: StatusPostView }) {
           Stock {post.stockQty} · <span className="line-through">{formatCurrency(post.salePrice)}</span>{" "}
           <span className="font-semibold text-foreground">{formatCurrency(post.finalPrice)}</span>
         </p>
+      </div>
+
+      <div className="flex items-center gap-1.5">
+        <span className="text-xs text-muted-foreground">Plantilla</span>
+        <div className="ml-auto flex gap-1">
+          {(["A", "B", "C"] as const).map((t) => (
+            <button
+              key={t}
+              disabled={pending}
+              onClick={() => run(() => setTemplateAction(post.id, t), `Plantilla ${t}`)}
+              className={cn(
+                "h-7 w-7 rounded text-xs font-bold disabled:opacity-50",
+                post.template === t
+                  ? "bg-primary text-primary-foreground"
+                  : "border border-border hover:bg-secondary"
+              )}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="flex items-center gap-1.5">
