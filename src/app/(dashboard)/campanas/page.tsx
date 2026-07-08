@@ -56,6 +56,7 @@ export default async function CampanasPage() {
     finalPrice: p.finalPrice,
     copy: p.copy,
     posted: p.posted,
+    template: p.template as "A" | "B" | "C",
     version: new Date(p.updatedAt).getTime(),
   }));
 
