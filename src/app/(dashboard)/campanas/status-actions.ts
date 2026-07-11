@@ -8,6 +8,7 @@ import {
   updateStatusPostDiscount,
   markStatusPostPosted,
   updateStatusPostTemplate,
+  pickStatusPostProduct,
 } from "@/lib/analytics/status-posts";
 
 async function requireSession() {
@@ -66,6 +67,17 @@ export async function setTemplateAction(id: string, template: string) {
       return { ok: false as const, error: "Plantilla inválida" };
     }
     await updateStatusPostTemplate(id, template);
+    revalidatePath("/campanas");
+    return { ok: true as const };
+  } catch (err) {
+    return { ok: false as const, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function pickProductAction(id: string, odooProductId: number) {
+  try {
+    await requireSession();
+    await pickStatusPostProduct(id, odooProductId);
     revalidatePath("/campanas");
     return { ok: true as const };
   } catch (err) {
