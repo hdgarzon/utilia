@@ -34,9 +34,11 @@ function TemplateA(d: EstadoData): ReactElement {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={d.logoSrc} width={176} height={176} style={{ width: "176px", height: "176px", objectFit: "contain" }} alt="Utilia" />
       </div>
-      <div style={{ position: "absolute", top: "56px", right: "56px", width: "220px", height: "220px", display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: GREEN, borderRadius: "110px", transform: "rotate(8deg)" }}>
-        <div style={{ display: "flex", fontSize: "84px", fontWeight: 800, color: "#0a2e00" }}>-{Math.round(d.discountPct)}%</div>
-      </div>
+      {d.discountPct > 0 && (
+        <div style={{ position: "absolute", top: "56px", right: "56px", width: "220px", height: "220px", display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: GREEN, borderRadius: "110px", transform: "rotate(8deg)" }}>
+          <div style={{ display: "flex", fontSize: "84px", fontWeight: 800, color: "#0a2e00" }}>-{Math.round(d.discountPct)}%</div>
+        </div>
+      )}
       <div style={{ position: "absolute", left: "56px", right: "56px", bottom: "72px", display: "flex", flexDirection: "column" }}>
         <div style={{ display: "flex", fontSize: "60px", fontWeight: 800, color: "#fff", lineHeight: 1.1 }}>{d.productName}</div>
         <div style={{ display: "flex", fontSize: "44px", color: "#cbd5e1", textDecoration: "line-through", marginTop: "20px" }}>Antes {fmtCOP(d.salePrice)}</div>
@@ -65,7 +67,9 @@ function TemplateB(d: EstadoData): ReactElement {
         </div>
         <div style={{ display: "flex", fontSize: "44px", fontWeight: 700, color: GREEN, marginTop: "24px" }}>{d.copy}</div>
       </div>
-      <div style={{ position: "absolute", top: "1000px", left: "72px", display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: GREEN, color: "#0a2e00", fontSize: "56px", fontWeight: 800, padding: "18px 40px", borderRadius: "20px", transform: "rotate(-4deg)" }}>-{Math.round(d.discountPct)}% HOY</div>
+      {d.discountPct > 0 && (
+        <div style={{ position: "absolute", top: "1000px", left: "72px", display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: GREEN, color: "#0a2e00", fontSize: "56px", fontWeight: 800, padding: "18px 40px", borderRadius: "20px", transform: "rotate(-4deg)" }}>-{Math.round(d.discountPct)}% HOY</div>
+      )}
       <div style={{ position: "absolute", top: "48px", left: "48px", width: "210px", height: "210px", display: "flex", backgroundColor: "#fff", borderRadius: "32px", padding: "12px" }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={d.logoSrc} width={186} height={186} style={{ width: "186px", height: "186px", objectFit: "contain" }} alt="Utilia" />
@@ -91,12 +95,14 @@ function TemplateC(d: EstadoData): ReactElement {
           <div style={{ display: "flex", fontSize: "34px", fontWeight: 800, color: BLUE, letterSpacing: "4px" }}>LIQUIDACIÓN</div>
         </div>
         <div style={{ display: "flex", fontSize: "58px", fontWeight: 700, color: "#111111", lineHeight: 1.1, marginTop: "24px" }}>{d.productName}</div>
-        <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginTop: "20px" }}>
+        <div style={{ display: "flex", alignItems: "flex-end", justifyContent: d.discountPct > 0 ? "space-between" : "flex-start", marginTop: "20px" }}>
           <div style={{ display: "flex", flexDirection: "column" }}>
             <div style={{ display: "flex", fontSize: "40px", color: "#9ca3af", textDecoration: "line-through" }}>{fmtCOP(d.salePrice)}</div>
             <div style={{ display: "flex", fontSize: "120px", fontWeight: 800, color: BLUE, lineHeight: 1 }}>{fmtCOP(d.finalPrice)}</div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: GREEN, color: "#0a2e00", fontSize: "56px", fontWeight: 900, padding: "16px 32px", borderRadius: "20px" }}>-{Math.round(d.discountPct)}%</div>
+          {d.discountPct > 0 && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: GREEN, color: "#0a2e00", fontSize: "56px", fontWeight: 900, padding: "16px 32px", borderRadius: "20px" }}>-{Math.round(d.discountPct)}%</div>
+          )}
         </div>
         <div style={{ display: "flex", fontSize: "40px", fontWeight: 800, color: BLUE, marginTop: "24px" }}>{d.copy}</div>
       </div>
