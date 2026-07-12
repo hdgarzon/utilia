@@ -227,7 +227,7 @@ export async function pickStatusPostProduct(id: string, odooProductId: number): 
   }
 
   const candidate = await prisma.productInsight.findUnique({ where: { odooProductId } });
-  if (!candidate || candidate.stockQty <= 0 || candidate.salePrice <= 0) {
+  if (!candidate || candidate.stockQty <= 0 || candidate.salePrice <= 0 || candidate.name.endsWith(" (archivado)")) {
     throw new Error("Producto no disponible");
   }
 
