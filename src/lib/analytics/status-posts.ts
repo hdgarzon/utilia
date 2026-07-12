@@ -214,48 +214,6 @@ export async function getOrCreateTodayStatusPosts(): Promise<StatusPost[]> {
 
 // ─── Edición ──────────────────────────────────────────────────────────────
 
-/** Cambia el producto de un slot por el siguiente disponible en la cola. */
-export async function swapStatusPostProduct(id: string): Promise<StatusPost> {
-  const post = await prisma.statusPost.findUniqueOrThrow({ where: { id } });
-  const usedToday = await prisma.statusPost.findMany({
-    where: { date: post.date },
-    select: { odooProductId: true },
-  });
-  const usedIds = new Set(usedToday.map((u) => u.odooProductId));
-  const recentIds = await recentlyPostedIds();
-
-  const ranked = await rankedDeadStock();
-  const next =
-    ranked.find((c) => !usedIds.has(c.odooProductId) && !recentIds.has(c.odooProductId)) ??
-    ranked.find((c) => !usedIds.has(c.odooProductId));
-  if (!next) return post; // no hay otro producto para ofrecer
-
-  const discountPct = discountForRotation(next.rotationDays);
-  const finalPrice = computeFinalPrice(next.salePrice, discountPct);
-  const copy = await generateCopy({
-    name: next.name,
-    stockQty: next.stockQty,
-    category: next.category,
-    discountPct,
-    mode: "liquidacion",
-  });
-  return prisma.statusPost.update({
-    where: { id },
-    data: {
-      odooProductId: next.odooProductId,
-      productName: next.name,
-      category: next.category,
-      stockQty: next.stockQty,
-      salePrice: next.salePrice,
-      discountPct,
-      finalPrice,
-      copy,
-      posted: false,
-      postedAt: null,
-    },
-  });
-}
-
 /** Reemplaza el producto de un slot por uno elegido a mano (liquidación o regular). */
 export async function pickStatusPostProduct(id: string, odooProductId: number): Promise<StatusPost> {
   const post = await prisma.statusPost.findUniqueOrThrow({ where: { id } });

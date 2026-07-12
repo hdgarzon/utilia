@@ -3,19 +3,21 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Download, RefreshCw, Shuffle, Check } from "lucide-react";
+import { Download, RefreshCw, Search, Check } from "lucide-react";
 import { cn, formatCurrency } from "@/lib/utils";
 import {
-  swapProductAction,
   regenerateCopyAction,
   updateDiscountAction,
   markPostedAction,
   setTemplateAction,
+  pickProductAction,
 } from "@/app/(dashboard)/campanas/status-actions";
+import { ProductPickerDialog, type PickerProduct } from "./ProductPickerDialog";
 
 export interface StatusPostView {
   id: string;
   slot: number;
+  odooProductId: number;
   productName: string;
   stockQty: number;
   salePrice: number;
@@ -27,10 +29,21 @@ export interface StatusPostView {
   version: number; // updatedAt en ms, para cache-bust de la imagen
 }
 
-function StatusCard({ post }: { post: StatusPostView }) {
+function StatusCard({
+  post,
+  excludeIds,
+  liquidacionPool,
+  regularPool,
+}: {
+  post: StatusPostView;
+  excludeIds: number[];
+  liquidacionPool: PickerProduct[];
+  regularPool: PickerProduct[];
+}) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [pct, setPct] = useState(String(Math.round(post.discountPct)));
+  const [pickerOpen, setPickerOpen] = useState(false);
   const imgUrl = `/api/estados/${post.id}?v=${post.version}`;
 
   function run(fn: () => Promise<{ ok: boolean; error?: string }>, okMsg: string) {
@@ -43,6 +56,11 @@ function StatusCard({ post }: { post: StatusPostView }) {
         toast.error(r.error ?? "Error");
       }
     });
+  }
+
+  function handlePick(odooProductId: number) {
+    setPickerOpen(false);
+    run(() => pickProductAction(post.id, odooProductId), "Producto actualizado");
   }
 
   return (
@@ -135,17 +153,35 @@ function StatusCard({ post }: { post: StatusPostView }) {
         </button>
         <button
           disabled={pending}
-          onClick={() => run(() => swapProductAction(post.id), "Producto cambiado")}
+          onClick={() => setPickerOpen(true)}
           className="flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium hover:bg-secondary disabled:opacity-50"
         >
-          <Shuffle className="h-3.5 w-3.5" /> Cambiar
+          <Search className="h-3.5 w-3.5" /> Elegir producto
         </button>
       </div>
+
+      <ProductPickerDialog
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        liquidacionPool={liquidacionPool}
+        regularPool={regularPool}
+        excludeIds={excludeIds}
+        onPick={handlePick}
+        pending={pending}
+      />
     </div>
   );
 }
 
-export function StatusPostsToday({ posts }: { posts: StatusPostView[] }) {
+export function StatusPostsToday({
+  posts,
+  liquidacionPool,
+  regularPool,
+}: {
+  posts: StatusPostView[];
+  liquidacionPool: PickerProduct[];
+  regularPool: PickerProduct[];
+}) {
   if (posts.length === 0) return null;
   return (
     <div className="rounded-xl border border-border bg-card p-4 md:p-5 space-y-4">
@@ -158,7 +194,13 @@ export function StatusPostsToday({ posts }: { posts: StatusPostView[] }) {
       </div>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {posts.map((p) => (
-          <StatusCard key={p.id} post={p} />
+          <StatusCard
+            key={p.id}
+            post={p}
+            excludeIds={posts.filter((o) => o.id !== p.id).map((o) => o.odooProductId)}
+            liquidacionPool={liquidacionPool}
+            regularPool={regularPool}
+          />
         ))}
       </div>
     </div>

@@ -5,6 +5,7 @@ import { Search, Flame, Package } from "lucide-react";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -92,6 +93,7 @@ export function ProductPickerDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Elegir producto</DialogTitle>
+          <DialogDescription className="sr-only">Busca y selecciona un producto de liquidación o regular para esta tarjeta</DialogDescription>
         </DialogHeader>
         <div className="relative">
           <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
