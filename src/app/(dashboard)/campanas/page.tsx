@@ -45,11 +45,13 @@ export default async function CampanasPage() {
     totalRevenue: campaigns.reduce((sum, c) => sum + c.revenueAttr, 0),
   };
 
-  const [statusPosts, liquidacionPool, regularPool] = await Promise.all([
+  const [statusPosts, liquidacionPoolRaw, regularPoolRaw] = await Promise.all([
     getOrCreateTodayStatusPosts().catch(() => []),
     rankedDeadStock().catch(() => []),
     rankedRegularStock().catch(() => []),
   ]);
+  const liquidacionPool = liquidacionPoolRaw.filter((c) => !c.name.endsWith(" (archivado)"));
+  const regularPool = regularPoolRaw.filter((c) => !c.name.endsWith(" (archivado)"));
   const statusView: StatusPostView[] = statusPosts.map((p) => ({
     id: p.id,
     slot: p.slot,

@@ -120,7 +120,7 @@ export async function rankedDeadStock(): Promise<Candidate[]> {
       rotationDays: p.rotationDays,
       invested: p.stockQty * p.cmp,
     }))
-    .filter((c) => c.stockQty > 0 && c.salePrice > 0 && !c.name.endsWith(" (archivado)"))
+    .filter((c) => c.stockQty > 0 && c.salePrice > 0)
     .sort((a, b) => b.invested - a.invested);
 }
 
@@ -139,7 +139,7 @@ export async function rankedRegularStock(): Promise<Candidate[]> {
       rotationDays: p.rotationDays,
       invested: p.stockQty * p.cmp,
     }))
-    .filter((c) => c.stockQty > 0 && c.salePrice > 0 && !c.name.endsWith(" (archivado)"))
+    .filter((c) => c.stockQty > 0 && c.salePrice > 0)
     .sort((a, b) => b.stockQty - a.stockQty);
 }
 
