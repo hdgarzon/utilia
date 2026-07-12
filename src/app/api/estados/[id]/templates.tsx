@@ -94,7 +94,7 @@ function TemplateC(d: EstadoData): ReactElement {
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={d.logoSrc} width={110} height={110} style={{ width: "110px", height: "110px", objectFit: "contain" }} alt="Utilia" />
           </div>
-          <div style={{ display: "flex", fontSize: "34px", fontWeight: 800, color: BLUE, letterSpacing: "4px" }}>LIQUIDACIÓN</div>
+          <div style={{ display: "flex", fontSize: "34px", fontWeight: 800, color: BLUE, letterSpacing: "4px" }}>{d.discountPct > 0 ? "LIQUIDACIÓN" : "DESTACADO"}</div>
         </div>
         <div style={{ display: "flex", fontSize: "58px", fontWeight: 700, color: "#111111", lineHeight: 1.1, marginTop: "24px" }}>{d.productName}</div>
         <div style={{ display: "flex", alignItems: "flex-end", justifyContent: d.discountPct > 0 ? "space-between" : "flex-start", marginTop: "20px" }}>
