@@ -100,7 +100,7 @@ function StatusCard({
             <button
               key={t}
               disabled={pending}
-              onClick={() => run("template", () => setTemplateAction(post.id, t), `Plantilla ${t}`)}
+              onClick={() => run(`template-${t}`, () => setTemplateAction(post.id, t), `Plantilla ${t}`)}
               className={cn(
                 "h-7 w-7 rounded text-xs font-bold disabled:opacity-50",
                 post.template === t
@@ -108,7 +108,7 @@ function StatusCard({
                   : "border border-border hover:bg-secondary"
               )}
             >
-              {activeAction === "template" && pending ? <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin" /> : t}
+              {activeAction === `template-${t}` && pending ? <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin" /> : t}
             </button>
           ))}
         </div>
