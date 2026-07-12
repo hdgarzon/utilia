@@ -5,7 +5,7 @@ import { formatCurrency } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { MessageSquare, Plus } from "lucide-react";
 import Link from "next/link";
-import { getOrCreateTodayStatusPosts } from "@/lib/analytics/status-posts";
+import { getOrCreateTodayStatusPosts, rankedDeadStock, rankedRegularStock } from "@/lib/analytics/status-posts";
 import { StatusPostsToday, type StatusPostView } from "@/components/dashboard/StatusPostsToday";
 
 async function getCampaignsData() {
@@ -45,10 +45,17 @@ export default async function CampanasPage() {
     totalRevenue: campaigns.reduce((sum, c) => sum + c.revenueAttr, 0),
   };
 
-  const statusPosts = await getOrCreateTodayStatusPosts().catch(() => []);
+  const [statusPosts, liquidacionPoolRaw, regularPoolRaw] = await Promise.all([
+    getOrCreateTodayStatusPosts().catch(() => []),
+    rankedDeadStock().catch(() => []),
+    rankedRegularStock().catch(() => []),
+  ]);
+  const liquidacionPool = liquidacionPoolRaw.filter((c) => !c.name.endsWith(" (archivado)"));
+  const regularPool = regularPoolRaw.filter((c) => !c.name.endsWith(" (archivado)"));
   const statusView: StatusPostView[] = statusPosts.map((p) => ({
     id: p.id,
     slot: p.slot,
+    odooProductId: p.odooProductId,
     productName: p.productName,
     stockQty: p.stockQty,
     salePrice: p.salePrice,
@@ -92,7 +99,7 @@ export default async function CampanasPage() {
         </div>
       </div>
 
-      <StatusPostsToday posts={statusView} />
+      <StatusPostsToday posts={statusView} liquidacionPool={liquidacionPool} regularPool={regularPool} />
 
       {campaigns.length === 0 ? (
         <div className="rounded-xl border border-border bg-card p-12 text-center space-y-3">

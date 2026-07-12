@@ -3,27 +3,16 @@
 import { auth } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import {
-  swapStatusPostProduct,
   regenerateStatusPostCopy,
   updateStatusPostDiscount,
   markStatusPostPosted,
   updateStatusPostTemplate,
+  pickStatusPostProduct,
 } from "@/lib/analytics/status-posts";
 
 async function requireSession() {
   const session = await auth();
   if (!session) throw new Error("No autorizado");
-}
-
-export async function swapProductAction(id: string) {
-  try {
-    await requireSession();
-    await swapStatusPostProduct(id);
-    revalidatePath("/campanas");
-    return { ok: true as const };
-  } catch (err) {
-    return { ok: false as const, error: err instanceof Error ? err.message : String(err) };
-  }
 }
 
 export async function regenerateCopyAction(id: string) {
@@ -66,6 +55,17 @@ export async function setTemplateAction(id: string, template: string) {
       return { ok: false as const, error: "Plantilla inválida" };
     }
     await updateStatusPostTemplate(id, template);
+    revalidatePath("/campanas");
+    return { ok: true as const };
+  } catch (err) {
+    return { ok: false as const, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function pickProductAction(id: string, odooProductId: number) {
+  try {
+    await requireSession();
+    await pickStatusPostProduct(id, odooProductId);
     revalidatePath("/campanas");
     return { ok: true as const };
   } catch (err) {

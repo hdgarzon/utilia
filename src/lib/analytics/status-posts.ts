@@ -35,15 +35,17 @@ export function computeFinalPrice(salePrice: number, pct: number): number {
 
 // ─── Copy IA ──────────────────────────────────────────────────────────────────
 
+type CopyMode = "liquidacion" | "regular";
+
 const copySchema = z.object({
   copy: z
     .string()
     .describe(
-      "UNA sola línea corta (máx 40 caracteres) de gancho/urgencia en español coloquial colombiano, puede empezar con un emoji. Sin el precio ni el nombre del producto."
+      "UNA sola línea corta (máx 40 caracteres) de gancho en español coloquial colombiano, puede empezar con un emoji. Sin el precio ni el nombre del producto."
     ),
 });
 
-const COPY_SYSTEM_PROMPT = `Eres el community manager de Papelería Utilia (Sabaneta, Colombia).
+const COPY_SYSTEM_PROMPT_LIQUIDACION = `Eres el community manager de Papelería Utilia (Sabaneta, Colombia).
 Escribes ganchos cortísimos para Estados de WhatsApp de ofertas de liquidación.
 Reglas:
 - Una sola línea, máximo 40 caracteres.
@@ -52,17 +54,27 @@ Reglas:
 - NO incluyas el precio ni el nombre del producto (ya van en la imagen).
 - Transmite urgencia o escasez cuando el stock es bajo.`;
 
+const COPY_SYSTEM_PROMPT_REGULAR = `Eres el community manager de Papelería Utilia (Sabaneta, Colombia).
+Escribes ganchos cortísimos para Estados de WhatsApp destacando productos del catálogo regular (NO son oferta ni liquidación).
+Reglas:
+- Una sola línea, máximo 40 caracteres.
+- Español coloquial colombiano, cercano, con energía de venta.
+- Puedes usar 1 emoji al inicio.
+- NO incluyas el precio ni el nombre del producto (ya van en la imagen).
+- NO menciones descuento, oferta ni urgencia falsa; destaca calidad, utilidad o popularidad del producto.`;
+
 async function generateCopy(input: {
   name: string;
   stockQty: number;
   category: string | null;
   discountPct: number;
+  mode: CopyMode;
 }): Promise<string> {
   try {
     const { object } = await generateObject({
       model: openai("gpt-4o-mini"),
       schema: copySchema,
-      system: COPY_SYSTEM_PROMPT,
+      system: input.mode === "regular" ? COPY_SYSTEM_PROMPT_REGULAR : COPY_SYSTEM_PROMPT_LIQUIDACION,
       prompt: `Producto: ${input.name}
 Stock disponible: ${input.stockQty}
 Categoría: ${input.category ?? "—"}
@@ -72,17 +84,18 @@ Genera el gancho.`,
     });
     return object.copy.trim().slice(0, 60);
   } catch {
-    return fallbackCopy(input.stockQty);
+    return fallbackCopy(input.stockQty, input.mode);
   }
 }
 
-function fallbackCopy(stockQty: number): string {
+function fallbackCopy(stockQty: number, mode: CopyMode): string {
+  if (mode === "regular") return "✨ Recomendado del día";
   return stockQty <= 5 ? `🔥 ¡Últimas ${stockQty} unidades!` : "🔥 Oferta de liquidación";
 }
 
 // ─── Selección ──────────────────────────────────────────────────────────────
 
-interface Candidate {
+export interface Candidate {
   odooProductId: number;
   name: string;
   category: string | null;
@@ -93,7 +106,7 @@ interface Candidate {
 }
 
 /** Capital muerto ordenado por capital invertido desc. */
-async function rankedDeadStock(): Promise<Candidate[]> {
+export async function rankedDeadStock(): Promise<Candidate[]> {
   const dead = await prisma.productInsight.findMany({
     where: { rotationDays: { gt: 30 }, stockQty: { gt: 0 } },
   });
@@ -109,6 +122,25 @@ async function rankedDeadStock(): Promise<Candidate[]> {
     }))
     .filter((c) => c.stockQty > 0 && c.salePrice > 0)
     .sort((a, b) => b.invested - a.invested);
+}
+
+/** Productos regulares (no capital muerto) con stock, para el selector manual. */
+export async function rankedRegularStock(): Promise<Candidate[]> {
+  const regular = await prisma.productInsight.findMany({
+    where: { rotationDays: { lte: 30 }, stockQty: { gt: 0 } },
+  });
+  return regular
+    .map((p) => ({
+      odooProductId: p.odooProductId,
+      name: p.name,
+      category: p.category,
+      stockQty: Math.floor(p.stockQty),
+      salePrice: p.salePrice,
+      rotationDays: p.rotationDays,
+      invested: p.stockQty * p.cmp,
+    }))
+    .filter((c) => c.stockQty > 0 && c.salePrice > 0)
+    .sort((a, b) => b.stockQty - a.stockQty);
 }
 
 async function recentlyPostedIds(): Promise<Set<number>> {
@@ -128,6 +160,7 @@ async function createPostFromCandidate(date: Date, slot: number, c: Candidate): 
     stockQty: c.stockQty,
     category: c.category,
     discountPct,
+    mode: "liquidacion",
   });
   return prisma.statusPost.create({
     data: {
@@ -181,38 +214,42 @@ export async function getOrCreateTodayStatusPosts(): Promise<StatusPost[]> {
 
 // ─── Edición ──────────────────────────────────────────────────────────────
 
-/** Cambia el producto de un slot por el siguiente disponible en la cola. */
-export async function swapStatusPostProduct(id: string): Promise<StatusPost> {
+/** Reemplaza el producto de un slot por uno elegido a mano (liquidación o regular). */
+export async function pickStatusPostProduct(id: string, odooProductId: number): Promise<StatusPost> {
   const post = await prisma.statusPost.findUniqueOrThrow({ where: { id } });
+
   const usedToday = await prisma.statusPost.findMany({
-    where: { date: post.date },
+    where: { date: post.date, id: { not: id } },
     select: { odooProductId: true },
   });
-  const usedIds = new Set(usedToday.map((u) => u.odooProductId));
-  const recentIds = await recentlyPostedIds();
+  if (usedToday.some((u) => u.odooProductId === odooProductId)) {
+    throw new Error("Ese producto ya está en otra tarjeta de hoy");
+  }
 
-  const ranked = await rankedDeadStock();
-  const next =
-    ranked.find((c) => !usedIds.has(c.odooProductId) && !recentIds.has(c.odooProductId)) ??
-    ranked.find((c) => !usedIds.has(c.odooProductId));
-  if (!next) return post; // no hay otro producto para ofrecer
+  const candidate = await prisma.productInsight.findUnique({ where: { odooProductId } });
+  if (!candidate || candidate.stockQty <= 0 || candidate.salePrice <= 0 || candidate.name.endsWith(" (archivado)")) {
+    throw new Error("Producto no disponible");
+  }
 
-  const discountPct = discountForRotation(next.rotationDays);
-  const finalPrice = computeFinalPrice(next.salePrice, discountPct);
+  const mode: CopyMode = candidate.rotationDays > 30 ? "liquidacion" : "regular";
+  const discountPct = mode === "liquidacion" ? discountForRotation(candidate.rotationDays) : 0;
+  const finalPrice = computeFinalPrice(candidate.salePrice, discountPct);
   const copy = await generateCopy({
-    name: next.name,
-    stockQty: next.stockQty,
-    category: next.category,
+    name: candidate.name,
+    stockQty: Math.floor(candidate.stockQty),
+    category: candidate.category,
     discountPct,
+    mode,
   });
+
   return prisma.statusPost.update({
     where: { id },
     data: {
-      odooProductId: next.odooProductId,
-      productName: next.name,
-      category: next.category,
-      stockQty: next.stockQty,
-      salePrice: next.salePrice,
+      odooProductId: candidate.odooProductId,
+      productName: candidate.name,
+      category: candidate.category,
+      stockQty: Math.floor(candidate.stockQty),
+      salePrice: candidate.salePrice,
       discountPct,
       finalPrice,
       copy,
@@ -222,14 +259,17 @@ export async function swapStatusPostProduct(id: string): Promise<StatusPost> {
   });
 }
 
-/** Regenera solo el copy IA de un estado. */
+/** Regenera solo el copy IA de un estado (usa el modo del producto actual). */
 export async function regenerateStatusPostCopy(id: string): Promise<StatusPost> {
   const post = await prisma.statusPost.findUniqueOrThrow({ where: { id } });
+  const insight = await prisma.productInsight.findUnique({ where: { odooProductId: post.odooProductId } });
+  const mode: CopyMode = insight && insight.rotationDays <= 30 ? "regular" : "liquidacion";
   const copy = await generateCopy({
     name: post.productName,
     stockQty: post.stockQty,
     category: post.category,
     discountPct: post.discountPct,
+    mode,
   });
   return prisma.statusPost.update({ where: { id }, data: { copy } });
 }
