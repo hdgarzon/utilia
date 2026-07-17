@@ -55,6 +55,7 @@ export default async function CampanasPage() {
   const statusView: StatusPostView[] = statusPosts.map((p) => ({
     id: p.id,
     slot: p.slot,
+    kind: p.kind === "GANCHO" ? "GANCHO" : "PRODUCT",
     odooProductId: p.odooProductId,
     productName: p.productName,
     stockQty: p.stockQty,
@@ -62,6 +63,8 @@ export default async function CampanasPage() {
     discountPct: p.discountPct,
     finalPrice: p.finalPrice,
     copy: p.copy,
+    headline: p.headline,
+    subhead: p.subhead,
     posted: p.posted,
     template: p.template as "A" | "B" | "C",
     version: new Date(p.updatedAt).getTime(),

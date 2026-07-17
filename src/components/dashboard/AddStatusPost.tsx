@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Plus, Flame, Package, Search, Loader2 } from "lucide-react";
+import { Plus, Flame, Package, Search, Loader2, Sparkles } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -11,7 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { addStatusPostAction } from "@/app/(dashboard)/campanas/status-actions";
+import { addStatusPostAction, addGanchoAction, suggestGanchoAction } from "@/app/(dashboard)/campanas/status-actions";
 import { ProductPickerDialog, type PickerProduct } from "./ProductPickerDialog";
 
 interface OriginOptionProps {
@@ -55,6 +55,9 @@ export function AddStatusPost({
   const [activeOrigin, setActiveOrigin] = useState<string | null>(null);
   const [originOpen, setOriginOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [ganchoOpen, setGanchoOpen] = useState(false);
+  const [headline, setHeadline] = useState("");
+  const [subhead, setSubhead] = useState("");
 
   function add(origin: Parameters<typeof addStatusPostAction>[0], label: string) {
     setActiveOrigin(label);
@@ -66,6 +69,41 @@ export function AddStatusPost({
         setOriginOpen(false);
         setPickerOpen(false);
         router.refresh();
+      } else {
+        toast.error(r.error ?? "Error");
+      }
+    });
+  }
+
+  function createGancho() {
+    if (!headline.trim()) {
+      toast.error("El titular no puede estar vacío");
+      return;
+    }
+    setActiveOrigin("gancho");
+    startTransition(async () => {
+      const r = await addGanchoAction(headline, subhead);
+      setActiveOrigin(null);
+      if (r.ok) {
+        toast.success("Gancho generado");
+        setHeadline("");
+        setSubhead("");
+        setGanchoOpen(false);
+        router.refresh();
+      } else {
+        toast.error(r.error ?? "Error");
+      }
+    });
+  }
+
+  function suggestGancho() {
+    setActiveOrigin("suggest");
+    startTransition(async () => {
+      const r = await suggestGanchoAction(headline);
+      setActiveOrigin(null);
+      if (r.ok) {
+        setHeadline(r.text.headline);
+        setSubhead(r.text.subhead);
       } else {
         toast.error(r.error ?? "Error");
       }
@@ -115,6 +153,17 @@ export function AddStatusPost({
                 setPickerOpen(true);
               }}
             />
+            <OriginOption
+              icon={<Sparkles className="h-4 w-4" />}
+              title="Gancho (texto)"
+              detail="Un estado de intriga sin producto: titular y subtítulo"
+              disabled={pending}
+              loading={false}
+              onClick={() => {
+                setOriginOpen(false);
+                setGanchoOpen(true);
+              }}
+            />
           </div>
         </DialogContent>
       </Dialog>
@@ -128,6 +177,50 @@ export function AddStatusPost({
         onPick={(odooProductId) => add({ kind: "producto", odooProductId }, "producto")}
         pending={pending}
       />
+
+      <Dialog open={ganchoOpen} onOpenChange={setGanchoOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nuevo gancho</DialogTitle>
+            <DialogDescription>
+              Texto de intriga sin producto. Escribilo vos o pedí una sugerencia.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <input
+              autoFocus
+              value={headline}
+              onChange={(e) => setHeadline(e.target.value)}
+              placeholder="Titular de intriga"
+              maxLength={60}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-semibold"
+            />
+            <input
+              value={subhead}
+              onChange={(e) => setSubhead(e.target.value)}
+              placeholder="Subtítulo (opcional)"
+              maxLength={90}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-xs"
+            />
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <button
+                disabled={pending}
+                onClick={suggestGancho}
+                className="flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium hover:bg-secondary disabled:opacity-50"
+              >
+                {activeOrigin === "suggest" && pending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />} Sugerir
+              </button>
+              <button
+                disabled={pending || !headline.trim()}
+                onClick={createGancho}
+                className="flex items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-50"
+              >
+                {activeOrigin === "gancho" && pending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />} Generar
+              </button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

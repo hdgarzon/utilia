@@ -104,6 +104,41 @@ function fallbackCopy(stockQty: number, mode: CopyMode): string {
   return stockQty <= 5 ? `🔥 ¡Últimas ${stockQty} unidades!` : "🔥 Oferta de liquidación";
 }
 
+// ─── Gancho (texto libre) ───────────────────────────────────────────────────
+
+const ganchoSchema = z.object({
+  headline: z.string().describe("Titular de intriga, máx 32 caracteres, puede empezar con emoji."),
+  subhead: z.string().describe("Subtítulo breve que complementa el titular, máx 48 caracteres."),
+});
+
+const GANCHO_SYSTEM_PROMPT = `Eres el community manager de Papelería Utilia (Sabaneta, Colombia).
+Escribes "ganchos" de intriga para Estados de WhatsApp: NO hay producto ni precio, solo generar curiosidad para que la gente siga viendo los siguientes estados.
+Reglas:
+- Titular: máximo 32 caracteres, con gancho, puede llevar 1 emoji.
+- Subtítulo: máximo 48 caracteres, complementa sin revelar todo.
+- Español coloquial colombiano, cercano.
+- Nada de precios ni nombres de productos.`;
+
+/** Sugiere titular + subtítulo para un gancho. `tema` opcional orienta a la IA. */
+export async function suggestGanchoText(tema?: string): Promise<{ headline: string; subhead: string }> {
+  try {
+    const { object } = await generateObject({
+      model: openai("gpt-4o-mini"),
+      schema: ganchoSchema,
+      system: GANCHO_SYSTEM_PROMPT,
+      prompt: tema?.trim()
+        ? `Tema o pista: ${tema.trim()}\n\nGenera el gancho.`
+        : `Genera un gancho de intriga genérico para abrir la tanda de estados del día.`,
+    });
+    return {
+      headline: object.headline.trim().slice(0, 40),
+      subhead: object.subhead.trim().slice(0, 60),
+    };
+  } catch {
+    return { headline: "👀 Se viene algo bueno", subhead: "Quédate pendiente de nuestros estados" };
+  }
+}
+
 // ─── Selección ──────────────────────────────────────────────────────────────
 
 export interface Candidate {
@@ -158,10 +193,10 @@ export async function rankedRegularStock(): Promise<Candidate[]> {
 async function recentlyPostedIds(): Promise<Set<number>> {
   const since = colombiaDaysAgo(DAYS_BEFORE_REPEAT);
   const recent = await prisma.statusPost.findMany({
-    where: { date: { gte: since } },
+    where: { date: { gte: since }, odooProductId: { not: null } },
     select: { odooProductId: true },
   });
-  return new Set(recent.map((r) => r.odooProductId));
+  return new Set(recent.map((r) => r.odooProductId).filter((id): id is number => id != null));
 }
 
 /**
@@ -252,15 +287,23 @@ function pickAuto(pool: Candidate[], usedToday: Set<number>, recentIds: Set<numb
   return fresh[0] ?? available[0] ?? null;
 }
 
-/** Agrega un estado más al día de hoy en el siguiente slot libre. */
-export async function addStatusPost(origin: NewPostOrigin): Promise<StatusPost> {
+/** Estados de hoy (Colombia) con lo mínimo para calcular slot y evitar repetidos. */
+async function todayContext() {
   const today = colombiaToday();
   const todays = await prisma.statusPost.findMany({
     where: { date: today },
     select: { slot: true, odooProductId: true },
   });
-  const usedToday = new Set(todays.map((t) => t.odooProductId));
+  const usedToday = new Set(
+    todays.map((t) => t.odooProductId).filter((id): id is number => id != null)
+  );
   const nextSlot = todays.reduce((max, t) => Math.max(max, t.slot), 0) + 1;
+  return { today, usedToday, nextSlot };
+}
+
+/** Agrega un estado más al día de hoy en el siguiente slot libre. */
+export async function addStatusPost(origin: NewPostOrigin): Promise<StatusPost> {
+  const { today, usedToday, nextSlot } = await todayContext();
 
   let candidate: Candidate | null;
   if (origin.kind === "producto") {
@@ -288,6 +331,33 @@ export async function addStatusPost(origin: NewPostOrigin): Promise<StatusPost> 
   }
 
   return createPostFromCandidate(today, nextSlot, candidate);
+}
+
+/** Trunca y limpia el texto del gancho; el titular es obligatorio. */
+function cleanGancho(headline: string, subhead: string) {
+  return {
+    headline: headline.trim().slice(0, 60),
+    subhead: subhead.trim().slice(0, 90) || null,
+  };
+}
+
+/** Crea un estado de tipo gancho (texto libre, sin producto) en el siguiente slot. */
+export async function addGanchoPost(headline: string, subhead: string): Promise<StatusPost> {
+  const clean = cleanGancho(headline, subhead);
+  if (!clean.headline) throw new Error("El titular no puede estar vacío");
+  const { today, nextSlot } = await todayContext();
+  return prisma.statusPost.create({
+    data: { date: today, slot: nextSlot, kind: "GANCHO", headline: clean.headline, subhead: clean.subhead },
+  });
+}
+
+/** Edita el texto de un gancho existente. */
+export async function updateGanchoText(id: string, headline: string, subhead: string): Promise<StatusPost> {
+  const post = await prisma.statusPost.findUniqueOrThrow({ where: { id } });
+  if (post.kind !== "GANCHO") throw new Error("Este estado no es un gancho");
+  const clean = cleanGancho(headline, subhead);
+  if (!clean.headline) throw new Error("El titular no puede estar vacío");
+  return prisma.statusPost.update({ where: { id }, data: clean });
 }
 
 // ─── Edición ──────────────────────────────────────────────────────────────
@@ -319,13 +389,16 @@ export async function pickStatusPostProduct(id: string, odooProductId: number): 
 /** Regenera solo el copy IA de un estado (usa el modo del producto actual). */
 export async function regenerateStatusPostCopy(id: string): Promise<StatusPost> {
   const post = await prisma.statusPost.findUniqueOrThrow({ where: { id } });
+  if (post.kind !== "PRODUCT" || post.odooProductId == null || post.productName == null) {
+    throw new Error("Este estado no tiene copy de producto");
+  }
   const insight = await prisma.productInsight.findUnique({ where: { odooProductId: post.odooProductId } });
   const mode: CopyMode = insight && insight.rotationDays <= 30 ? "regular" : "liquidacion";
   const copy = await generateCopy({
     name: post.productName,
-    stockQty: post.stockQty,
+    stockQty: post.stockQty ?? 0,
     category: post.category,
-    discountPct: post.discountPct,
+    discountPct: post.discountPct ?? 0,
     mode,
   });
   return prisma.statusPost.update({ where: { id }, data: { copy } });
@@ -335,6 +408,9 @@ export async function regenerateStatusPostCopy(id: string): Promise<StatusPost> 
 export async function updateStatusPostDiscount(id: string, pct: number): Promise<StatusPost> {
   const clamped = Math.min(90, Math.max(0, Math.round(pct)));
   const post = await prisma.statusPost.findUniqueOrThrow({ where: { id } });
+  if (post.kind !== "PRODUCT" || post.salePrice == null) {
+    throw new Error("Este estado no tiene precio");
+  }
   const finalPrice = computeFinalPrice(post.salePrice, clamped);
   return prisma.statusPost.update({
     where: { id },
