@@ -5,7 +5,7 @@ import { formatCurrency } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { MessageSquare, Plus } from "lucide-react";
 import Link from "next/link";
-import { getOrCreateTodayStatusPosts, rankedDeadStock, rankedRegularStock } from "@/lib/analytics/status-posts";
+import { getOrCreateTodayStatusPosts, rankedDeadStock, rankedRegularStock, isArchived } from "@/lib/analytics/status-posts";
 import { StatusPostsToday, type StatusPostView } from "@/components/dashboard/StatusPostsToday";
 
 async function getCampaignsData() {
@@ -50,8 +50,8 @@ export default async function CampanasPage() {
     rankedDeadStock().catch(() => []),
     rankedRegularStock().catch(() => []),
   ]);
-  const liquidacionPool = liquidacionPoolRaw.filter((c) => !c.name.endsWith(" (archivado)"));
-  const regularPool = regularPoolRaw.filter((c) => !c.name.endsWith(" (archivado)"));
+  const liquidacionPool = liquidacionPoolRaw.filter((c) => !isArchived(c.name));
+  const regularPool = regularPoolRaw.filter((c) => !isArchived(c.name));
   const statusView: StatusPostView[] = statusPosts.map((p) => ({
     id: p.id,
     slot: p.slot,

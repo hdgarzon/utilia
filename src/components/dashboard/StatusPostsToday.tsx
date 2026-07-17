@@ -13,6 +13,7 @@ import {
   pickProductAction,
 } from "@/app/(dashboard)/campanas/status-actions";
 import { ProductPickerDialog, type PickerProduct } from "./ProductPickerDialog";
+import { AddStatusPost } from "./AddStatusPost";
 
 export interface StatusPostView {
   id: string;
@@ -192,13 +193,17 @@ export function StatusPostsToday({
   regularPool: PickerProduct[];
 }) {
   if (posts.length === 0) return null;
+  const usedToday = posts.map((p) => p.odooProductId);
   return (
     <div className="rounded-xl border border-border bg-card p-4 md:p-5 space-y-4">
       <div>
-        <h3 className="text-sm font-semibold">Estados de hoy para WhatsApp</h3>
+        <h3 className="text-sm font-semibold">
+          Estados de hoy para WhatsApp
+          <span className="ml-1.5 font-normal text-muted-foreground">({posts.length})</span>
+        </h3>
         <p className="text-xs text-muted-foreground">
-          Descarga cada imagen y súbela a tu Estado de WhatsApp. 3 al día para mover capital muerto.
-          Descargar → WhatsApp → Estado → subir la imagen.
+          Descarga cada imagen y súbela a tu Estado de WhatsApp. Los primeros salen solos para mover
+          capital muerto; podés generar más cuando quieras. Descargar → WhatsApp → Estado → subir la imagen.
         </p>
       </div>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -206,12 +211,17 @@ export function StatusPostsToday({
           <StatusCard
             key={p.id}
             post={p}
-            excludeIds={posts.filter((o) => o.id !== p.id).map((o) => o.odooProductId)}
+            excludeIds={usedToday.filter((id) => id !== p.odooProductId)}
             liquidacionPool={liquidacionPool}
             regularPool={regularPool}
           />
         ))}
       </div>
+      <AddStatusPost
+        liquidacionPool={liquidacionPool}
+        regularPool={regularPool}
+        excludeIds={usedToday}
+      />
     </div>
   );
 }
