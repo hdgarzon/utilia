@@ -102,9 +102,10 @@ Ordenados por relación impacto/esfuerzo.
 Cada request rehace todo el pipeline. La respuesta sale sin `Cache-Control`, así que ni el navegador ni la CDN de Vercel la retienen.
 **Arreglo:** añadir `Cache-Control: public, max-age=31536000, immutable`. La URL ya está versionada con `?v={updatedAt}`, así que un cambio de descuento/plantilla invalida solo. Es un one-liner que elimina prácticamente todo el trabajo repetido.
 
-### 2. `image_1920` para un lienzo de 1080px · `odoo.ts:300-310`
-Se traen hasta ~1920px para renderizar a 1080 como máximo (plantilla A, `objectFit: cover`); B/C usan la foto aún más pequeña.
-**Arreglo:** parametrizar el campo y pedir `image_1024`. Reduce el payload Odoo→servidor ~3–4× sin pérdida visible.
+### 2. ~~`image_1920` para un lienzo de 1080px~~ · **CORREGIDO — esta recomendación era errónea**
+> **Retractación (2026-07-17).** Al implementarlo verifiqué cómo se dibuja la foto en cada plantilla y **bajar a `image_1024` habría degradado la plantilla A**. A es full-bleed: `1080×1920` con `objectFit: cover`, así que una foto cuadrada de 1024 px tendría que escalar **1,875×** para cubrir el lienzo — degradación visible. B (`1080×1075`) y C (`968×1000`) sí tolerarían 1024, pero no justifica ramificar por plantilla.
+>
+> Además, **el arreglo #1 vuelve el problema irrelevante**: con `Cache-Control` cada imagen se baja de Odoo una vez por versión, así que el ahorro de ancho de banda era mínimo y el costo de calidad real. **Se mantiene `image_1920`.**
 
 ### 3. `getProducts` sin paginación · `odoo.ts:278-283`
 `{ limit: 5000 }` sin `offset`. Con 2.301 productos hoy funciona; al superar 5.000 el sync trunca sin avisar.

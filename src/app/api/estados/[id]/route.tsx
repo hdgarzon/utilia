@@ -42,6 +42,14 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       photoSrc,
       logoSrc: LOGO_SRC,
     }),
-    { width: 1080, height: 1920 }
+    {
+      width: 1080,
+      height: 1920,
+      // El cliente pide siempre `?v={updatedAt}`, así que la URL identifica una
+      // versión concreta del estado y su render nunca cambia: editar descuento,
+      // plantilla o producto mueve el `v` y genera una URL nueva. Sin esto cada
+      // recarga rehacía el viaje a Odoo + sharp + Satori desde cero.
+      headers: { "Cache-Control": "public, max-age=31536000, immutable" },
+    }
   );
 }
