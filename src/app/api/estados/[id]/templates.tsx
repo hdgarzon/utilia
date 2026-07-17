@@ -12,11 +12,26 @@ export interface EstadoData {
   logoSrc: string;         // data URI del logo
 }
 
+export interface GanchoData {
+  headline: string;
+  subhead: string | null;
+  logoSrc: string;
+}
+
 const BLUE = "#0851D4";
 const GREEN = "#82FE28";
 
 function fmtCOP(n: number): string {
   return "$" + Math.round(n).toLocaleString("es-CO");
+}
+
+// Escala el tamaño de fuente del titular según su largo, para que no desborde.
+function headlineFontSize(text: string): number {
+  const n = text.length;
+  if (n <= 16) return 132;
+  if (n <= 28) return 104;
+  if (n <= 44) return 82;
+  return 64;
 }
 
 // A — Impacto máximo (foto a sangre completa)
@@ -112,8 +127,54 @@ function TemplateC(d: EstadoData): ReactElement {
   );
 }
 
+// GANCHO — intriga sin producto (fondo de marca + texto)
+function TemplateGancho(d: GanchoData): ReactElement {
+  return (
+    <div
+      style={{
+        width: "1080px",
+        height: "1920px",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "96px",
+        background: `linear-gradient(150deg, ${BLUE} 0%, #041030 100%)`,
+      }}
+    >
+      <div style={{ position: "absolute", top: "72px", left: "72px", width: "220px", height: "220px", display: "flex", backgroundColor: "#fff", borderRadius: "36px", padding: "15px" }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={d.logoSrc} width={190} height={190} style={{ width: "190px", height: "190px", objectFit: "contain" }} alt="Utilia" />
+      </div>
+      <div style={{ display: "flex", width: "180px", height: "10px", backgroundColor: GREEN, borderRadius: "5px", marginBottom: "56px" }} />
+      <div
+        style={{
+          display: "flex",
+          textAlign: "center",
+          fontSize: `${headlineFontSize(d.headline)}px`,
+          fontWeight: 800,
+          color: "#ffffff",
+          lineHeight: 1.05,
+          letterSpacing: "-1px",
+        }}
+      >
+        {d.headline}
+      </div>
+      {d.subhead && (
+        <div style={{ display: "flex", textAlign: "center", fontSize: "48px", fontWeight: 600, color: GREEN, marginTop: "48px", lineHeight: 1.2, maxWidth: "820px" }}>
+          {d.subhead}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function renderEstado(template: TemplateId, d: EstadoData): ReactElement {
   if (template === "B") return TemplateB(d);
   if (template === "C") return TemplateC(d);
   return TemplateA(d);
+}
+
+export function renderGancho(d: GanchoData): ReactElement {
+  return TemplateGancho(d);
 }

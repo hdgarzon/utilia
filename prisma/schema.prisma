@@ -209,22 +209,30 @@ model AIRecommendation {
 // ─── Estados de WhatsApp (liquidación) ────────────────────────────────────────
 
 model StatusPost {
-  id            String    @id @default(cuid())
-  date          DateTime  @db.Date // día de la selección (Colombia)
-  slot          Int // 1..3
-  odooProductId Int
-  productName   String
+  id       String @id @default(cuid())
+  date     DateTime @db.Date // día de la selección (Colombia)
+  slot     Int
+  kind     String   @default("PRODUCT") // "PRODUCT" | "GANCHO"
+
+  // Campos de producto: presentes cuando kind = "PRODUCT", null en un gancho.
+  odooProductId Int?
+  productName   String?
   category      String?
-  stockQty      Int
-  salePrice     Float // precio lista original
-  discountPct   Float // 20 o 30 (editable)
-  finalPrice    Float // precio con descuento, redondeado
-  copy          String // línea de urgencia (IA)
-  template      String    @default("A") // "A" | "B" | "C"
-  posted        Boolean   @default(false)
-  postedAt      DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  stockQty      Int?
+  salePrice     Float? // precio lista original
+  discountPct   Float? // 20 o 30 (editable)
+  finalPrice    Float? // precio con descuento, redondeado
+  copy          String? // línea de urgencia (IA)
+  template      String  @default("A") // "A" | "B" | "C"
+
+  // Campos de gancho: presentes cuando kind = "GANCHO", null en un producto.
+  headline String? // titular de intriga
+  subhead  String? // subtítulo opcional
+
+  posted    Boolean   @default(false)
+  postedAt  DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   @@unique([date, slot])
   @@index([odooProductId])

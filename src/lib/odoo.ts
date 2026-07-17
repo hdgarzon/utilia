@@ -104,6 +104,24 @@ async function searchRead<T>(
   });
 }
 
+/** Campos de product.product que consume el sync. */
+const PRODUCT_FIELDS = [
+  "id",
+  "name",
+  "display_name",
+  "default_code",
+  "categ_id",
+  "product_tmpl_id",
+  "list_price",
+  "standard_price",
+  "qty_available",
+  "active",
+];
+
+const PRODUCTS_PAGE_SIZE = 200;
+/** Tope de seguridad para que un error de paginación no gire indefinidamente. */
+const PRODUCTS_MAX = 50_000;
+
 // ─── Tipos de datos de Odoo ──────────────────────────────────────────────────
 
 export interface OdooSaleOrder {
@@ -275,12 +293,21 @@ export const odoo = {
       : [["active", "=", true]];
     if (since) domain.push(["write_date", ">=", formatOdooDate(since)]);
 
-    return searchRead<OdooProduct>(
-      "product.product",
-      domain,
-      ["id", "name", "display_name", "default_code", "categ_id", "product_tmpl_id", "list_price", "standard_price", "qty_available", "active"],
-      { limit: 5000 }
-    );
+    // Paginado: un `limit` alto corta el catálogo en silencio al superarlo.
+    // Se ordena por `id asc` para que un producto creado durante el recorrido
+    // se agregue al final y no desplace las páginas ya leídas.
+    const all: OdooProduct[] = [];
+    for (let offset = 0; offset < PRODUCTS_MAX; offset += PRODUCTS_PAGE_SIZE) {
+      const page = await searchRead<OdooProduct>("product.product", domain, PRODUCT_FIELDS, {
+        limit: PRODUCTS_PAGE_SIZE,
+        offset,
+        order: "id asc",
+      });
+      all.push(...page);
+      if (page.length < PRODUCTS_PAGE_SIZE) return all;
+    }
+    console.warn(`[odoo] getProducts alcanzó el tope de ${PRODUCTS_MAX} productos; puede haber más sin leer.`);
+    return all;
   },
 
   /** Obtiene una lista específica de productos por ID (incluso archivados). */
@@ -289,7 +316,7 @@ export const odoo = {
     const result = await searchRead<OdooProduct>(
       "product.product",
       ["|", ["active", "=", true], ["active", "=", false], ["id", "in", ids]],
-      ["id", "name", "display_name", "default_code", "categ_id", "product_tmpl_id", "list_price", "standard_price", "qty_available", "active"],
+      PRODUCT_FIELDS,
       { limit: ids.length }
     );
     // Odoo no garantiza el orden; devolvemos en orden solicitado
