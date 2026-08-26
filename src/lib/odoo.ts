@@ -466,3 +466,12 @@ export const odoo = {
 function formatOdooDate(d: Date): string {
   return d.toISOString().replace("T", " ").slice(0, 19);
 }
+
+/**
+ * Acceso RPC crudo para los scripts administrativos de `scripts/`.
+ *
+ * NO usar desde rutas de sync ni desde route handlers: Odoo es upstream y el
+ * sync nunca le escribe. Esto existe solo para mantenimiento puntual de datos
+ * maestros (códigos UNSPSC, datos fiscales de contactos) desde la CLI.
+ */
+export const odooRpc = { executeKw, searchRead };
