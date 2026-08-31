@@ -187,7 +187,6 @@ export interface OdooSupplier {
   id: number;
   name: string;
   phone: string | false;
-  mobile: string | false;
 }
 
 /** POS = Point of Sale. Modelo paralelo a sale.order pero para caja registradora. */
@@ -522,7 +521,7 @@ export const odoo = {
     return searchRead<OdooSupplier>(
       "res.partner",
       [["supplier_rank", ">", 0]],
-      ["id", "name", "phone", "mobile"],
+      ["id", "name", "phone"],
       { limit: 1000, order: "name asc" }
     );
   },

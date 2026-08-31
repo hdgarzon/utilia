@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { odoo } from "@/lib/odoo";
+import { Prisma } from "@prisma/client";
 
 /**
  * Crea proveedores a partir del historial de compras sincronizado. Idempotente:
@@ -25,8 +26,13 @@ export async function ensureSuppliersFromHistory(): Promise<number> {
       } else if (existing.name !== name) {
         await prisma.supplier.update({ where: { id: existing.id }, data: { name } });
       }
-    } catch {
+    } catch (err) {
       // Colisión por nombre duplicado (name es @unique): se conserva el existente.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        // Ignorar violación de restricción única; conservar existente.
+      } else {
+        throw err;
+      }
     }
   }
   return created;
@@ -42,7 +48,7 @@ export async function importSuppliersFromOdoo(): Promise<{ created: number; phon
   let phonesFilled = 0;
 
   for (const s of odooSuppliers) {
-    const phone = (typeof s.mobile === "string" && s.mobile) || (typeof s.phone === "string" && s.phone) || null;
+    const phone = typeof s.phone === "string" && s.phone ? s.phone : null;
     try {
       const existing = await prisma.supplier.findUnique({ where: { odooPartnerId: s.id } });
       if (!existing) {
@@ -53,8 +59,13 @@ export async function importSuppliersFromOdoo(): Promise<{ created: number; phon
         await prisma.supplier.update({ where: { id: existing.id }, data: { phone } });
         phonesFilled++;
       }
-    } catch {
+    } catch (err) {
       // Colisión por nombre duplicado: se conserva el existente.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+        // Ignorar violación de restricción única; conservar existente.
+      } else {
+        throw err;
+      }
     }
   }
   return { created, phonesFilled };
