@@ -183,6 +183,13 @@ export interface OdooPartner {
   birthday: string | false;
 }
 
+export interface OdooSupplier {
+  id: number;
+  name: string;
+  phone: string | false;
+  mobile: string | false;
+}
+
 /** POS = Point of Sale. Modelo paralelo a sale.order pero para caja registradora. */
 export interface OdooPosOrder {
   id: number;
@@ -507,6 +514,16 @@ export const odoo = {
       domain,
       ["id", "name", "email", "phone", "mobile", "birthday"],
       { limit: 5000 }
+    );
+  },
+
+  /** Contactos marcados como proveedor (supplier_rank > 0). Solo lectura. */
+  async getSuppliers(): Promise<OdooSupplier[]> {
+    return searchRead<OdooSupplier>(
+      "res.partner",
+      [["supplier_rank", ">", 0]],
+      ["id", "name", "phone", "mobile"],
+      { limit: 1000, order: "name asc" }
     );
   },
 };
