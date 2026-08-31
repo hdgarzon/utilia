@@ -179,8 +179,6 @@ export interface OdooPartner {
   name: string;
   email: string | false;
   phone: string | false;
-  mobile: string | false;
-  birthday: string | false;
 }
 
 /** POS = Point of Sale. Modelo paralelo a sale.order pero para caja registradora. */
@@ -505,7 +503,7 @@ export const odoo = {
     return searchRead<OdooPartner>(
       "res.partner",
       domain,
-      ["id", "name", "email", "phone", "mobile", "birthday"],
+      ["id", "name", "email", "phone"],
       { limit: 5000 }
     );
   },
