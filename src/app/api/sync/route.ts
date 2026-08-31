@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
   try {
     const results = await runFullSync();
     const summary = results.map((r, i) => ({
-      job: ["products", "stock", "sales"][i],
+      job: ["products", "stock", "sales", "purchases"][i],
       status: r.status,
       ...(r.status === "fulfilled" ? r.value : { error: String(r.reason?.message ?? r.reason) }),
     }));
@@ -66,7 +66,7 @@ export async function POST() {
   try {
     const results = await runFullSync();
     const summary = results.map((r, i) => ({
-      job: ["products", "stock", "sales"][i],
+      job: ["products", "stock", "sales", "purchases"][i],
       status: r.status,
       ...(r.status === "fulfilled" ? r.value : { error: String(r.reason?.message ?? r.reason) }),
     }));

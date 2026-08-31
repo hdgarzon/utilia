@@ -25,6 +25,7 @@ const JOB_LABEL: Record<string, string> = {
   products: "productos",
   stock: "stock",
   sales: "ventas",
+  purchases: "compras",
 };
 
 export function SyncButton() {
