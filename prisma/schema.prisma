@@ -29,7 +29,7 @@ enum Role {
 
 model SyncState {
   id         String   @id @default(cuid())
-  entity     String   @unique // "sale_order" | "stock_quant" | "product_template" | "account_move" | "res_partner"
+  entity     String   @unique // "sale_order" | "stock_quant" | "product_template" | "account_move" | "res_partner" | "purchase_order"
   lastSyncAt DateTime
   status     String   @default("idle") // "idle" | "syncing" | "error"
   error      String?
@@ -204,6 +204,39 @@ model AIRecommendation {
   expiresAt  DateTime?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
+}
+
+// ─── Compras (entradas de mercancía) ──────────────────────────────────────────
+
+// Cabecera de purchase.order en Odoo — solo confirmadas ("purchase" | "done"),
+// que es lo que representa gasto/entrada real (no cotizaciones sin aprobar).
+model PurchaseOrder {
+  id            String   @id @default(cuid())
+  odooOrderId   Int      @unique
+  name          String // ej "P00082"
+  partnerName   String?
+  dateOrder     DateTime // date_approve de Odoo (fecha de confirmación)
+  amountUntaxed Float
+  amountTotal   Float
+  state         String // "purchase" | "done"
+  lines         PurchaseOrderLine[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([dateOrder])
+}
+
+model PurchaseOrderLine {
+  id              String        @id @default(cuid())
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  purchaseOrderId String
+  odooProductId   Int
+  productName     String
+  qty             Float
+  priceSubtotal   Float
+
+  @@index([purchaseOrderId])
+  @@index([odooProductId])
 }
 
 // ─── Estados de WhatsApp (liquidación) ────────────────────────────────────────

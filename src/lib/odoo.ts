@@ -208,6 +208,28 @@ export interface OdooPosOrderLine {
   total_cost: number;
 }
 
+/** Orden de compra a proveedor (entradas de mercancía). */
+export interface OdooPurchaseOrder {
+  id: number;
+  name: string; // ej "P00082"
+  date_approve: string | false; // fecha de confirmación; false si aún no se aprueba
+  amount_untaxed: number;
+  amount_total: number;
+  state: string; // "draft" | "sent" | "purchase" | "done" | "cancel"
+  partner_id: [number, string] | false;
+  order_line: number[];
+}
+
+export interface OdooPurchaseOrderLine {
+  id: number;
+  order_id: [number, string];
+  // `false` en líneas de sección/nota (display_type), que no representan producto.
+  product_id: [number, string] | false;
+  product_qty: number;
+  price_unit: number;
+  price_subtotal: number;
+}
+
 // ─── API pública ─────────────────────────────────────────────────────────────
 
 export const odoo = {
@@ -449,6 +471,33 @@ export const odoo = {
     return all;
   },
 
+  /**
+   * Trae órdenes de compra confirmadas (entradas reales o en camino).
+   * `state in [purchase, done]` = ya aprobadas por el proveedor (excluye
+   * borradores y cotizaciones enviadas que aún no representan gasto real).
+   */
+  async getPurchaseOrders(since?: Date): Promise<OdooPurchaseOrder[]> {
+    const domain: unknown[] = [["state", "in", ["purchase", "done"]]];
+    if (since) domain.push(["write_date", ">=", formatOdooDate(since)]);
+
+    return searchRead<OdooPurchaseOrder>(
+      "purchase.order",
+      domain,
+      ["id", "name", "date_approve", "amount_untaxed", "amount_total", "state", "partner_id", "order_line"],
+      { limit: 2000, order: "date_approve desc" }
+    );
+  },
+
+  async getPurchaseOrderLines(orderIds: number[]): Promise<OdooPurchaseOrderLine[]> {
+    if (orderIds.length === 0) return [];
+    return searchRead<OdooPurchaseOrderLine>(
+      "purchase.order.line",
+      [["order_id", "in", orderIds]],
+      ["id", "order_id", "product_id", "product_qty", "price_unit", "price_subtotal"],
+      { limit: 10000 }
+    );
+  },
+
   async getPartners(since?: Date): Promise<OdooPartner[]> {
     const domain: unknown[] = [["customer_rank", ">", 0]];
     if (since) domain.push(["write_date", ">=", formatOdooDate(since)]);
@@ -466,3 +515,12 @@ export const odoo = {
 function formatOdooDate(d: Date): string {
   return d.toISOString().replace("T", " ").slice(0, 19);
 }
+
+/**
+ * Acceso RPC crudo para los scripts administrativos de `scripts/`.
+ *
+ * NO usar desde rutas de sync ni desde route handlers: Odoo es upstream y el
+ * sync nunca le escribe. Esto existe solo para mantenimiento puntual de datos
+ * maestros (códigos UNSPSC, datos fiscales de contactos) desde la CLI.
+ */
+export const odooRpc = { executeKw, searchRead };

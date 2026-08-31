@@ -187,6 +187,94 @@ export async function syncProducts() {
   }
 }
 
+// Cabecera + líneas de purchase.order. Volumen bajo (decenas al mes), por eso
+// usa upserts/deletes por-orden en vez de las escrituras SQL en lote de arriba
+// — no hay presión de tiempo serverless como con productos/ventas.
+async function upsertPurchaseOrder(
+  order: {
+    odooOrderId: number;
+    name: string;
+    partnerName: string | null;
+    dateOrder: Date;
+    amountUntaxed: number;
+    amountTotal: number;
+    state: string;
+  },
+  lines: Array<{ odooProductId: number; productName: string; qty: number; priceSubtotal: number }>
+) {
+  const saved = await prisma.purchaseOrder.upsert({
+    where: { odooOrderId: order.odooOrderId },
+    create: order,
+    update: order,
+  });
+  // Reemplazar líneas: más simple y seguro que diffear (una orden de compra
+  // rara vez cambia de líneas una vez confirmada, y el volumen es bajo).
+  await prisma.purchaseOrderLine.deleteMany({ where: { purchaseOrderId: saved.id } });
+  if (lines.length > 0) {
+    await prisma.purchaseOrderLine.createMany({
+      data: lines.map((l) => ({ ...l, purchaseOrderId: saved.id })),
+    });
+  }
+}
+
+export async function syncPurchases() {
+  const runStart = new Date();
+  const since = await getLastSync("purchase_order");
+  await markSyncStatus("purchase_order", "syncing");
+
+  try {
+    const orders = await odoo.getPurchaseOrders(since);
+
+    if (orders.length === 0) {
+      await recordSyncSuccess("purchase_order", runStart);
+      return { synced: 0 };
+    }
+
+    const lines = await odoo.getPurchaseOrderLines(orders.map((o) => o.id));
+    const linesByOrder = new Map<number, typeof lines>();
+    for (const l of lines) {
+      const arr = linesByOrder.get(l.order_id[0]) ?? [];
+      arr.push(l);
+      linesByOrder.set(l.order_id[0], arr);
+    }
+
+    for (const o of orders) {
+      // date_approve puede venir `false` en órdenes "done" sin fecha de
+      // aprobación registrada; usamos "ahora" como fallback razonable.
+      const dateOrder = o.date_approve ? new Date(o.date_approve + "Z") : runStart;
+      const orderLines = linesByOrder.get(o.id) ?? [];
+      await upsertPurchaseOrder(
+        {
+          odooOrderId: o.id,
+          name: o.name,
+          partnerName: o.partner_id ? o.partner_id[1] : null,
+          dateOrder,
+          amountUntaxed: o.amount_untaxed,
+          amountTotal: o.amount_total,
+          state: o.state,
+        },
+        orderLines
+          // Líneas de sección/nota (display_type) no tienen producto: product_id
+          // viene `false`. No representan una entrada de mercancía, se descartan.
+          .filter((l): l is typeof l & { product_id: [number, string] } => Array.isArray(l.product_id))
+          .map((l) => ({
+            odooProductId: l.product_id[0],
+            productName: l.product_id[1],
+            qty: l.product_qty,
+            priceSubtotal: l.price_subtotal,
+          }))
+      );
+    }
+
+    await recordSyncSuccess("purchase_order", runStart);
+    return { synced: orders.length };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await markSyncStatus("purchase_order", "error", msg);
+    throw err;
+  }
+}
+
 export async function syncStock() {
   const runStart = new Date();
   await markSyncStatus("stock_quant", "syncing");
@@ -535,7 +623,7 @@ export async function runFullSync() {
   // Con escrituras en lote (1 sentencia por lote) cada job termina en segundos,
   // así que en serie el total es bajo. Cada job maneja su propio estado, por eso
   // un fallo no aborta los siguientes.
-  const jobs = [syncProducts, syncStock, syncSalesAndComputeMetrics];
+  const jobs = [syncProducts, syncStock, syncSalesAndComputeMetrics, syncPurchases];
   const results: PromiseSettledResult<{ synced: number }>[] = [];
   for (const job of jobs) {
     try {

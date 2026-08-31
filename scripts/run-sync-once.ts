@@ -9,7 +9,7 @@ import { runFullSync } from "@/lib/sync";
 async function main() {
   const t0 = Date.now();
   const results = await runFullSync();
-  const labels = ["products", "stock", "sales"];
+  const labels = ["products", "stock", "sales", "purchases"];
   results.forEach((r, i) => {
     if (r.status === "fulfilled") {
       console.log(`OK  ${labels[i]}: synced ${r.value.synced}`);

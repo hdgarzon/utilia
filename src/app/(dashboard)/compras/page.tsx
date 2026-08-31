@@ -2,7 +2,9 @@ export const dynamic = "force-dynamic";
 
 import Link from "next/link";
 import { getOpenToBuyPlan } from "@/lib/analytics/open-to-buy";
+import { getMonthlyPurchaseSummary } from "@/lib/analytics/purchases";
 import { ComprasTable } from "@/components/dashboard/ComprasTable";
+import { PurchasesActuals } from "@/components/dashboard/PurchasesActuals";
 import { formatCurrency, cn } from "@/lib/utils";
 import { ShoppingBag, TrendingUp, AlertCircle, Wallet } from "lucide-react";
 
@@ -15,6 +17,7 @@ export default async function ComprasPage({ searchParams }: PageProps) {
   const coverage = Math.max(7, Math.min(90, Number(params.coverage) || 21));
 
   const plan = await getOpenToBuyPlan(coverage).catch(() => null);
+  const purchaseSummary = await getMonthlyPurchaseSummary().catch(() => null);
 
   if (!plan || plan.categories.length === 0) {
     return (
@@ -119,6 +122,9 @@ export default async function ComprasPage({ searchParams }: PageProps) {
           </div>
         </div>
       </div>
+
+      {/* Compras reales del mes (Odoo: purchase.order confirmadas) */}
+      {purchaseSummary && <PurchasesActuals summary={purchaseSummary} reinvestmentFund={reinvestmentFund} />}
 
       {/* KPIs totales */}
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">

@@ -15,7 +15,10 @@
     "sync": "tsx --env-file=.env.local scripts/run-sync-once.ts",
     "db:seed": "tsx prisma/seed.ts",
     "seed:demo": "tsx scripts/seed-demo-data.ts",
-    "seed:demo:clear": "tsx scripts/seed-demo-data.ts clear"
+    "seed:demo:clear": "tsx scripts/seed-demo-data.ts clear",
+    "co:audit": "tsx --env-file=.env.local scripts/co-edi-audit.ts",
+    "co:unspsc": "tsx --env-file=.env.local scripts/co-edi-unspsc.ts",
+    "co:partners": "tsx --env-file=.env.local scripts/co-edi-partners.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.65",
