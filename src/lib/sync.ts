@@ -195,6 +195,7 @@ async function upsertPurchaseOrder(
     odooOrderId: number;
     name: string;
     partnerName: string | null;
+    odooPartnerId: number | null;
     dateOrder: Date;
     amountUntaxed: number;
     amountTotal: number;
@@ -248,6 +249,7 @@ export async function syncPurchases() {
           odooOrderId: o.id,
           name: o.name,
           partnerName: o.partner_id ? o.partner_id[1] : null,
+          odooPartnerId: o.partner_id ? o.partner_id[0] : null,
           dateOrder,
           amountUntaxed: o.amount_untaxed,
           amountTotal: o.amount_total,
@@ -264,6 +266,21 @@ export async function syncPurchases() {
             priceSubtotal: l.price_subtotal,
           }))
       );
+    }
+
+    // Cierre de ciclo de reabastecimiento: si una orden creada desde Utilia ya
+    // aparece confirmada en Odoo (state purchase/done → entró al sync), el
+    // pedido pasa a RECIBIDO. Falla suave: un error aquí no tumba el sync.
+    try {
+      await prisma.$executeRaw`
+        UPDATE "ReplenishmentOrder" r
+        SET status = 'RECEIVED', "receivedAt" = p."dateOrder", "updatedAt" = now()
+        FROM "PurchaseOrder" p
+        WHERE p."odooOrderId" = r."odooOrderId"
+          AND r.status IN ('APPROVED', 'SENT')
+      `;
+    } catch (err) {
+      console.warn("[sync] cierre de reabastecimiento fallo:", err);
     }
 
     await recordSyncSuccess("purchase_order", runStart);
