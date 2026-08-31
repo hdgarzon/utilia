@@ -7,6 +7,7 @@ export type SuggestReason = "critico" | "advertencia" | "min_stock";
 
 export interface CandidateProduct {
   odooProductId: number;
+  odooTemplateId: number | null;
   name: string;
   category: string | null;
   stockQty: number;
@@ -103,7 +104,7 @@ export async function getReplenishmentPlan(coverageDaysTarget = 21): Promise<Rep
   // 1. Candidatos: venden, stock sano, sin regla de no-recompra (>45 días sin venta),
   //    y con hueco de cobertura o por debajo del mínimo.
   const candidates = await prisma.$queryRaw<CandidateProduct[]>`
-    SELECT "odooProductId", "name", "category", "stockQty", "daysOfStock",
+    SELECT "odooProductId", "odooTemplateId", "name", "category", "stockQty", "daysOfStock",
            "avgDailySales7d", "cmp", "minStock"
     FROM "ProductInsight"
     WHERE "avgDailySales7d" > 0
@@ -167,7 +168,11 @@ export async function getReplenishmentPlan(coverageDaysTarget = 21): Promise<Rep
       avgDailySales7d: c.avgDailySales7d,
       suggestedQty: suggestion.qty,
       unitCost: c.cmp,
-      tier: tierByProduct.get(c.odooProductId) ?? "C",
+      // El analisis ABC consolida variantes bajo el id de plantilla (ver abc.ts),
+      // asi que hay que buscar el tier con esa misma clave para no perder el
+      // tier real de productos con variantes (cae a "C" solo si de verdad no
+      // aparece en el analisis).
+      tier: tierByProduct.get(c.odooTemplateId ?? c.odooProductId) ?? "C",
       reason: suggestion.reason,
     };
     if (line.reason === "critico") criticalCount++;
