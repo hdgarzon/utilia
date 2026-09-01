@@ -40,27 +40,51 @@ export async function ensureSuppliersFromHistory(): Promise<number> {
 
 /**
  * Trae los contactos proveedor de Odoo y completa el directorio: crea los que
- * falten y rellena el teléfono SOLO si está vacío (no pisa capturas manuales).
+ * falten, VINCULA los creados a mano en Utilia que coincidan por nombre (ver
+ * abajo) y rellena el teléfono SOLO si está vacío (no pisa capturas manuales).
  */
-export async function importSuppliersFromOdoo(): Promise<{ created: number; phonesFilled: number }> {
+export async function importSuppliersFromOdoo(): Promise<{ created: number; phonesFilled: number; linked: number }> {
   const odooSuppliers = await odoo.getSuppliers();
   let created = 0;
   let phonesFilled = 0;
+  let linked = 0;
 
   for (const s of odooSuppliers) {
     const phone = typeof s.phone === "string" && s.phone ? s.phone : null;
     try {
       const existing = await prisma.supplier.findUnique({ where: { odooPartnerId: s.id } });
-      if (!existing) {
-        await prisma.supplier.create({ data: { name: s.name, odooPartnerId: s.id, phone } });
-        created++;
-        if (phone) phonesFilled++;
-      } else if (!existing.phone && phone) {
-        await prisma.supplier.update({ where: { id: existing.id }, data: { phone } });
-        phonesFilled++;
+      if (existing) {
+        if (!existing.phone && phone) {
+          await prisma.supplier.update({ where: { id: existing.id }, data: { phone } });
+          phonesFilled++;
+        }
+        continue;
       }
+
+      // Sin vínculo por odooPartnerId todavía: puede ser un proveedor creado
+      // a mano en Utilia (botón "Crear proveedor") cuyo nombre coincide con
+      // este contacto de Odoo. Si es así, se ADOPTA (se vincula) en vez de
+      // intentar crear uno nuevo -- un create acá chocaría con el nombre
+      // único (P2002 más abajo) y el proveedor se quedaría sin vínculo para
+      // siempre, cerrando el ciclo de escritura a Odoo para ese proveedor.
+      const byName = await prisma.supplier.findUnique({ where: { name: s.name } });
+      if (byName && byName.odooPartnerId === null) {
+        const fillPhone = !byName.phone && phone;
+        await prisma.supplier.update({
+          where: { id: byName.id },
+          data: { odooPartnerId: s.id, phone: fillPhone ? phone : undefined },
+        });
+        linked++;
+        if (fillPhone) phonesFilled++;
+        continue;
+      }
+
+      await prisma.supplier.create({ data: { name: s.name, odooPartnerId: s.id, phone } });
+      created++;
+      if (phone) phonesFilled++;
     } catch (err) {
-      // Colisión por nombre duplicado: se conserva el existente.
+      // Colisión por nombre duplicado: carrera genuina (p. ej. dos
+      // importaciones a la vez); se conserva el existente.
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
         // Ignorar violación de restricción única; conservar existente.
       } else {
@@ -68,5 +92,5 @@ export async function importSuppliersFromOdoo(): Promise<{ created: number; phon
       }
     }
   }
-  return { created, phonesFilled };
+  return { created, phonesFilled, linked };
 }

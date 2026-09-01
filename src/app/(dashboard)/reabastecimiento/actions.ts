@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { createDraftPurchaseOrder, translateOdooError } from "@/lib/odoo-write";
 import { importSuppliersFromOdoo } from "@/lib/suppliers";
 
@@ -41,7 +42,18 @@ const approveSchema = z.object({
  */
 export async function approveOrder(
   input: unknown
-): Promise<ActionResult & { orderId?: string; odooOrderName?: string | null; odooError?: string }> {
+): Promise<
+  ActionResult & {
+    orderId?: string;
+    odooOrderName?: string | null;
+    odooError?: string;
+    // Si hay odooError, indica si vale la pena ofrecer un boton de reintento.
+    // false para proveedor sin vincular y para el caso "se creo el borrador
+    // pero no se guardo la referencia" (reintentar ahi duplicaria la orden
+    // real en Odoo); true cuando el RPC en si fallo y nada se creo.
+    odooRetryable?: boolean;
+  }
+> {
   await requireSession();
   const parsed = approveSchema.safeParse(input);
   if (!parsed.success) {
@@ -56,23 +68,38 @@ export async function approveOrder(
 
     // Red contra doble clic / reintento de red: el motor de sugerencias ya excluye
     // productos con pedidos abiertos, asi que en el flujo normal esto no se dispara.
+    // Ojo: el guardia es a proposito POR PRODUCTO (sin filtrar por supplierId) --
+    // el motor de sugerencias excluye productos en pedidos abiertos globalmente
+    // (ver getReplenishmentPlan), asi que dos pestañas desincronizadas podrian
+    // colar el mismo producto en pedidos de DOS proveedores distintos si aqui
+    // solo se mirara el proveedor actual.
     const odooProductIds = lines.map((l) => l.odooProductId);
     const openDuplicate = await prisma.replenishmentOrder.findFirst({
       where: {
-        supplierId,
         status: { in: ["APPROVED", "SENT"] },
         lines: { some: { odooProductId: { in: odooProductIds } } },
       },
       select: { id: true },
     });
     if (openDuplicate) {
-      return { ok: false, error: "Ya hay un pedido abierto para este proveedor con esos productos" };
+      return { ok: false, error: "Ya hay un pedido abierto con alguno de estos productos (puede ser con otro proveedor)" };
     }
 
+    // Si el proveedor esta vinculado a Odoo, la fila nace con el reclamo YA
+    // tomado -- mismo mutex y misma columna que usa retryOdooDraft (ver esa
+    // funcion mas abajo). Esto es lo que cierra el hueco de duplicado: entre
+    // que esta fila se hace visible (create) y que el RPC a Odoo termina
+    // (hasta ~180s, ver ODOO_WRITE_TIMEOUT_MS en odoo-write.ts), un
+    // retryOdooDraft concurrente sobre este mismo pedido ya no encuentra
+    // `odooDraftClaimedAt: null` y no puede ganar el reclamo. Se captura el
+    // Date exacto en `claimedAt` para poder liberar despues exactamente ESTE
+    // reclamo (compare-and-swap, ver releaseClaim).
+    const claimedAt = supplier.odooPartnerId ? new Date() : null;
     const order = await prisma.replenishmentOrder.create({
       data: {
         supplierId,
         totalEstimated,
+        odooDraftClaimedAt: claimedAt,
         lines: { createMany: { data: lines } },
       },
     });
@@ -81,7 +108,8 @@ export async function approveOrder(
     // el pedido queda aprobado en Utilia y se reintenta desde la UI.
     let odooOrderName: string | null = null;
     let odooError: string | undefined;
-    if (supplier.odooPartnerId) {
+    let odooRetryable = false;
+    if (supplier.odooPartnerId && claimedAt) {
       try {
         const draft = await createDraftPurchaseOrder({
           odooPartnerId: supplier.odooPartnerId,
@@ -91,27 +119,37 @@ export async function approveOrder(
         // El borrador ya existe en Odoo en este punto. Si el guardado local
         // falla, no perdemos la referencia: se lo decimos al dueño con el
         // numero de la orden para que la busque a mano antes de reintentar
-        // (reintentar a ciegas crearia un segundo borrador duplicado).
+        // (reintentar a ciegas crearia un segundo borrador duplicado). Por
+        // eso NO se libera el reclamo aqui: mientras siga vigente (5 min),
+        // un clic en "Crear en Odoo" se frena con un aviso de "intento en
+        // curso" en vez de disparar un create duplicado.
         try {
           await prisma.replenishmentOrder.update({
             where: { id: order.id },
-            data: { odooOrderId: draft.odooOrderId, odooOrderName: draft.odooOrderName },
+            data: { odooOrderId: draft.odooOrderId, odooOrderName: draft.odooOrderName, odooDraftClaimedAt: null },
           });
           odooOrderName = draft.odooOrderName;
         } catch (persistErr) {
           console.error("[approveOrder] borrador creado en Odoo pero no se pudo guardar la referencia:", draft, persistErr);
           odooOrderName = draft.odooOrderName;
           odooError = `Se creó el borrador ${draft.odooOrderName} en Odoo, pero no se pudo guardar la referencia en Utilia. Busca esa orden en Odoo antes de reintentar.`;
+          odooRetryable = false;
         }
       } catch (err) {
+        // El RPC fallo: nada se creo en Odoo, asi que es seguro liberar el
+        // reclamo de inmediato para que un reintento legitimo no espere 5
+        // minutos.
+        await releaseClaim(order.id, claimedAt);
         odooError = translateOdooError(err);
+        odooRetryable = true;
       }
     } else {
       odooError = "El proveedor no está vinculado a Odoo";
+      odooRetryable = false;
     }
 
     revalidatePath("/reabastecimiento");
-    return { ok: true, orderId: order.id, odooOrderName, odooError };
+    return { ok: true, orderId: order.id, odooOrderName, odooError, odooRetryable };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
@@ -199,6 +237,9 @@ export async function saveSupplier(input: unknown): Promise<ActionResult & { sup
     revalidatePath("/reabastecimiento");
     return { ok: true, supplierId: supplier.id };
   } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      return { ok: false, error: "Ya existe un proveedor con ese nombre" };
+    }
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
@@ -222,6 +263,10 @@ const CLAIM_STALE_AFTER_MS = 5 * 60 * 1000;
  * tercer duplicado. Si `claimedAt` ya no coincide, el reclamo actual no era
  * nuestro: no se toca nada, no es un error. Best-effort en general: un
  * fallo de BD aqui no debe tumbar la respuesta que ya se le debe al usuario.
+ *
+ * Comparten este mutex `approveOrder` (reclama al crear el pedido) y
+ * `retryOdooDraft` (reclama antes de reintentar) -- ambos llaman esta misma
+ * funcion para liberar.
  */
 async function releaseClaim(orderId: string, claimedAt: Date) {
   try {
@@ -230,10 +275,10 @@ async function releaseClaim(orderId: string, claimedAt: Date) {
       data: { odooDraftClaimedAt: null },
     });
     if (result.count === 0) {
-      console.warn("[retryOdooDraft] el reclamo ya no era propio al liberar (no se modifico):", orderId);
+      console.warn("[releaseClaim] el reclamo ya no era propio al liberar (no se modifico):", orderId);
     }
   } catch (err) {
-    console.error("[retryOdooDraft] no se pudo liberar el reclamo:", orderId, err);
+    console.error("[releaseClaim] no se pudo liberar el reclamo:", orderId, err);
   }
 }
 
@@ -361,7 +406,9 @@ export async function retryOdooDraft(orderId: string): Promise<ActionResult & { 
 }
 
 /** Importa/actualiza el directorio de proveedores desde los contactos de Odoo. */
-export async function importSuppliersAction(): Promise<ActionResult & { created?: number; phonesFilled?: number }> {
+export async function importSuppliersAction(): Promise<
+  ActionResult & { created?: number; phonesFilled?: number; linked?: number }
+> {
   await requireSession();
   try {
     const res = await importSuppliersFromOdoo();

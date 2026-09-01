@@ -73,6 +73,7 @@ export interface PendingOrder {
   supplierId: string;
   supplierName: string;
   supplierPhone: string | null;
+  supplierOdooPartnerId: number | null;
   odooOrderId: number | null;
   odooOrderName: string | null;
   totalEstimated: number;
@@ -210,7 +211,12 @@ export async function getReplenishmentPlan(coverageDaysTarget = 21): Promise<Rep
   const suggestions = Array.from(bySupplier.values()).sort((a, b) => b.totalEstimated - a.totalEstimated);
 
   // 6. Disciplina OTB: comparar contra el Fondo de Reposición.
-  const otb = await getOpenToBuyPlan(coverageDaysTarget).catch(() => null);
+  const otb = await getOpenToBuyPlan(coverageDaysTarget).catch((err) => {
+    // Si esto falla, reinvestmentFund cae a 0 y la UI pinta una brecha roja
+    // que puede ser enteramente falsa -- hay que poder rastrear por que paso.
+    console.error("[getReplenishmentPlan] getOpenToBuyPlan fallo, reinvestmentFund cae a 0:", err);
+    return null;
+  });
   const reinvestmentFund = otb?.reinvestmentFund ?? 0;
   const estimated = suggestions.reduce((s, g) => s + g.totalEstimated, 0) + unassigned.totalEstimated;
   const lineCount =
@@ -233,6 +239,7 @@ export async function getReplenishmentPlan(coverageDaysTarget = 21): Promise<Rep
       supplierId: o.supplierId,
       supplierName: o.supplier.name,
       supplierPhone: o.supplier.phone,
+      supplierOdooPartnerId: o.supplier.odooPartnerId,
       odooOrderId: o.odooOrderId,
       odooOrderName: o.odooOrderName,
       totalEstimated: o.totalEstimated,

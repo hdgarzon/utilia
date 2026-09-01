@@ -29,7 +29,9 @@ export function ReplenishmentPending({ pending }: { pending: PendingOrder[] }) {
 function PendingRow({ order }: { order: PendingOrder }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [phoneDraft, setPhoneDraft] = useState("");
+  // Prellenado con lo que ya hay guardado (aunque no sirva para WhatsApp) para
+  // que el dueño vea el numero actual en vez de una caja vacia sin contexto.
+  const [phoneDraft, setPhoneDraft] = useState(order.supplierPhone ?? "");
 
   const waLink = order.supplierPhone
     ? buildWaLink(
@@ -109,46 +111,58 @@ function PendingRow({ order }: { order: PendingOrder }) {
             {order.status === "SENT" ? "Reenviar WhatsApp" : "Enviar WhatsApp"}
           </button>
         ) : (
-          <div className="flex items-center gap-1.5">
-            <input
-              value={phoneDraft}
-              onChange={(e) => setPhoneDraft(e.target.value)}
-              placeholder="WhatsApp del proveedor…"
-              className="w-40 rounded-md border border-border bg-background px-2 py-1.5 text-xs"
-            />
+          <div className="flex flex-col items-end gap-1">
+            {order.supplierPhone && (
+              <p className="text-[10px] text-warning">
+                El número guardado no sirve para WhatsApp. Escríbelo con indicativo de país (ej. 573001234567).
+              </p>
+            )}
+            <div className="flex items-center gap-1.5">
+              <input
+                value={phoneDraft}
+                onChange={(e) => setPhoneDraft(e.target.value)}
+                placeholder="WhatsApp del proveedor…"
+                className="w-40 rounded-md border border-border bg-background px-2 py-1.5 text-xs"
+              />
+              <button
+                onClick={() =>
+                  startTransition(async () => {
+                    const res = await saveSupplier({ id: order.supplierId, name: order.supplierName, phone: phoneDraft });
+                    if (!res.ok) toast.error(res.error ?? "No se pudo guardar");
+                    else router.refresh();
+                  })
+                }
+                disabled={isPending || !phoneDraft.trim()}
+                className="rounded-lg border border-border px-2.5 py-1.5 text-xs hover:bg-secondary disabled:opacity-50"
+              >
+                Guardar
+              </button>
+            </div>
+          </div>
+        )}
+        {!order.odooOrderId &&
+          (order.supplierOdooPartnerId ? (
             <button
               onClick={() =>
                 startTransition(async () => {
-                  const res = await saveSupplier({ id: order.supplierId, name: order.supplierName, phone: phoneDraft });
-                  if (!res.ok) toast.error(res.error ?? "No se pudo guardar");
-                  else router.refresh();
+                  const res = await retryOdooDraft(order.id);
+                  if (!res.ok) toast.error(res.error ?? "Odoo falló de nuevo");
+                  else {
+                    toast.success(`Borrador ${res.odooOrderName ?? ""} creado en Odoo`);
+                    router.refresh();
+                  }
                 })
               }
-              disabled={isPending || !phoneDraft.trim()}
-              className="rounded-lg border border-border px-2.5 py-1.5 text-xs hover:bg-secondary disabled:opacity-50"
+              disabled={isPending}
+              className="rounded-lg border border-warning/50 px-2.5 py-1.5 text-xs text-warning hover:bg-warning/10 disabled:opacity-50"
             >
-              Guardar
+              Crear en Odoo
             </button>
-          </div>
-        )}
-        {!order.odooOrderId && (
-          <button
-            onClick={() =>
-              startTransition(async () => {
-                const res = await retryOdooDraft(order.id);
-                if (!res.ok) toast.error(res.error ?? "Odoo falló de nuevo");
-                else {
-                  toast.success(`Borrador ${res.odooOrderName ?? ""} creado en Odoo`);
-                  router.refresh();
-                }
-              })
-            }
-            disabled={isPending}
-            className="rounded-lg border border-warning/50 px-2.5 py-1.5 text-xs text-warning hover:bg-warning/10 disabled:opacity-50"
-          >
-            Crear en Odoo
-          </button>
-        )}
+          ) : (
+            <p className="max-w-[220px] text-[10px] text-muted-foreground">
+              Este proveedor no existe en Odoo. Usa &quot;Importar de Odoo&quot; o crea el contacto allá.
+            </p>
+          ))}
         <button
           onClick={cancel}
           disabled={isPending}

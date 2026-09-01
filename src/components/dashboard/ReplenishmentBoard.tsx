@@ -94,7 +94,12 @@ function SupplierCard({ suggestion }: { suggestion: ReplenishmentSuggestion }) {
         return;
       }
       if (res.odooError) {
-        toast.warning(`Pedido aprobado, pero Odoo falló: ${res.odooError}. Reintenta desde "Pedidos en curso".`);
+        // El botón de reintento solo tiene sentido si el intento en si es
+        // repetible: no cuando el proveedor no está vinculado, ni cuando el
+        // borrador ya se creó en Odoo y reintentar lo duplicaría (ver
+        // odooRetryable en approveOrder).
+        const hint = res.odooRetryable ? ' Reintenta desde "Pedidos en curso".' : "";
+        toast.warning(`Pedido aprobado, pero Odoo falló: ${res.odooError}.${hint}`);
       } else if (res.odooOrderName) {
         toast.success(`Pedido aprobado — borrador ${res.odooOrderName} creado en Odoo`);
       } else {
@@ -274,7 +279,9 @@ function UnassignedCard({
                 const res = await importSuppliersAction();
                 if (!res.ok) toast.error(res.error ?? "No se pudo importar");
                 else {
-                  toast.success(`Proveedores: ${res.created ?? 0} nuevos, ${res.phonesFilled ?? 0} teléfonos completados`);
+                  toast.success(
+                    `Proveedores: ${res.created ?? 0} nuevos, ${res.linked ?? 0} vinculados a Odoo, ${res.phonesFilled ?? 0} teléfonos completados`
+                  );
                   router.refresh();
                 }
               })
