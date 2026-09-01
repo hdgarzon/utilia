@@ -23,7 +23,13 @@ interface JsonRpcResponse<T> {
   error?: { code: number; message: string; data?: unknown };
 }
 
-async function jsonRpc<T>(service: string, method: string, args: unknown[]): Promise<T> {
+/**
+ * `timeoutMs` es opcional y por defecto NO acota nada (sin `AbortSignal`,
+ * exactamente el comportamiento de siempre): el sync y las lecturas pueden
+ * tardar legítimamente mucho y no deben cortarse. Solo el camino de
+ * escritura (ver `src/lib/odoo-write.ts`) pasa un valor explícito.
+ */
+async function jsonRpc<T>(service: string, method: string, args: unknown[], timeoutMs?: number): Promise<T> {
   const res = await fetch(`${ODOO_BASE_URL}/jsonrpc`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -33,6 +39,7 @@ async function jsonRpc<T>(service: string, method: string, args: unknown[]): Pro
       id: Date.now(),
       params: { service, method, args },
     }),
+    ...(timeoutMs !== undefined ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
   });
 
   if (!res.ok) {
@@ -50,15 +57,15 @@ async function jsonRpc<T>(service: string, method: string, args: unknown[]): Pro
 }
 
 /** Autentica contra Odoo y devuelve el UID numérico del usuario. Se cachea. */
-async function authenticate(): Promise<number> {
+async function authenticate(timeoutMs?: number): Promise<number> {
   if (cachedUid !== null) return cachedUid;
 
-  const uid = await jsonRpc<number | false>("common", "authenticate", [
-    ODOO_DB,
-    ODOO_LOGIN,
-    ODOO_API_KEY,
-    {},
-  ]);
+  const uid = await jsonRpc<number | false>(
+    "common",
+    "authenticate",
+    [ODOO_DB, ODOO_LOGIN, ODOO_API_KEY, {}],
+    timeoutMs
+  );
 
   if (uid === false || uid === 0) {
     throw new Error(
@@ -70,23 +77,28 @@ async function authenticate(): Promise<number> {
   return cachedUid;
 }
 
-/** Ejecuta un método sobre un modelo de Odoo. */
+/**
+ * Ejecuta un método sobre un modelo de Odoo.
+ *
+ * `timeoutMs` es opcional (sin acotar por defecto, ver `jsonRpc`). Se pasa
+ * también a `authenticate` para que, en un proceso recién arrancado (sin
+ * `cachedUid` todavía), un llamador con timeout quede acotado de punta a
+ * punta y no solo en la llamada final.
+ */
 async function executeKw<T>(
   model: string,
   method: string,
   args: unknown[] = [],
-  kwargs: Record<string, unknown> = {}
+  kwargs: Record<string, unknown> = {},
+  timeoutMs?: number
 ): Promise<T> {
-  const uid = await authenticate();
-  return jsonRpc<T>("object", "execute_kw", [
-    ODOO_DB,
-    uid,
-    ODOO_API_KEY,
-    model,
-    method,
-    args,
-    kwargs,
-  ]);
+  const uid = await authenticate(timeoutMs);
+  return jsonRpc<T>(
+    "object",
+    "execute_kw",
+    [ODOO_DB, uid, ODOO_API_KEY, model, method, args, kwargs],
+    timeoutMs
+  );
 }
 
 /** Helper para search_read con dominios y campos. */
@@ -94,14 +106,20 @@ async function searchRead<T>(
   model: string,
   domain: unknown[] = [],
   fields: string[] = [],
-  options: { limit?: number; offset?: number; order?: string } = {}
+  options: { limit?: number; offset?: number; order?: string; timeoutMs?: number } = {}
 ): Promise<T[]> {
-  return executeKw<T[]>(model, "search_read", [domain], {
-    fields,
-    limit: options.limit ?? 1000,
-    offset: options.offset ?? 0,
-    order: options.order ?? "id desc",
-  });
+  return executeKw<T[]>(
+    model,
+    "search_read",
+    [domain],
+    {
+      fields,
+      limit: options.limit ?? 1000,
+      offset: options.offset ?? 0,
+      order: options.order ?? "id desc",
+    },
+    options.timeoutMs
+  );
 }
 
 /** Campos de product.product que consume el sync. */
@@ -181,6 +199,12 @@ export interface OdooPartner {
   phone: string | false;
   mobile: string | false;
   birthday: string | false;
+}
+
+export interface OdooSupplier {
+  id: number;
+  name: string;
+  phone: string | false;
 }
 
 /** POS = Point of Sale. Modelo paralelo a sale.order pero para caja registradora. */
@@ -509,6 +533,16 @@ export const odoo = {
       { limit: 5000 }
     );
   },
+
+  /** Contactos marcados como proveedor (supplier_rank > 0). Solo lectura. */
+  async getSuppliers(): Promise<OdooSupplier[]> {
+    return searchRead<OdooSupplier>(
+      "res.partner",
+      [["supplier_rank", ">", 0]],
+      ["id", "name", "phone"],
+      { limit: 1000, order: "name asc" }
+    );
+  },
 };
 
 /** Formato datetime que Odoo espera: "YYYY-MM-DD HH:MM:SS" (UTC). */
@@ -517,10 +551,10 @@ function formatOdooDate(d: Date): string {
 }
 
 /**
- * Acceso RPC crudo para los scripts administrativos de `scripts/`.
+ * Acceso RPC crudo para los scripts administrativos de `scripts/` y para
+ * `src/lib/odoo-write.ts` (creación de borradores de compra por acción del
+ * usuario — ver el contrato en ese módulo).
  *
- * NO usar desde rutas de sync ni desde route handlers: Odoo es upstream y el
- * sync nunca le escribe. Esto existe solo para mantenimiento puntual de datos
- * maestros (códigos UNSPSC, datos fiscales de contactos) desde la CLI.
+ * NO usar desde rutas de sync: Odoo es upstream y el sync nunca le escribe.
  */
 export const odooRpc = { executeKw, searchRead };

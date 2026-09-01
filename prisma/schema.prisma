@@ -215,6 +215,7 @@ model PurchaseOrder {
   odooOrderId   Int      @unique
   name          String // ej "P00082"
   partnerName   String?
+  odooPartnerId Int? // res.partner id del proveedor — permite crear ordenes desde Utilia
   dateOrder     DateTime // date_approve de Odoo (fecha de confirmación)
   amountUntaxed Float
   amountTotal   Float
@@ -270,4 +271,68 @@ model StatusPost {
   @@unique([date, slot])
   @@index([odooProductId])
   @@index([date])
+}
+
+// ─── Reabastecimiento (pedidos a proveedor) ───────────────────────────────────
+
+model Supplier {
+  id            String                    @id @default(cuid())
+  name          String                    @unique // matchea PurchaseOrder.partnerName
+  odooPartnerId Int?                      @unique // necesario para crear la orden en Odoo
+  phone         String? // WhatsApp, editable en UI
+  notes         String?
+  active        Boolean                   @default(true)
+  orders        ReplenishmentOrder[]
+  overrides     ProductSupplierOverride[]
+  createdAt     DateTime                  @default(now())
+  updatedAt     DateTime                  @updatedAt
+}
+
+// Asignación manual producto→proveedor para referencias sin historial de compra.
+// La inferencia por historial NO se materializa aquí; esto es solo el override.
+model ProductSupplierOverride {
+  odooProductId Int      @id
+  supplier      Supplier @relation(fields: [supplierId], references: [id])
+  supplierId    String
+  createdAt     DateTime @default(now())
+}
+
+model ReplenishmentOrder {
+  id                 String              @id @default(cuid())
+  supplier           Supplier            @relation(fields: [supplierId], references: [id])
+  supplierId         String
+  status             ReplenishmentStatus @default(APPROVED)
+  odooOrderId        Int?                @unique // purchase.order creado en borrador
+  odooOrderName      String? // ej "P00123"
+  odooDraftClaimedAt DateTime? // reclamo temporal mientras se crea el borrador en Odoo
+  totalEstimated     Float               @default(0) // suma qty × unitCost al aprobar
+  sentAt             DateTime? // clic en WhatsApp / marcado manual
+  receivedAt         DateTime? // detectado por el sync
+  lines              ReplenishmentLine[]
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  @@index([status])
+}
+
+enum ReplenishmentStatus {
+  APPROVED // aprobado en Utilia; borrador creado (o pendiente de crear) en Odoo
+  SENT // pedido enviado al proveedor
+  RECEIVED // orden confirmada/recibida en Odoo (la detecta el sync)
+  CANCELLED
+}
+
+model ReplenishmentLine {
+  id            String             @id @default(cuid())
+  order         ReplenishmentOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId       String
+  odooProductId Int
+  productName   String
+  qty           Float // cantidad final aprobada por el usuario
+  suggestedQty  Float // lo que sugirio el motor
+  unitCost      Float // CMP al momento de aprobar
+  reason        String // "critico" | "advertencia" | "min_stock"
+
+  @@index([orderId])
+  @@index([odooProductId])
 }

@@ -52,7 +52,10 @@ export default async function ComprasPage({ searchParams }: PageProps) {
         <div>
           <h1 className="text-xl font-bold">Plan de Compras (Open-to-Buy)</h1>
           <p className="text-xs text-muted-foreground mt-0.5">
-            El dinero sigue la venta y la rotación — categorías más activas reciben más capital
+            El dinero sigue la venta y la rotación — categorías más activas reciben más capital ·{" "}
+            <Link href="/reabastecimiento" className="text-primary hover:underline">
+              pedido por producto →
+            </Link>
           </p>
         </div>
         <div className="flex items-center gap-2 text-xs">

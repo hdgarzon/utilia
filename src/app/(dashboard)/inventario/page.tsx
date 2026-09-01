@@ -1,5 +1,6 @@
 export const dynamic = 'force-dynamic';
 
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { isServiceCategory } from "@/lib/service-categories";
 import { InventoryTable, type InventoryRow } from "@/components/dashboard/InventoryTable";
@@ -56,7 +57,15 @@ export default async function InventarioPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-bold">Inteligencia de Inventario</h1>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <h1 className="text-xl font-bold">Inteligencia de Inventario</h1>
+        <Link
+          href="/reabastecimiento"
+          className="rounded-lg border border-primary/40 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10"
+        >
+          Generar pedido →
+        </Link>
+      </div>
 
       <div className="grid grid-cols-3 gap-4">
         <div className="rounded-xl border border-destructive/40 bg-destructive/5 p-4 text-center">
