@@ -203,18 +203,35 @@ export async function saveSupplier(input: unknown): Promise<ActionResult & { sup
   }
 }
 
-// Un reclamo mas viejo que esto se considera abandonado (ej. el proceso
-// murio a mitad de la llamada a Odoo, o el propio RPC quedo colgado sin
-// timeout -- ver src/lib/odoo.ts) y se puede retomar.
+// Un reclamo mas viejo que esto se considera abandonado y se puede retomar.
+// El timeout del camino de escritura (ODOO_WRITE_TIMEOUT_MS en
+// odoo-write.ts, 60s por llamada RPC) acota createDraftPurchaseOrder a ~180s
+// en el peor caso (autenticar + create + search_read del nombre, cada uno
+// con su propio limite) -- muy por debajo de estos 5 minutos. Esa es la
+// propiedad que hace segura la ventana: cuando un reclamo se considera
+// abandonado, el intento original YA tuvo que haber terminado (con exito o
+// con error), nunca puede seguir en vuelo.
 const CLAIM_STALE_AFTER_MS = 5 * 60 * 1000;
 
-/** Libera el reclamo de un pedido. Best-effort: un fallo aqui no debe tumbar la respuesta al usuario. */
-async function releaseClaim(orderId: string) {
+/**
+ * Libera el reclamo de un pedido, pero SOLO si `claimedAt` sigue siendo
+ * exactamente la marca que este mismo llamador puso (compare-and-swap por
+ * valor). Un release "por id" a secas podria borrar el reclamo ACTIVO de
+ * OTRO llamador si, en una interleaving profunda, el nuestro ya habia sido
+ * tratado como abandonado y retomado por alguien mas -- habilitando asi un
+ * tercer duplicado. Si `claimedAt` ya no coincide, el reclamo actual no era
+ * nuestro: no se toca nada, no es un error. Best-effort en general: un
+ * fallo de BD aqui no debe tumbar la respuesta que ya se le debe al usuario.
+ */
+async function releaseClaim(orderId: string, claimedAt: Date) {
   try {
-    await prisma.replenishmentOrder.updateMany({
-      where: { id: orderId },
+    const result = await prisma.replenishmentOrder.updateMany({
+      where: { id: orderId, odooDraftClaimedAt: claimedAt },
       data: { odooDraftClaimedAt: null },
     });
+    if (result.count === 0) {
+      console.warn("[retryOdooDraft] el reclamo ya no era propio al liberar (no se modifico):", orderId);
+    }
   } catch (err) {
     console.error("[retryOdooDraft] no se pudo liberar el reclamo:", orderId, err);
   }
@@ -270,7 +287,9 @@ export async function retryOdooDraft(orderId: string): Promise<ActionResult & { 
   // Reclamo atomico en una sola sentencia UPDATE: solo una llamada
   // concurrente puede ganarlo para este pedido (las demas ven count===0).
   // Un reclamo vigente (menos de 5 minutos) bloquea a los demas; uno viejo
-  // se trata como abandonado y se puede retomar.
+  // se trata como abandonado y se puede retomar. Se guarda `claimedAt` para
+  // poder liberar despues exactamente ESTE reclamo (ver releaseClaim).
+  const claimedAt = new Date();
   const staleThreshold = new Date(Date.now() - CLAIM_STALE_AFTER_MS);
   const claim = await prisma.replenishmentOrder.updateMany({
     where: {
@@ -279,18 +298,26 @@ export async function retryOdooDraft(orderId: string): Promise<ActionResult & { 
       status: { in: ["APPROVED", "SENT"] },
       OR: [{ odooDraftClaimedAt: null }, { odooDraftClaimedAt: { lt: staleThreshold } }],
     },
-    data: { odooDraftClaimedAt: new Date() },
+    data: { odooDraftClaimedAt: claimedAt },
   });
 
   if (claim.count === 0) {
     // Perdimos el reclamo: otra llamada ya esta creando el borrador (o ya
-    // lo termino). Releemos para responder segun cual haya sido el caso.
-    const fresh = await prisma.replenishmentOrder.findUnique({
-      where: { id: orderId },
-      select: { odooOrderId: true, odooOrderName: true },
-    });
-    if (fresh?.odooOrderId) {
-      return { ok: true, odooOrderName: fresh.odooOrderName ?? undefined };
+    // lo termino), o el pedido cambio de estado justo antes. Releemos para
+    // responder segun cual haya sido el caso real, en vez de asumir uno solo.
+    let fresh;
+    try {
+      fresh = await prisma.replenishmentOrder.findUnique({
+        where: { id: orderId },
+        select: { odooOrderId: true, odooOrderName: true, status: true },
+      });
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+    if (!fresh) return { ok: false, error: "Pedido no encontrado" };
+    if (fresh.odooOrderId) return { ok: true, odooOrderName: fresh.odooOrderName ?? undefined };
+    if (fresh.status !== "APPROVED" && fresh.status !== "SENT") {
+      return { ok: false, error: "El pedido ya no está abierto" };
     }
     return { ok: false, error: "Ya hay un intento en curso de crear este borrador en Odoo. Espera unos segundos y recarga." };
   }
@@ -315,7 +342,7 @@ export async function retryOdooDraft(orderId: string): Promise<ActionResult & { 
       // aparte (el update que lo hubiera liberado es el que fallo) para no
       // bloquear el reintento 5 minutos.
       console.error("[retryOdooDraft] borrador creado en Odoo pero no se pudo guardar la referencia:", draft, persistErr);
-      await releaseClaim(order.id);
+      await releaseClaim(order.id, claimedAt);
       return {
         ok: false,
         odooOrderName: draft.odooOrderName,
@@ -328,7 +355,7 @@ export async function retryOdooDraft(orderId: string): Promise<ActionResult & { 
   } catch (err) {
     // El RPC fallo (nada se creo en Odoo): liberamos el reclamo para que un
     // reintento inmediato no quede bloqueado 5 minutos.
-    await releaseClaim(order.id);
+    await releaseClaim(order.id, claimedAt);
     return { ok: false, error: translateOdooError(err) };
   }
 }

@@ -11,6 +11,29 @@ import { odooRpc } from "@/lib/odoo";
  *  - El sync ignora borradores (filtra state purchase/done), así que no hay
  *    doble conteo de gasto.
  */
+
+/**
+ * Tope de tiempo SOLO para este camino de escritura (el cliente Odoo
+ * compartido no tiene timeout por defecto — ver src/lib/odoo.ts — porque el
+ * sync y las lecturas pueden tardar legítimamente mucho).
+ *
+ * Relación con el reclamo de `retryOdooDraft` (`CLAIM_STALE_AFTER_MS = 5
+ * min` en actions.ts): un reclamo se considera abandonado y retomable a los
+ * 5 minutos. Para que esa suposición sea cierta, el intento original tiene
+ * que estar GARANTIZADO a haber terminado (éxito o error) mucho antes de
+ * esos 5 minutos — si no, un segundo llamador podría retomar el reclamo
+ * mientras el primero todavía sigue creando el borrador, y terminaríamos con
+ * dos órdenes reales en Odoo (el bug que este timeout cierra).
+ *
+ * Con 60s por llamada RPC: el peor caso de `createDraftPurchaseOrder` son
+ * dos llamadas HTTP secuenciales (`create` y, si hace falta autenticar de
+ * cero, su propio `authenticate` interno; luego el `search_read` del
+ * nombre, que reutiliza el uid ya cacheado). Peor caso ≈ 60s (authenticate)
+ * + 60s (create) + 60s (search_read) = 180s = 3 min, con margen cómodo
+ * bajo los 5 min del reclamo.
+ */
+const ODOO_WRITE_TIMEOUT_MS = 60_000;
+
 export async function createDraftPurchaseOrder(input: {
   odooPartnerId: number;
   originRef: string; // trazabilidad: "UTILIA-REP-<id>" en el campo origin
@@ -19,19 +42,25 @@ export async function createDraftPurchaseOrder(input: {
   const { odooPartnerId, originRef, lines } = input;
   if (lines.length === 0) throw new Error("El pedido no tiene líneas");
 
-  const odooOrderId = await odooRpc.executeKw<number>("purchase.order", "create", [
-    {
-      partner_id: odooPartnerId,
-      origin: originRef,
-      order_line: lines.map((l) => [
-        0,
-        0,
-        // price_unit = CMP como estimado honesto; el precio real se ajusta en
-        // Odoo al confirmar si el proveedor cambió la lista.
-        { product_id: l.odooProductId, product_qty: l.qty, price_unit: l.priceUnit },
-      ]),
-    },
-  ]);
+  const odooOrderId = await odooRpc.executeKw<number>(
+    "purchase.order",
+    "create",
+    [
+      {
+        partner_id: odooPartnerId,
+        origin: originRef,
+        order_line: lines.map((l) => [
+          0,
+          0,
+          // price_unit = CMP como estimado honesto; el precio real se ajusta en
+          // Odoo al confirmar si el proveedor cambió la lista.
+          { product_id: l.odooProductId, product_qty: l.qty, price_unit: l.priceUnit },
+        ]),
+      },
+    ],
+    {},
+    ODOO_WRITE_TIMEOUT_MS
+  );
 
   // El create ya tuvo éxito: el pedido existe en Odoo con este id. Si esta
   // lectura falla (p. ej. un corte de red justo después), NO hay que perder
@@ -43,7 +72,7 @@ export async function createDraftPurchaseOrder(input: {
       "purchase.order",
       [["id", "=", odooOrderId]],
       ["id", "name"],
-      { limit: 1 }
+      { limit: 1, timeoutMs: ODOO_WRITE_TIMEOUT_MS }
     );
     if (rows[0]?.name) odooOrderName = rows[0].name;
   } catch (err) {
