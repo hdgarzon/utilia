@@ -382,12 +382,15 @@ export async function retryOdooDraft(orderId: string): Promise<ActionResult & { 
         data: { odooOrderId: draft.odooOrderId, odooOrderName: draft.odooOrderName, odooDraftClaimedAt: null },
       });
     } catch (persistErr) {
-      // El borrador ya existe en Odoo; no perdemos la referencia: se lo
-      // decimos al dueño con el numero de la orden. Se libera el reclamo
-      // aparte (el update que lo hubiera liberado es el que fallo) para no
-      // bloquear el reintento 5 minutos.
+      // El borrador ya existe en Odoo en este punto; no perdemos la
+      // referencia: se lo decimos al dueño con el numero de la orden para
+      // que la busque a mano antes de reintentar (reintentar a ciegas
+      // crearia un segundo borrador duplicado). Por eso NO se libera el
+      // reclamo aqui -- mismo criterio que el catch equivalente en
+      // approveOrder: mientras siga vigente (5 min), un clic inmediato en
+      // "Crear en Odoo" se frena con "intento en curso" en vez de disparar
+      // un create duplicado real en Odoo. Se deja expirar por tiempo.
       console.error("[retryOdooDraft] borrador creado en Odoo pero no se pudo guardar la referencia:", draft, persistErr);
-      await releaseClaim(order.id, claimedAt);
       return {
         ok: false,
         odooOrderName: draft.odooOrderName,

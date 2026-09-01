@@ -6,11 +6,11 @@
 /** Normaliza a formato wa.me (solo dígitos, con indicativo). Colombia por defecto. */
 export function normalizePhoneForWhatsApp(raw: string): string | null {
   const digits = raw.replace(/\D/g, "");
-  // CO: celular (empieza en 3) y fijo (10 digitos con el indicativo de area
-  // nuevo, ej. "601" para Bogota) comparten el mismo largo de 10 digitos sin
-  // el 57 -- no hay forma confiable de distinguirlos por el primer digito,
-  // asi que se acepta cualquier numero de 10 digitos.
-  if (digits.length === 10) return `57${digits}`;
+  // CO: celular (empieza en 3) y fijo con indicativo de area nuevo (empieza
+  // en 60, ej. "601" para Bogota) comparten el mismo largo de 10 digitos sin
+  // el 57. Se valida el prefijo real para no confundir con un numero
+  // extranjero de 10 digitos pegado por error (ej. uno de EE.UU.).
+  if (digits.length === 10 && (digits.startsWith("3") || digits.startsWith("60"))) return `57${digits}`;
   if (digits.length === 12 && digits.startsWith("57")) return digits; // ya trae indicativo
   if (digits.length >= 11 && digits.length <= 15) return digits; // otro país, se respeta
   return null;
