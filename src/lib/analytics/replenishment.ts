@@ -101,9 +101,15 @@ export interface ReplenishmentPlan {
 
 const DELAY_ALERT_DAYS = 7;
 
-export async function getReplenishmentPlan(coverageDaysTarget = 21): Promise<ReplenishmentPlan> {
-  // 1. Candidatos: venden, stock sano, sin regla de no-recompra (>45 días sin venta),
-  //    y con hueco de cobertura o por debajo del mínimo.
+/**
+ * Productos que hoy son candidatos a pedido: venden, stock sano, sin regla de
+ * no-recompra (>45 días sin venta), con hueco de cobertura o por debajo del
+ * mínimo, sin servicios y sin lo que ya va en un pedido abierto.
+ *
+ * Única fuente de las reglas de candidatura: la usan tanto el plan completo
+ * como el resumen del dashboard, para que ambos cuenten siempre lo mismo.
+ */
+async function fetchCandidates(): Promise<CandidateProduct[]> {
   const candidates = await prisma.$queryRaw<CandidateProduct[]>`
     SELECT "odooProductId", "odooTemplateId", "name", "category", "stockQty", "daysOfStock",
            "avgDailySales7d", "cmp", "minStock"
@@ -116,15 +122,60 @@ export async function getReplenishmentPlan(coverageDaysTarget = 21): Promise<Rep
     ORDER BY "daysOfStock" ASC
   `;
 
-  // 2. Excluir servicios y productos ya pedidos (pedido abierto en curso).
   const openLines = await prisma.replenishmentLine.findMany({
     where: { order: { status: { in: ["APPROVED", "SENT"] } } },
     select: { odooProductId: true },
   });
   const inFlight = new Set(openLines.map((l) => l.odooProductId));
-  const filtered = candidates.filter(
+  return candidates.filter(
     (c) => !isServiceCategory(c.category) && !inFlight.has(c.odooProductId)
   );
+}
+
+export interface ReplenishmentSummary {
+  productsToOrder: number; // productos con cantidad sugerida > 0
+  criticalCount: number; // de esos, los que están bajo 7 días de cobertura
+  openOrders: number; // pedidos aprobados o enviados, aún sin recibir
+  delayedOrders: number; // enviados hace más de 7 días sin llegar
+}
+
+/**
+ * Resumen liviano para la tarjeta del panel principal. A diferencia de
+ * `getReplenishmentPlan`, no calcula ABC ni el plan OTB — el panel ya hace
+ * muchas consultas y solo necesita los conteos.
+ */
+export async function getReplenishmentSummary(coverageDaysTarget = 21): Promise<ReplenishmentSummary> {
+  const [candidates, openOrders] = await Promise.all([
+    fetchCandidates(),
+    prisma.replenishmentOrder.findMany({
+      where: { status: { in: ["APPROVED", "SENT"] } },
+      select: { status: true, sentAt: true },
+    }),
+  ]);
+
+  let productsToOrder = 0;
+  let criticalCount = 0;
+  for (const c of candidates) {
+    const suggestion = computeSuggestedQty(c, coverageDaysTarget);
+    if (!suggestion) continue;
+    productsToOrder++;
+    if (suggestion.reason === "critico") criticalCount++;
+  }
+
+  const nowMs = Date.now();
+  const delayedOrders = openOrders.filter(
+    (o) =>
+      o.status === "SENT" &&
+      o.sentAt !== null &&
+      Math.floor((nowMs - o.sentAt.getTime()) / 86_400_000) > DELAY_ALERT_DAYS
+  ).length;
+
+  return { productsToOrder, criticalCount, openOrders: openOrders.length, delayedOrders };
+}
+
+export async function getReplenishmentPlan(coverageDaysTarget = 21): Promise<ReplenishmentPlan> {
+  // 1-2. Candidatos con las reglas compartidas (ver fetchCandidates).
+  const filtered = await fetchCandidates();
 
   // 3. Proveedor por producto: override manual > última compra en el historial.
   const overrides = await prisma.productSupplierOverride.findMany({ select: { odooProductId: true, supplierId: true } });
