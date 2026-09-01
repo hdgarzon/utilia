@@ -44,12 +44,27 @@ export async function approveOrder(
     return { ok: false, error: parsed.error.issues.map((i) => i.message).join(", ") };
   }
   const { supplierId, lines } = parsed.data;
-
-  const supplier = await prisma.supplier.findUnique({ where: { id: supplierId } });
-  if (!supplier) return { ok: false, error: "Proveedor no encontrado" };
-
   const totalEstimated = lines.reduce((s, l) => s + l.qty * l.unitCost, 0);
+
   try {
+    const supplier = await prisma.supplier.findUnique({ where: { id: supplierId } });
+    if (!supplier) return { ok: false, error: "Proveedor no encontrado" };
+
+    // Red contra doble clic / reintento de red: el motor de sugerencias ya excluye
+    // productos con pedidos abiertos, asi que en el flujo normal esto no se dispara.
+    const odooProductIds = lines.map((l) => l.odooProductId);
+    const openDuplicate = await prisma.replenishmentOrder.findFirst({
+      where: {
+        supplierId,
+        status: { in: ["APPROVED", "SENT"] },
+        lines: { some: { odooProductId: { in: odooProductIds } } },
+      },
+      select: { id: true },
+    });
+    if (openDuplicate) {
+      return { ok: false, error: "Ya hay un pedido abierto para este proveedor con esos productos" };
+    }
+
     const order = await prisma.replenishmentOrder.create({
       data: {
         supplierId,
@@ -68,10 +83,13 @@ export async function approveOrder(
 export async function markSent(orderId: string): Promise<ActionResult> {
   await requireSession();
   try {
-    await prisma.replenishmentOrder.updateMany({
+    const result = await prisma.replenishmentOrder.updateMany({
       where: { id: orderId, status: "APPROVED" },
       data: { status: "SENT", sentAt: new Date() },
     });
+    if (result.count === 0) {
+      return { ok: false, error: "El pedido ya no estaba pendiente de envío" };
+    }
     revalidatePath("/reabastecimiento");
     return { ok: true };
   } catch (err) {
@@ -88,7 +106,15 @@ export async function cancelOrder(orderId: string): Promise<ActionResult & { odo
     if (order.status !== "APPROVED" && order.status !== "SENT") {
       return { ok: false, error: "El pedido ya no está abierto" };
     }
-    await prisma.replenishmentOrder.update({ where: { id: orderId }, data: { status: "CANCELLED" } });
+    // updateMany con guarda de estado: evita pisar una transicion concurrente
+    // (ej. el sync marcando RECEIVED entre el findUnique y este write).
+    const result = await prisma.replenishmentOrder.updateMany({
+      where: { id: orderId, status: { in: ["APPROVED", "SENT"] } },
+      data: { status: "CANCELLED" },
+    });
+    if (result.count === 0) {
+      return { ok: false, error: "El pedido ya no está abierto" };
+    }
     revalidatePath("/reabastecimiento");
     return { ok: true, odooOrderName: order.odooOrderName };
   } catch (err) {
