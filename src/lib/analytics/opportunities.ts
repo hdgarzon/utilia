@@ -17,6 +17,7 @@ export interface Opportunities {
   lowMargin: OppProduct[];    // venden pero margen bajo → subir precio
   deadStock: OppProduct[];    // con stock pero sin venta en 30d → liquidar
   deadStockTotal: number;     // capital total inmovilizado
+  deadStockCount: number;     // cuántos productos componen ese capital muerto
   starsRevenue: number;       // ingreso mensual proyectado de las estrellas
 }
 
@@ -98,6 +99,7 @@ export async function getOpportunities(): Promise<Opportunities> {
     lowMargin: lowMargin.map(strip),
     deadStock: deadStock.map(strip),
     deadStockTotal,
+    deadStockCount: deadAll.length,
     starsRevenue,
   };
 }
