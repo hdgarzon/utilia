@@ -18,6 +18,7 @@ interface AIRecommendation {
 
 interface AIFeedProps {
   recommendations: AIRecommendation[];
+  totalPending?: number;
 }
 
 const typeLabel: Record<string, string> = {
@@ -35,7 +36,7 @@ const priorityColor: Record<string, string> = {
   low: "text-muted-foreground bg-muted",
 };
 
-export function AIFeed({ recommendations }: AIFeedProps) {
+export function AIFeed({ recommendations, totalPending }: AIFeedProps) {
   async function handleApply(id: string) {
     await fetch(`/api/recommendations/${id}/apply`, { method: "POST" });
     toast.success("Recomendación aplicada");
@@ -54,13 +55,21 @@ export function AIFeed({ recommendations }: AIFeedProps) {
       icon={<Zap />}
       action={
         active.length > 0 ? (
-          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">{active.length}</span>
+          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+            {totalPending ?? active.length}
+          </span>
         ) : undefined
       }
       bodyClassName="space-y-3"
     >
       {active.length === 0 && (
         <p className="text-xs text-muted-foreground">Sin recomendaciones nuevas</p>
+      )}
+
+      {totalPending !== undefined && totalPending > active.length && (
+        <p className="text-xs text-muted-foreground">
+          Mostrando las {Math.min(active.length, 4)} más urgentes de <span className="font-medium text-foreground">{totalPending}</span> pendientes — aplica o descarta para ir limpiando.
+        </p>
       )}
 
       <div className="space-y-3">

@@ -7,12 +7,13 @@ interface KPICardProps {
   value: string;
   subvalue?: string;
   change?: number;
+  changeLabel?: string;
   icon: LucideIcon;
   variant?: "default" | "success" | "warning" | "danger";
   action?: React.ReactNode;
 }
 
-export function KPICard({ title, value, subvalue, change, icon: Icon, variant = "default", action }: KPICardProps) {
+export function KPICard({ title, value, subvalue, change, changeLabel = "vs ayer", icon: Icon, variant = "default", action }: KPICardProps) {
   const variantClass = {
     default: "text-foreground",
     success: "text-primary",
@@ -47,7 +48,7 @@ export function KPICard({ title, value, subvalue, change, icon: Icon, variant = 
             <TrendIcon className="h-3 w-3" />
             <span>
               {change >= 0 ? "+" : ""}
-              {change.toFixed(1)}% vs ayer
+              {change.toFixed(1)}% {changeLabel}
             </span>
           </div>
         )}

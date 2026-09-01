@@ -31,3 +31,10 @@ next-env.d.ts
 
 # Visual brainstorming companion
 .superpowers/
+
+# Worktrees locales
+.claude/worktrees/
+
+# Documentos internos con cifras reales del negocio (ingresos, margenes,
+# valor de inventario). No deben salir del equipo — ver CLAUDE.md.
+docs/PLAN_CRECIMIENTO.md
