@@ -533,10 +533,10 @@ function formatOdooDate(d: Date): string {
 }
 
 /**
- * Acceso RPC crudo para los scripts administrativos de `scripts/`.
+ * Acceso RPC crudo para los scripts administrativos de `scripts/` y para
+ * `src/lib/odoo-write.ts` (creación de borradores de compra por acción del
+ * usuario — ver el contrato en ese módulo).
  *
- * NO usar desde rutas de sync ni desde route handlers: Odoo es upstream y el
- * sync nunca le escribe. Esto existe solo para mantenimiento puntual de datos
- * maestros (códigos UNSPSC, datos fiscales de contactos) desde la CLI.
+ * NO usar desde rutas de sync: Odoo es upstream y el sync nunca le escribe.
  */
 export const odooRpc = { executeKw, searchRead };

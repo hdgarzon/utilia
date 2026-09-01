@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import {
   approveOrder,
   assignSupplier,
+  importSuppliersAction,
   saveSupplier,
 } from "@/app/(dashboard)/reabastecimiento/actions";
 import type {
@@ -266,6 +267,22 @@ function UnassignedCard({
           >
             <UserPlus className="h-3.5 w-3.5" />
             Crear
+          </button>
+          <button
+            onClick={() =>
+              startTransition(async () => {
+                const res = await importSuppliersAction();
+                if (!res.ok) toast.error(res.error ?? "No se pudo importar");
+                else {
+                  toast.success(`Proveedores: ${res.created ?? 0} nuevos, ${res.phonesFilled ?? 0} teléfonos completados`);
+                  router.refresh();
+                }
+              })
+            }
+            disabled={isPending}
+            className="rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-secondary disabled:opacity-50"
+          >
+            Importar de Odoo
           </button>
         </div>
       </div>

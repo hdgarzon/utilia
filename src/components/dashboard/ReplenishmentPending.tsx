@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { cancelOrder, markSent, saveSupplier } from "@/app/(dashboard)/reabastecimiento/actions";
+import { cancelOrder, markSent, retryOdooDraft, saveSupplier } from "@/app/(dashboard)/reabastecimiento/actions";
 import type { PendingOrder } from "@/lib/analytics/replenishment";
 import { buildOrderMessage, buildWaLink } from "@/lib/whatsapp";
 import { formatCurrency, cn } from "@/lib/utils";
@@ -130,6 +130,24 @@ function PendingRow({ order }: { order: PendingOrder }) {
               Guardar
             </button>
           </div>
+        )}
+        {!order.odooOrderId && (
+          <button
+            onClick={() =>
+              startTransition(async () => {
+                const res = await retryOdooDraft(order.id);
+                if (!res.ok) toast.error(res.error ?? "Odoo falló de nuevo");
+                else {
+                  toast.success(`Borrador ${res.odooOrderName ?? ""} creado en Odoo`);
+                  router.refresh();
+                }
+              })
+            }
+            disabled={isPending}
+            className="rounded-lg border border-warning/50 px-2.5 py-1.5 text-xs text-warning hover:bg-warning/10 disabled:opacity-50"
+          >
+            Crear en Odoo
+          </button>
         )}
         <button
           onClick={cancel}

@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { createDraftPurchaseOrder } from "@/lib/odoo-write";
+import { importSuppliersFromOdoo } from "@/lib/suppliers";
 
 // Un archivo "use server" solo puede exportar funciones async; el tipo queda interno.
 type ActionResult = { ok: boolean; error?: string };
@@ -32,8 +34,10 @@ const approveSchema = z.object({
 });
 
 /**
- * Aprueba un pedido: persiste ReplenishmentOrder + líneas. La creación del
- * borrador en Odoo se integra en una fase posterior (ver plan, Task 8).
+ * Aprueba un pedido: persiste ReplenishmentOrder + líneas y, si el proveedor
+ * está vinculado a Odoo, crea el borrador de compra allá. Un fallo del RPC no
+ * revierte la aprobación: el pedido queda aprobado en Utilia con odooError
+ * para que la UI ofrezca reintentar (ver retryOdooDraft).
  */
 export async function approveOrder(
   input: unknown
@@ -72,8 +76,32 @@ export async function approveOrder(
         lines: { createMany: { data: lines } },
       },
     });
+
+    // Borrador en Odoo: solo si el proveedor está vinculado. Si el RPC falla,
+    // el pedido queda aprobado en Utilia y se reintenta desde la UI.
+    let odooOrderName: string | null = null;
+    let odooError: string | undefined;
+    if (supplier.odooPartnerId) {
+      try {
+        const draft = await createDraftPurchaseOrder({
+          odooPartnerId: supplier.odooPartnerId,
+          originRef: `UTILIA-REP-${order.id}`,
+          lines: lines.map((l) => ({ odooProductId: l.odooProductId, qty: l.qty, priceUnit: l.unitCost })),
+        });
+        await prisma.replenishmentOrder.update({
+          where: { id: order.id },
+          data: { odooOrderId: draft.odooOrderId, odooOrderName: draft.odooOrderName },
+        });
+        odooOrderName = draft.odooOrderName;
+      } catch (err) {
+        odooError = err instanceof Error ? err.message : String(err);
+      }
+    } else {
+      odooError = "El proveedor no está vinculado a Odoo";
+    }
+
     revalidatePath("/reabastecimiento");
-    return { ok: true, orderId: order.id, odooOrderName: null };
+    return { ok: true, orderId: order.id, odooOrderName, odooError };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
@@ -160,6 +188,50 @@ export async function saveSupplier(input: unknown): Promise<ActionResult & { sup
       : await prisma.supplier.create({ data: { name, phone: phone || null } });
     revalidatePath("/reabastecimiento");
     return { ok: true, supplierId: supplier.id };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** Reintenta crear el borrador en Odoo para un pedido aprobado que quedó sin orden. */
+export async function retryOdooDraft(orderId: string): Promise<ActionResult & { odooOrderName?: string }> {
+  await requireSession();
+  try {
+    const order = await prisma.replenishmentOrder.findUnique({
+      where: { id: orderId },
+      include: { supplier: true, lines: true },
+    });
+    if (!order) return { ok: false, error: "Pedido no encontrado" };
+    if (order.odooOrderId) return { ok: true, odooOrderName: order.odooOrderName ?? undefined }; // idempotente
+    if (order.status !== "APPROVED" && order.status !== "SENT") {
+      return { ok: false, error: "El pedido ya no está abierto" };
+    }
+    if (!order.supplier.odooPartnerId) {
+      return { ok: false, error: "El proveedor no está vinculado a Odoo" };
+    }
+    const draft = await createDraftPurchaseOrder({
+      odooPartnerId: order.supplier.odooPartnerId,
+      originRef: `UTILIA-REP-${order.id}`,
+      lines: order.lines.map((l) => ({ odooProductId: l.odooProductId, qty: l.qty, priceUnit: l.unitCost })),
+    });
+    await prisma.replenishmentOrder.update({
+      where: { id: order.id },
+      data: { odooOrderId: draft.odooOrderId, odooOrderName: draft.odooOrderName },
+    });
+    revalidatePath("/reabastecimiento");
+    return { ok: true, odooOrderName: draft.odooOrderName };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** Importa/actualiza el directorio de proveedores desde los contactos de Odoo. */
+export async function importSuppliersAction(): Promise<ActionResult & { created?: number; phonesFilled?: number }> {
+  await requireSession();
+  try {
+    const res = await importSuppliersFromOdoo();
+    revalidatePath("/reabastecimiento");
+    return { ok: true, ...res };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
