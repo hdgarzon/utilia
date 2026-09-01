@@ -203,26 +203,47 @@ export async function saveSupplier(input: unknown): Promise<ActionResult & { sup
   }
 }
 
-/**
- * El borrador ya se creó en Odoo pero no se pudo guardar `odooOrderId` en
- * Postgres (dentro de la transacción de `retryOdooDraft`). Se lanza en vez
- * de capturarse in-place porque, una vez que una escritura falla dentro de
- * una transacción de Postgres, la transacción queda abortada: cualquier
- * intento de seguir usando `tx` (incluido un `return` normal, que Prisma
- * traduce en un COMMIT) fallaría igual. Dejar que la excepción haga rollback
- * y clasificarla en el catch de afuera es el único camino confiable para no
- * perder el nombre del borrador ya creado.
- */
-class OdooDraftPersistError extends Error {
-  odooOrderName: string;
-  constructor(odooOrderName: string) {
-    super(`Borrador ${odooOrderName} creado en Odoo pero no se pudo guardar la referencia`);
-    this.name = "OdooDraftPersistError";
-    this.odooOrderName = odooOrderName;
+// Un reclamo mas viejo que esto se considera abandonado (ej. el proceso
+// murio a mitad de la llamada a Odoo, o el propio RPC quedo colgado sin
+// timeout -- ver src/lib/odoo.ts) y se puede retomar.
+const CLAIM_STALE_AFTER_MS = 5 * 60 * 1000;
+
+/** Libera el reclamo de un pedido. Best-effort: un fallo aqui no debe tumbar la respuesta al usuario. */
+async function releaseClaim(orderId: string) {
+  try {
+    await prisma.replenishmentOrder.updateMany({
+      where: { id: orderId },
+      data: { odooDraftClaimedAt: null },
+    });
+  } catch (err) {
+    console.error("[retryOdooDraft] no se pudo liberar el reclamo:", orderId, err);
   }
 }
 
-/** Reintenta crear el borrador en Odoo para un pedido aprobado que quedó sin orden. */
+/**
+ * Reintenta crear el borrador en Odoo para un pedido aprobado que quedó sin
+ * orden.
+ *
+ * El llamado a Odoo (`createDraftPurchaseOrder`) corre siempre FUERA de
+ * cualquier transacción de Prisma. Una versión anterior lo hacía dentro de
+ * `prisma.$transaction(...)` con un `SELECT ... FOR UPDATE` para excluir
+ * llamadas concurrentes, pero eso abre un hueco real: el `fetch` de
+ * `jsonRpc` en src/lib/odoo.ts no tiene `AbortController` ni timeout propio
+ * (a propósito -- lo comparte el sync, cuyas llamadas pueden tardar
+ * legítimamente mucho), así que nada acota cuánto puede durar el RPC. Si
+ * Odoo tarda más que el `timeout` de la transacción, Prisma cierra
+ * (rollback) esa transacción por su cuenta y libera el lock de fila
+ * mientras el RPC sigue en vuelo; un segundo llamador que entre en ese
+ * instante ve `odooOrderId` todavía nulo y crea un borrador duplicado en
+ * Odoo -- exactamente lo que se buscaba evitar.
+ *
+ * En vez de eso: se reclama el pedido con UNA sola sentencia `updateMany`
+ * atómica (sin transacción, sin lock de fila, sin ventana de tiempo
+ * acotada por Prisma) usando la columna `odooDraftClaimedAt`, y solo
+ * DESPUÉS de ganar ese reclamo se llama a Odoo, ya sin ningún recurso de
+ * Prisma retenido. El reclamo se libera al terminar (éxito o error) para no
+ * bloquear un reintento legítimo.
+ */
 export async function retryOdooDraft(orderId: string): Promise<ActionResult & { odooOrderName?: string }> {
   await requireSession();
 
@@ -235,9 +256,8 @@ export async function retryOdooDraft(orderId: string): Promise<ActionResult & { 
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
-  // Chequeos rapidos sin lock: cubren el caso comun (no hay carrera) sin
-  // pagar el costo de abrir una transaccion para un pedido que de todas
-  // formas no calificaria.
+  // Chequeos rapidos: cubren el caso comun (pedido cerrado, ya tiene orden,
+  // proveedor sin vincular) sin siquiera intentar el reclamo.
   if (!order) return { ok: false, error: "Pedido no encontrado" };
   if (order.odooOrderId) return { ok: true, odooOrderName: order.odooOrderName ?? undefined }; // idempotente
   if (order.status !== "APPROVED" && order.status !== "SENT") {
@@ -247,73 +267,68 @@ export async function retryOdooDraft(orderId: string): Promise<ActionResult & { 
     return { ok: false, error: "El proveedor no está vinculado a Odoo" };
   }
 
+  // Reclamo atomico en una sola sentencia UPDATE: solo una llamada
+  // concurrente puede ganarlo para este pedido (las demas ven count===0).
+  // Un reclamo vigente (menos de 5 minutos) bloquea a los demas; uno viejo
+  // se trata como abandonado y se puede retomar.
+  const staleThreshold = new Date(Date.now() - CLAIM_STALE_AFTER_MS);
+  const claim = await prisma.replenishmentOrder.updateMany({
+    where: {
+      id: orderId,
+      odooOrderId: null,
+      status: { in: ["APPROVED", "SENT"] },
+      OR: [{ odooDraftClaimedAt: null }, { odooDraftClaimedAt: { lt: staleThreshold } }],
+    },
+    data: { odooDraftClaimedAt: new Date() },
+  });
+
+  if (claim.count === 0) {
+    // Perdimos el reclamo: otra llamada ya esta creando el borrador (o ya
+    // lo termino). Releemos para responder segun cual haya sido el caso.
+    const fresh = await prisma.replenishmentOrder.findUnique({
+      where: { id: orderId },
+      select: { odooOrderId: true, odooOrderName: true },
+    });
+    if (fresh?.odooOrderId) {
+      return { ok: true, odooOrderName: fresh.odooOrderName ?? undefined };
+    }
+    return { ok: false, error: "Ya hay un intento en curso de crear este borrador en Odoo. Espera unos segundos y recarga." };
+  }
+
+  // Ganamos el reclamo: a partir de aqui NO hay ninguna transaccion ni lock
+  // de Prisma abierto. El RPC puede tardar lo que tarde sin riesgo.
   try {
-    // Reclama el pedido con un lock de fila (SELECT ... FOR UPDATE): si dos
-    // llamadas concurrentes entran para el mismo pedido (doble clic, dos
-    // pestañas), la segunda espera a que esta transacción termine y ve el
-    // odooOrderId ya puesto, en vez de llamar a Odoo otra vez y crear un
-    // borrador duplicado. El RPC vive dentro del lock a propósito: es la
-    // única forma de garantizar exclusión mutua sin agregar una columna
-    // nueva al esquema (una reclamación "corta" que se libera antes de
-    // llamar a Odoo no sirve, porque no hay ningún campo existente que se
-    // pueda usar como marca de "reclamado" sin efectos secundarios: escribir
-    // en odooOrderId de una vez exige un valor final real, y un valor
-    // centinela chocaria con su restriccion @unique entre pedidos distintos).
-    // El volumen es bajo (aprobaciones manuales, no trafico concurrente), asi
-    // que mantener una sola fila bloqueada mientras Odoo responde es
-    // aceptable aqui; se sube el timeout de la transaccion para no cortar el
-    // RPC a medio camino si Odoo tarda.
-    const result = await prisma.$transaction(
-      async (tx) => {
-        const rows = await tx.$queryRaw<Array<{ odooOrderId: number | null; odooOrderName: string | null; status: string }>>`
-          SELECT "odooOrderId", "odooOrderName", "status" FROM "ReplenishmentOrder" WHERE "id" = ${orderId} FOR UPDATE
-        `;
-        const current = rows[0];
-        if (!current) return { ok: false as const, error: "Pedido no encontrado" };
-        if (current.odooOrderId) {
-          return { ok: true as const, odooOrderName: current.odooOrderName ?? undefined };
-        }
-        if (current.status !== "APPROVED" && current.status !== "SENT") {
-          return { ok: false as const, error: "El pedido ya no está abierto" };
-        }
+    const draft = await createDraftPurchaseOrder({
+      odooPartnerId: order.supplier.odooPartnerId,
+      originRef: `UTILIA-REP-${order.id}`,
+      lines: order.lines.map((l) => ({ odooProductId: l.odooProductId, qty: l.qty, priceUnit: l.unitCost })),
+    });
 
-        const draft = await createDraftPurchaseOrder({
-          odooPartnerId: order.supplier.odooPartnerId!,
-          originRef: `UTILIA-REP-${order.id}`,
-          lines: order.lines.map((l) => ({ odooProductId: l.odooProductId, qty: l.qty, priceUnit: l.unitCost })),
-        });
-
-        try {
-          await tx.replenishmentOrder.update({
-            where: { id: order.id },
-            data: { odooOrderId: draft.odooOrderId, odooOrderName: draft.odooOrderName },
-          });
-        } catch (persistErr) {
-          console.error("[retryOdooDraft] borrador creado en Odoo pero no se pudo guardar la referencia:", draft, persistErr);
-          throw new OdooDraftPersistError(draft.odooOrderName);
-        }
-        return { ok: true as const, odooOrderName: draft.odooOrderName };
-      },
-      // maxWait tambien se sube: por defecto Prisma solo espera 2s para
-      // *obtener conexion y arrancar* la transaccion. Con el lock del
-      // ganador retenido varios segundos (mientras Odoo responde), un
-      // segundo llamador necesita poder esperar su turno para arrancar sin
-      // que Prisma lo corte antes de tiempo (verificado: con el default de
-      // 2s, el segundo llamador fallaba con P2028 "Unable to start a
-      // transaction" en vez de esperar el lock y ver el resultado ya
-      // guardado).
-      { timeout: 20_000, maxWait: 20_000 }
-    );
-    revalidatePath("/reabastecimiento");
-    return result;
-  } catch (err) {
-    if (err instanceof OdooDraftPersistError) {
+    try {
+      await prisma.replenishmentOrder.update({
+        where: { id: order.id },
+        data: { odooOrderId: draft.odooOrderId, odooOrderName: draft.odooOrderName, odooDraftClaimedAt: null },
+      });
+    } catch (persistErr) {
+      // El borrador ya existe en Odoo; no perdemos la referencia: se lo
+      // decimos al dueño con el numero de la orden. Se libera el reclamo
+      // aparte (el update que lo hubiera liberado es el que fallo) para no
+      // bloquear el reintento 5 minutos.
+      console.error("[retryOdooDraft] borrador creado en Odoo pero no se pudo guardar la referencia:", draft, persistErr);
+      await releaseClaim(order.id);
       return {
         ok: false,
-        odooOrderName: err.odooOrderName,
-        error: `Se creó el borrador ${err.odooOrderName} en Odoo, pero no se pudo guardar la referencia en Utilia. Busca esa orden en Odoo antes de reintentar.`,
+        odooOrderName: draft.odooOrderName,
+        error: `Se creó el borrador ${draft.odooOrderName} en Odoo, pero no se pudo guardar la referencia en Utilia. Busca esa orden en Odoo antes de reintentar.`,
       };
     }
+
+    revalidatePath("/reabastecimiento");
+    return { ok: true, odooOrderName: draft.odooOrderName };
+  } catch (err) {
+    // El RPC fallo (nada se creo en Odoo): liberamos el reclamo para que un
+    // reintento inmediato no quede bloqueado 5 minutos.
+    await releaseClaim(order.id);
     return { ok: false, error: translateOdooError(err) };
   }
 }

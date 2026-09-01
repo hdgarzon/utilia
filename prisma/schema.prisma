@@ -298,18 +298,19 @@ model ProductSupplierOverride {
 }
 
 model ReplenishmentOrder {
-  id             String              @id @default(cuid())
-  supplier       Supplier            @relation(fields: [supplierId], references: [id])
-  supplierId     String
-  status         ReplenishmentStatus @default(APPROVED)
-  odooOrderId    Int?                @unique // purchase.order creado en borrador
-  odooOrderName  String? // ej "P00123"
-  totalEstimated Float               @default(0) // suma qty × unitCost al aprobar
-  sentAt         DateTime? // clic en WhatsApp / marcado manual
-  receivedAt     DateTime? // detectado por el sync
-  lines          ReplenishmentLine[]
-  createdAt      DateTime            @default(now())
-  updatedAt      DateTime            @updatedAt
+  id                 String              @id @default(cuid())
+  supplier           Supplier            @relation(fields: [supplierId], references: [id])
+  supplierId         String
+  status             ReplenishmentStatus @default(APPROVED)
+  odooOrderId        Int?                @unique // purchase.order creado en borrador
+  odooOrderName      String? // ej "P00123"
+  odooDraftClaimedAt DateTime? // reclamo temporal mientras se crea el borrador en Odoo
+  totalEstimated     Float               @default(0) // suma qty × unitCost al aprobar
+  sentAt             DateTime? // clic en WhatsApp / marcado manual
+  receivedAt         DateTime? // detectado por el sync
+  lines              ReplenishmentLine[]
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
 
   @@index([status])
 }
