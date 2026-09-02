@@ -69,7 +69,7 @@ src/lib/analytics/      # derived metrics
 src/lib/ai/             # prompt construction + OpenAI calls
 src/lib/period.ts       # fiscal period math
 src/lib/timezone.ts     # all date handling goes through here
-src/middleware.ts       # auth gate
+src/proxy.ts            # auth gate (antes middleware.ts)
 ```
 
 ### Data model (`prisma/schema.prisma`)
