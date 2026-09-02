@@ -217,7 +217,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* Centro de mando: ¿ganamos? · ¿en qué gastar? · oportunidades · alertas · pedidos */}
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-5">
+      <div className="grid grid-cols-2 gap-4 xl:grid-cols-5 [&>*:last-child]:col-span-2 xl:[&>*:last-child]:col-span-1">
         <CommandCard
           href="/financiero"
           label="¿Ganamos? (mes)"

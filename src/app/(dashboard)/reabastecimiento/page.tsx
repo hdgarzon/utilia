@@ -50,14 +50,14 @@ export default async function ReabastecimientoPage({ searchParams }: PageProps) 
             Pedido sugerido por proveedor — revisa, ajusta y aprueba; nada se envía solo
           </p>
         </div>
-        <div className="flex items-center gap-2 text-xs">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
           <span className="text-muted-foreground">Cobertura objetivo:</span>
           {[14, 21, 30, 45].map((d) => (
             <Link
               key={d}
               href={`/reabastecimiento?coverage=${d}`}
               className={cn(
-                "rounded-lg border px-3 py-1.5 font-medium transition-colors",
+                "rounded-lg border px-3 py-2 font-medium transition-colors sm:py-1.5",
                 d === plan.coverageDaysTarget
                   ? "border-primary bg-primary/10 text-primary"
                   : "border-border bg-card hover:bg-secondary"
@@ -69,7 +69,7 @@ export default async function ReabastecimientoPage({ searchParams }: PageProps) 
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         <div className="rounded-xl border border-destructive/40 bg-destructive/5 p-4 text-center">
           <XCircle className="h-5 w-5 text-destructive mx-auto mb-1" />
           <p className="text-2xl font-bold text-destructive">{totals.criticalCount}</p>

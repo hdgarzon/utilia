@@ -72,7 +72,7 @@ function PendingRow({ order }: { order: PendingOrder }) {
   };
 
   return (
-    <div className="flex items-center justify-between gap-3 px-4 py-3 text-sm flex-wrap">
+    <div className="flex flex-col gap-3 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <p className="font-medium">{order.supplierName}</p>
@@ -100,29 +100,33 @@ function PendingRow({ order }: { order: PendingOrder }) {
           )}
         </div>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 sm:shrink-0 sm:flex-nowrap">
         {waLink ? (
           <button
             onClick={sendWhatsApp}
             disabled={isPending}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+            className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50 sm:flex-none sm:py-1.5"
           >
             <MessageCircle className="h-3.5 w-3.5" />
             {order.status === "SENT" ? "Reenviar WhatsApp" : "Enviar WhatsApp"}
           </button>
         ) : (
-          <div className="flex flex-col items-end gap-1">
+          <div className="flex flex-1 flex-col gap-1 sm:items-end">
             {order.supplierPhone && (
               <p className="text-[10px] text-warning">
                 El número guardado no sirve para WhatsApp. Escríbelo con indicativo de país (ej. 573001234567).
               </p>
             )}
-            <div className="flex items-center gap-1.5">
+            <div className="flex w-full items-center gap-1.5">
+              <label className="sr-only" htmlFor={`tel-${order.id}`}>WhatsApp de {order.supplierName}</label>
               <input
+                id={`tel-${order.id}`}
+                type="tel"
+                inputMode="tel"
                 value={phoneDraft}
                 onChange={(e) => setPhoneDraft(e.target.value)}
                 placeholder="WhatsApp del proveedor…"
-                className="w-40 rounded-md border border-border bg-background px-2 py-1.5 text-xs"
+                className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-2 text-xs sm:w-40 sm:flex-none sm:py-1.5"
               />
               <button
                 onClick={() =>
@@ -133,7 +137,7 @@ function PendingRow({ order }: { order: PendingOrder }) {
                   })
                 }
                 disabled={isPending || !phoneDraft.trim()}
-                className="rounded-lg border border-border px-2.5 py-1.5 text-xs hover:bg-secondary disabled:opacity-50"
+                className="shrink-0 rounded-lg border border-border px-2.5 py-2 text-xs hover:bg-secondary disabled:opacity-50 sm:py-1.5"
               >
                 Guardar
               </button>
@@ -154,19 +158,19 @@ function PendingRow({ order }: { order: PendingOrder }) {
                 })
               }
               disabled={isPending}
-              className="rounded-lg border border-warning/50 px-2.5 py-1.5 text-xs text-warning hover:bg-warning/10 disabled:opacity-50"
+              className="shrink-0 rounded-lg border border-warning/50 px-2.5 py-2 text-xs text-warning hover:bg-warning/10 disabled:opacity-50 sm:py-1.5"
             >
               Crear en Odoo
             </button>
           ) : (
-            <p className="max-w-[220px] text-[10px] text-muted-foreground">
+            <p className="w-full text-[10px] text-muted-foreground sm:max-w-[220px]">
               Este proveedor no existe en Odoo. Usa &quot;Importar de Odoo&quot; o crea el contacto allá.
             </p>
           ))}
         <button
           onClick={cancel}
           disabled={isPending}
-          className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:bg-secondary"
+          className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-border px-2.5 py-2 text-xs text-muted-foreground hover:bg-secondary sm:py-1.5"
         >
           <X className="h-3.5 w-3.5" />
           Cancelar
