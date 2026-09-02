@@ -111,19 +111,21 @@ function SupplierCard({ suggestion }: { suggestion: ReplenishmentSuggestion }) {
 
   return (
     <div className="rounded-xl border border-border bg-card">
-      <div className="flex items-center justify-between gap-3 border-b border-border p-4 flex-wrap">
-        <div className="flex items-center gap-2">
-          <Store className="h-4 w-4 text-primary" />
-          <p className="font-semibold">{supplier.name}</p>
-          <span className="text-xs text-muted-foreground">
+      <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-0.5 min-w-0 sm:flex-row sm:items-center sm:gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <Store className="h-4 w-4 shrink-0 text-primary" />
+            <p className="font-semibold truncate">{supplier.name}</p>
+          </div>
+          <span className="pl-6 text-xs text-muted-foreground sm:pl-0 sm:shrink-0">
             {activeLines.length} producto{activeLines.length === 1 ? "" : "s"} · {formatCurrency(total)}
           </span>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={approve}
             disabled={isPending}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+            className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50 sm:flex-none sm:py-1.5"
           >
             <Check className="h-3.5 w-3.5" />
             {isPending ? "Aprobando…" : "Aprobar pedido"}
@@ -131,7 +133,7 @@ function SupplierCard({ suggestion }: { suggestion: ReplenishmentSuggestion }) {
           <button
             onClick={() => setDismissed(true)}
             disabled={isPending}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs text-muted-foreground hover:bg-secondary"
+            className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs text-muted-foreground hover:bg-secondary sm:flex-none sm:py-1.5"
           >
             <Trash2 className="h-3.5 w-3.5" />
             Descartar
@@ -166,56 +168,127 @@ function LineTable({
   qty: Record<number, number>;
   setQty: Dispatch<SetStateAction<Record<number, number>>>;
 }) {
+  const setLineQty = (odooProductId: number, raw: number) =>
+    setQty((prev) => ({ ...prev, [odooProductId]: Math.max(0, raw || 0) }));
+
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-left text-xs text-muted-foreground">
-            <th className="px-4 py-2 font-medium">Producto</th>
-            <th className="px-2 py-2 font-medium text-right">Stock</th>
-            <th className="px-2 py-2 font-medium text-right">Cobertura</th>
-            <th className="px-2 py-2 font-medium text-right">Vende/día</th>
-            <th className="px-2 py-2 font-medium text-center">Motivo</th>
-            <th className="px-2 py-2 font-medium text-right">Pedir</th>
-            <th className="px-4 py-2 font-medium text-right">Costo est.</th>
-          </tr>
-        </thead>
-        <tbody>
-          {lines.map((l) => {
-            const q = qty[l.odooProductId] ?? 0;
-            const badge = reasonBadge[l.reason];
-            return (
-              <tr key={l.odooProductId} className="border-t border-border/60">
-                <td className="px-4 py-2">
-                  <span className="line-clamp-1">{l.name}</span>
-                  <span className="text-[10px] text-muted-foreground">
+    <>
+      {/* Móvil: una tarjeta por producto. La tabla completa obliga a desplazarse
+          en horizontal justo hasta el campo de cantidad, que es lo único que se
+          toca — y esta vista se usa de pie en la tienda cuando llega el vendedor. */}
+      <div className="md:hidden divide-y divide-border/60">
+        {lines.map((l) => {
+          const q = qty[l.odooProductId] ?? 0;
+          const badge = reasonBadge[l.reason];
+          return (
+            <div key={l.odooProductId} className="p-4 space-y-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium leading-snug">{l.name}</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
                     {l.tier} · {l.category ?? "sin categoría"}
-                  </span>
-                </td>
-                <td className="px-2 py-2 text-right tabular-nums">{Math.round(l.stockQty)}</td>
-                <td className="px-2 py-2 text-right tabular-nums">{l.daysOfStock.toFixed(0)}d</td>
-                <td className="px-2 py-2 text-right tabular-nums">{l.avgDailySales7d.toFixed(1)}</td>
-                <td className="px-2 py-2 text-center">
-                  <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", badge.cls)}>{badge.label}</span>
-                </td>
-                <td className="px-2 py-2 text-right">
+                  </p>
+                </div>
+                <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium", badge.cls)}>
+                  {badge.label}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-3 gap-x-3 text-xs">
+                <div>
+                  <p className="text-muted-foreground">Stock</p>
+                  <p className="font-medium tabular-nums">{Math.round(l.stockQty)}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Cobertura</p>
+                  <p className="font-medium tabular-nums">{l.daysOfStock.toFixed(0)}d</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Vende/día</p>
+                  <p className="font-medium tabular-nums">{l.avgDailySales7d.toFixed(1)}</p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 pt-1">
+                <label className="text-xs text-muted-foreground" htmlFor={`qty-m-${l.odooProductId}`}>
+                  Pedir
+                </label>
+                <div className="flex items-center gap-2">
                   <input
+                    id={`qty-m-${l.odooProductId}`}
                     type="number"
+                    inputMode="numeric"
                     min={0}
+                    max={100000}
                     value={q}
-                    onChange={(e) =>
-                      setQty((prev) => ({ ...prev, [l.odooProductId]: Math.max(0, Number(e.target.value) || 0) }))
-                    }
-                    className="w-16 rounded-md border border-border bg-background px-2 py-1 text-right text-sm"
+                    onChange={(e) => setLineQty(l.odooProductId, Number(e.target.value))}
+                    className="h-10 w-20 rounded-md border border-border bg-background px-2 text-right text-base"
                   />
-                </td>
-                <td className="px-4 py-2 text-right tabular-nums">{formatCurrency(q * l.unitCost)}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+                  <span className="w-24 text-right text-sm font-medium tabular-nums">
+                    {formatCurrency(q * l.unitCost)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Escritorio: tabla completa */}
+      <div className="hidden md:block overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs text-muted-foreground">
+              <th className="px-4 py-2 font-medium">Producto</th>
+              <th className="px-2 py-2 font-medium text-right">Stock</th>
+              <th className="px-2 py-2 font-medium text-right">Cobertura</th>
+              <th className="px-2 py-2 font-medium text-right">Vende/día</th>
+              <th className="px-2 py-2 font-medium text-center">Motivo</th>
+              <th className="px-2 py-2 font-medium text-right">Pedir</th>
+              <th className="px-4 py-2 font-medium text-right">Costo est.</th>
+            </tr>
+          </thead>
+          <tbody>
+            {lines.map((l) => {
+              const q = qty[l.odooProductId] ?? 0;
+              const badge = reasonBadge[l.reason];
+              return (
+                <tr key={l.odooProductId} className="border-t border-border/60">
+                  <td className="px-4 py-2">
+                    <span className="line-clamp-1">{l.name}</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {l.tier} · {l.category ?? "sin categoría"}
+                    </span>
+                  </td>
+                  <td className="px-2 py-2 text-right tabular-nums">{Math.round(l.stockQty)}</td>
+                  <td className="px-2 py-2 text-right tabular-nums">{l.daysOfStock.toFixed(0)}d</td>
+                  <td className="px-2 py-2 text-right tabular-nums">{l.avgDailySales7d.toFixed(1)}</td>
+                  <td className="px-2 py-2 text-center">
+                    <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", badge.cls)}>{badge.label}</span>
+                  </td>
+                  <td className="px-2 py-2 text-right">
+                    <label className="sr-only" htmlFor={`qty-d-${l.odooProductId}`}>
+                      Cantidad a pedir de {l.name}
+                    </label>
+                    <input
+                      id={`qty-d-${l.odooProductId}`}
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      max={100000}
+                      value={q}
+                      onChange={(e) => setLineQty(l.odooProductId, Number(e.target.value))}
+                      className="w-16 rounded-md border border-border bg-background px-2 py-1 text-right text-sm"
+                    />
+                  </td>
+                  <td className="px-4 py-2 text-right tabular-nums">{formatCurrency(q * l.unitCost)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 
@@ -254,21 +327,23 @@ function UnassignedCard({
 
   return (
     <div className="rounded-xl border border-dashed border-border bg-card">
-      <div className="flex items-center justify-between gap-3 border-b border-border p-4 flex-wrap">
+      <div className="flex flex-col gap-3 border-b border-border p-4 sm:flex-row sm:items-center sm:justify-between">
         <p className="font-semibold text-muted-foreground">
           Sin proveedor ({unassigned.lines.length}) — asigna una vez y el sistema lo recuerda
         </p>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="sr-only" htmlFor="nuevo-proveedor">Nombre del nuevo proveedor</label>
           <input
+            id="nuevo-proveedor"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             placeholder="Nuevo proveedor…"
-            className="w-44 rounded-md border border-border bg-background px-2 py-1.5 text-xs"
+            className="min-w-0 basis-full rounded-md border border-border bg-background px-2 py-2 text-xs sm:w-44 sm:basis-auto sm:py-1.5"
           />
           <button
             onClick={createSupplier}
             disabled={isPending || !newName.trim()}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-secondary disabled:opacity-50"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs hover:bg-secondary disabled:opacity-50 sm:py-1.5"
           >
             <UserPlus className="h-3.5 w-3.5" />
             Crear
@@ -287,7 +362,7 @@ function UnassignedCard({
               })
             }
             disabled={isPending}
-            className="rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-secondary disabled:opacity-50"
+            className="shrink-0 rounded-lg border border-border px-3 py-2 text-xs hover:bg-secondary disabled:opacity-50 sm:py-1.5"
           >
             Importar de Odoo
           </button>
@@ -295,8 +370,8 @@ function UnassignedCard({
       </div>
       <div className="divide-y divide-border/60">
         {unassigned.lines.map((l) => (
-          <div key={l.odooProductId} className="flex items-center justify-between gap-3 px-4 py-2 text-sm flex-wrap">
-            <div>
+          <div key={l.odooProductId} className="flex flex-col gap-2 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:py-2">
+            <div className="min-w-0">
               <span className="line-clamp-1">{l.name}</span>
               <span className="text-[10px] text-muted-foreground">
                 stock {Math.round(l.stockQty)} · {l.daysOfStock.toFixed(0)}d · sugerido {l.suggestedQty}
@@ -306,7 +381,7 @@ function UnassignedCard({
               defaultValue=""
               disabled={isPending}
               onChange={(e) => assign(l.odooProductId, e.target.value)}
-              className="rounded-md border border-border bg-background px-2 py-1.5 text-xs"
+              className="w-full rounded-md border border-border bg-background px-2 py-2 text-xs sm:w-auto sm:py-1.5"
             >
               <option value="" disabled>
                 Asignar proveedor…
