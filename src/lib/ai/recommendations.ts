@@ -64,7 +64,7 @@ async function enrichWithLLM(signal: Signal) {
   const { object } = await generateObject({
     model: openai("gpt-4o-mini"),
     schema: recommendationSchema,
-    system: SYSTEM_PROMPT,
+    instructions: SYSTEM_PROMPT,
     prompt: buildPromptForSignal(signal),
     temperature: 0.4,
   });
