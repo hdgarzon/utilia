@@ -98,6 +98,8 @@ export function CashFlowCard({ data }: Props) {
                 {runwayMonths!.toFixed(1)} <span className="text-sm">meses</span>
               </p>
               <p className="text-xs text-muted-foreground">
+                {/* eslint-disable-next-line react-hooks/purity -- componente de servidor:
+                    la proyeccion depende del momento de la peticion a proposito */}
                 hasta {new Date(Date.now() + runwayMonths! * 30 * 86400000).toLocaleDateString("es-CO", { month: "short", year: "numeric", timeZone: "America/Bogota" })}
               </p>
             </>
