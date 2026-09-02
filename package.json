@@ -21,7 +21,7 @@
     "co:partners": "tsx --env-file=.env.local scripts/co-edi-partners.ts"
   },
   "dependencies": {
-    "@ai-sdk/openai": "^3.0.65",
+    "@ai-sdk/openai": "^4.0.51",
     "@prisma/client": "^6.8.2",
     "@radix-ui/react-slot": "^1.3.3",
     "ai": "^6.0.191",
