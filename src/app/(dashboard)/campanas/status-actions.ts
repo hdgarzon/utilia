@@ -12,6 +12,7 @@ import {
   addGanchoPost,
   updateGanchoText,
   suggestGanchoText,
+  deleteStatusPost,
   type NewPostOrigin,
 } from "@/lib/analytics/status-posts";
 
@@ -119,6 +120,17 @@ export async function suggestGanchoAction(tema: string) {
     await requireSession();
     const text = await suggestGanchoText(tema);
     return { ok: true as const, text };
+  } catch (err) {
+    return { ok: false as const, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+export async function deletePostAction(id: string) {
+  try {
+    await requireSession();
+    await deleteStatusPost(id);
+    revalidatePath("/campanas");
+    return { ok: true as const };
   } catch (err) {
     return { ok: false as const, error: err instanceof Error ? err.message : String(err) };
   }

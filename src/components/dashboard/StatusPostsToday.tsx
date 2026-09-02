@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Download, RefreshCw, Search, Check, Loader2, Sparkles, Save } from "lucide-react";
+import { Download, RefreshCw, Search, Check, Loader2, Sparkles, Save, Trash2 } from "lucide-react";
 import { cn, formatCurrency } from "@/lib/utils";
 import {
   regenerateCopyAction,
@@ -13,6 +13,7 @@ import {
   pickProductAction,
   updateGanchoAction,
   suggestGanchoAction,
+  deletePostAction,
 } from "@/app/(dashboard)/campanas/status-actions";
 import { ProductPickerDialog, type PickerProduct } from "./ProductPickerDialog";
 import { AddStatusPost } from "./AddStatusPost";
@@ -54,6 +55,58 @@ function StatusPreview({ imgUrl, alt, posted, pending }: { imgUrl: string; alt: 
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Borrar en dos pasos: el primer clic arma, el segundo confirma. Evita el modal
+ * (friccion alta para una accion frecuente) sin dejar que un clic accidental
+ * destruya un estado con su copy ya generado. Se desarma solo a los 4 segundos.
+ */
+function DeletePostButton({ postId, onDeleted }: { postId: string; onDeleted: () => void }) {
+  const [armed, setArmed] = useState(false);
+  const [pending, startTransition] = useTransition();
+
+  useEffect(() => {
+    if (!armed) return;
+    const t = setTimeout(() => setArmed(false), 4000);
+    return () => clearTimeout(t);
+  }, [armed]);
+
+  if (!armed) {
+    return (
+      <button
+        type="button"
+        onClick={() => setArmed(true)}
+        title="Borrar este estado"
+        aria-label="Borrar este estado"
+        className="flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-destructive"
+      >
+        <Trash2 className="h-3.5 w-3.5" /> Borrar
+      </button>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      disabled={pending}
+      onClick={() =>
+        startTransition(async () => {
+          const r = await deletePostAction(postId);
+          if (r.ok) {
+            toast.success("Estado borrado");
+            onDeleted();
+          } else {
+            toast.error(r.error ?? "No se pudo borrar");
+            setArmed(false);
+          }
+        })
+      }
+      className="flex items-center justify-center gap-1.5 rounded-lg bg-destructive px-3 py-2 text-xs font-semibold text-destructive-foreground hover:opacity-90 disabled:opacity-50"
+    >
+      {pending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />} Confirmar
+    </button>
   );
 }
 
@@ -180,6 +233,7 @@ function StatusCard({
         >
           {activeAction === "product" && pending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />} Elegir producto
         </button>
+        <DeletePostButton postId={post.id} onDeleted={() => router.refresh()} />
       </div>
 
       <ProductPickerDialog
@@ -313,6 +367,7 @@ function GanchoCard({ post }: { post: StatusPostView }) {
         >
           {activeAction === "posted" && pending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} {post.posted ? "Publicado" : "Marcar"}
         </button>
+        <DeletePostButton postId={post.id} onDeleted={() => router.refresh()} />
       </div>
     </div>
   );

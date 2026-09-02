@@ -433,3 +433,27 @@ export async function updateStatusPostTemplate(
 ): Promise<StatusPost> {
   return prisma.statusPost.update({ where: { id }, data: { template } });
 }
+
+/**
+ * Borra un estado del día. Solo se permite sobre estados de HOY: los de días
+ * anteriores son el historial que alimenta `recentlyPostedIds` (evita repetir
+ * el mismo producto en poco tiempo), así que borrarlos degradaría la selección.
+ *
+ * No renumera los slots de los estados restantes: el slot solo ordena la
+ * cuadrícula y `addStatusPost` toma siempre el máximo + 1, así que un hueco es
+ * inofensivo y renumerar chocaría con el unique [date, slot].
+ */
+export async function deleteStatusPost(id: string): Promise<void> {
+  const post = await prisma.statusPost.findUnique({
+    where: { id },
+    select: { date: true },
+  });
+  if (!post) throw new Error("El estado ya no existe");
+
+  const today = colombiaToday();
+  if (post.date.getTime() !== today.getTime()) {
+    throw new Error("Solo se pueden borrar los estados de hoy");
+  }
+
+  await prisma.statusPost.delete({ where: { id } });
+}
