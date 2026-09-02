@@ -24,7 +24,7 @@
     "@ai-sdk/openai": "^3.0.65",
     "@prisma/client": "^6.8.2",
     "@radix-ui/react-slot": "^1.3.3",
-    "ai": "^6.0.191",
+    "ai": "^7.0.84",
     "bcryptjs": "^2.4.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
