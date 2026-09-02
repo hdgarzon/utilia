@@ -85,7 +85,7 @@ async function generateCopy(input: {
     const { object } = await generateObject({
       model: openai("gpt-4o-mini"),
       schema: copySchema,
-      system: input.mode === "regular" ? COPY_SYSTEM_PROMPT_REGULAR : COPY_SYSTEM_PROMPT_LIQUIDACION,
+      instructions: input.mode === "regular" ? COPY_SYSTEM_PROMPT_REGULAR : COPY_SYSTEM_PROMPT_LIQUIDACION,
       prompt: `Producto: ${input.name}
 Stock disponible: ${input.stockQty}
 Categoría: ${input.category ?? "—"}
@@ -125,7 +125,7 @@ export async function suggestGanchoText(tema?: string): Promise<{ headline: stri
     const { object } = await generateObject({
       model: openai("gpt-4o-mini"),
       schema: ganchoSchema,
-      system: GANCHO_SYSTEM_PROMPT,
+      instructions: GANCHO_SYSTEM_PROMPT,
       prompt: tema?.trim()
         ? `Tema o pista: ${tema.trim()}\n\nGenera el gancho.`
         : `Genera un gancho de intriga genérico para abrir la tanda de estados del día.`,
