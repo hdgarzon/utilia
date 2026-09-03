@@ -168,8 +168,10 @@ function LineTable({
   qty: Record<number, number>;
   setQty: Dispatch<SetStateAction<Record<number, number>>>;
 }) {
+  // Unidades enteras hacia arriba: no se le piden 2,5 unidades a un proveedor,
+  // y un decimal llegaba hasta la orden de compra en Odoo.
   const setLineQty = (odooProductId: number, raw: number) =>
-    setQty((prev) => ({ ...prev, [odooProductId]: Math.max(0, raw || 0) }));
+    setQty((prev) => ({ ...prev, [odooProductId]: Math.ceil(Math.max(0, raw || 0)) }));
 
   return (
     <>
@@ -197,11 +199,11 @@ function LineTable({
               <div className="grid grid-cols-3 gap-x-3 text-xs">
                 <div>
                   <p className="text-muted-foreground">Stock</p>
-                  <p className="font-medium tabular-nums">{Math.round(l.stockQty)}</p>
+                  <p className="font-medium tabular-nums">{Math.ceil(l.stockQty)}</p>
                 </div>
                 <div>
                   <p className="text-muted-foreground">Cobertura</p>
-                  <p className="font-medium tabular-nums">{l.daysOfStock.toFixed(0)}d</p>
+                  <p className="font-medium tabular-nums">{Math.ceil(l.daysOfStock)}d</p>
                 </div>
                 <div>
                   <p className="text-muted-foreground">Vende/día</p>
@@ -220,6 +222,7 @@ function LineTable({
                     inputMode="numeric"
                     min={0}
                     max={100000}
+                    step={1}
                     value={q}
                     onChange={(e) => setLineQty(l.odooProductId, Number(e.target.value))}
                     className="h-10 w-20 rounded-md border border-border bg-background px-2 text-right text-base"
@@ -260,8 +263,8 @@ function LineTable({
                       {l.tier} · {l.category ?? "sin categoría"}
                     </span>
                   </td>
-                  <td className="px-2 py-2 text-right tabular-nums">{Math.round(l.stockQty)}</td>
-                  <td className="px-2 py-2 text-right tabular-nums">{l.daysOfStock.toFixed(0)}d</td>
+                  <td className="px-2 py-2 text-right tabular-nums">{Math.ceil(l.stockQty)}</td>
+                  <td className="px-2 py-2 text-right tabular-nums">{Math.ceil(l.daysOfStock)}d</td>
                   <td className="px-2 py-2 text-right tabular-nums">{l.avgDailySales7d.toFixed(1)}</td>
                   <td className="px-2 py-2 text-center">
                     <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", badge.cls)}>{badge.label}</span>
@@ -276,6 +279,7 @@ function LineTable({
                       inputMode="numeric"
                       min={0}
                       max={100000}
+                      step={1}
                       value={q}
                       onChange={(e) => setLineQty(l.odooProductId, Number(e.target.value))}
                       className="w-16 rounded-md border border-border bg-background px-2 py-1 text-right text-sm"
@@ -374,7 +378,7 @@ function UnassignedCard({
             <div className="min-w-0">
               <span className="line-clamp-1">{l.name}</span>
               <span className="text-[10px] text-muted-foreground">
-                stock {Math.round(l.stockQty)} · {l.daysOfStock.toFixed(0)}d · sugerido {l.suggestedQty}
+                stock {Math.ceil(l.stockQty)} · {Math.ceil(l.daysOfStock)}d · sugerido {l.suggestedQty}
               </span>
             </div>
             <select

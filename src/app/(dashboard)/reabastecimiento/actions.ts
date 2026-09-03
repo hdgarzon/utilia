@@ -25,8 +25,8 @@ const approveSchema = z.object({
       z.object({
         odooProductId: z.number().int().positive(),
         productName: z.string().min(1).max(300),
-        qty: z.number().positive().max(100_000),
-        suggestedQty: z.number().nonnegative(),
+        qty: z.number().int().positive().max(100_000), // unidades enteras: no se piden 2,5
+        suggestedQty: z.number().int().nonnegative(),
         unitCost: z.number().nonnegative(),
         reason: z.enum(["critico", "advertencia", "min_stock"]),
       })
