@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { odoo } from "@/lib/odoo";
 import { colombiaStartOfPreviousMonth } from "@/lib/timezone";
+import { recomputeStockLevels } from "@/lib/analytics/stock-levels";
 
 // Sentinel: la primera vez no existe el registro, devolvemos undefined
 async function getLastSync(entity: string): Promise<Date | undefined> {
@@ -549,6 +550,19 @@ async function recomputeDaysOfStock() {
   `;
 }
 
+async function bulkUpdateDemandStdDev(rows: Array<{ pid: number; sd: number }>) {
+  if (rows.length === 0) return;
+  const CHUNK = 1000;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const values = rows.slice(i, i + CHUNK).map((r) => `(${r.pid}, ${r.sd})`).join(",");
+    await prisma.$executeRawUnsafe(`
+      UPDATE "ProductInsight" p SET "demandStdDev" = v.sd
+      FROM (VALUES ${values}) AS v("odooProductId", sd)
+      WHERE p."odooProductId" = v."odooProductId"
+    `);
+  }
+}
+
 /**
  * Recalcula la velocidad de venta REAL por producto sobre ventanas fijas de
  * 7/14/30 días (no sobre la ventana incremental del sync). Es la fuente de
@@ -579,10 +593,17 @@ export async function recomputeVelocities() {
   const c30 = nowMs - 30 * 86_400_000;
 
   const byProduct = new Map<number, { q7: number; q14: number; q30: number; last: number }>();
+  // Venta por producto y por dia: alimenta la desviacion estandar de la demanda
+  // que usa el stock de seguridad. Se acumula aqui para no releer Odoo.
+  const byProductDay = new Map<number, Map<number, number>>();
   for (const l of lines) {
     const t = orderMs.get(l.order_id[0]);
     if (t === undefined || t < c30) continue;
     const pid = l.product_id[0];
+    const dayIdx = Math.floor((nowMs - t) / 86_400_000);
+    const days = byProductDay.get(pid) ?? new Map<number, number>();
+    days.set(dayIdx, (days.get(dayIdx) ?? 0) + l.qty);
+    byProductDay.set(pid, days);
     const e = byProduct.get(pid) ?? { q7: 0, q14: 0, q30: 0, last: 0 };
     e.q30 += l.qty;
     if (t >= c14) e.q14 += l.qty;
@@ -631,7 +652,23 @@ export async function recomputeVelocities() {
       rotationDays: Math.floor((nowMs - e.last) / 86_400_000),
     }))
   );
+
+  // Desviacion de la venta diaria sobre los 30 dias completos. Los dias sin
+  // venta cuentan como cero a proposito: un producto que vende 10 un dia y
+  // nada el resto es mucho mas volatil que uno que vende 1 cada dia, y ese
+  // riesgo es justo lo que el stock de seguridad debe cubrir.
+  const DIAS = 30;
+  await bulkUpdateDemandStdDev(
+    Array.from(byProductDay.entries()).map(([pid, days]) => {
+      const media = Array.from(days.values()).reduce((a, b) => a + b, 0) / DIAS;
+      let acc = 0;
+      for (let d = 0; d < DIAS; d++) acc += ((days.get(d) ?? 0) - media) ** 2;
+      return { pid, sd: Math.sqrt(acc / DIAS) };
+    })
+  );
+
   await recomputeDaysOfStock();
+  await recomputeStockLevels();
 }
 
 export async function runFullSync() {

@@ -57,7 +57,11 @@ model ProductInsight {
   rotationDays     Int       @default(0) // días desde última venta
   trend            String    @default("stable") // "up" | "down" | "stable"
   suggestion       String? // IA suggestion text
-  minStock         Int       @default(5)
+  minStock         Int       @default(5) // punto de reorden calculado (ver stock-levels.ts)
+  maxStock         Int       @default(0) // tope de reposicion: minStock + cobertura del ciclo
+  safetyStock      Int       @default(0) // colchon por variabilidad de la demanda
+  demandStdDev     Float     @default(0) // desviacion estandar de la venta diaria (30d)
+  levelsUpdatedAt  DateTime? // ultima vez que se recalcularon los niveles
   reorderQty       Int       @default(0)
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt

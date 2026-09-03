@@ -103,6 +103,8 @@ export default async function InventarioPage() {
           category: p.category,
           stockQty: p.stockQty,
           daysOfStock: p.daysOfStock,
+          minStock: p.minStock,
+          maxStock: p.maxStock,
           salePrice: p.salePrice,
           status: stockHealth(p.daysOfStock),
         }))}

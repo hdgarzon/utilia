@@ -3,9 +3,11 @@ export const dynamic = "force-dynamic";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getReplenishmentPlan } from "@/lib/analytics/replenishment";
+import { getLeadTimeDays } from "@/lib/analytics/stock-levels";
 import { ensureSuppliersFromHistory } from "@/lib/suppliers";
 import { ReplenishmentBoard } from "@/components/dashboard/ReplenishmentBoard";
 import { ReplenishmentPending } from "@/components/dashboard/ReplenishmentPending";
+import { LeadTimeSetting } from "@/components/dashboard/LeadTimeSetting";
 import { formatCurrency, cn } from "@/lib/utils";
 import { ClipboardList, AlertTriangle, XCircle, Wallet } from "lucide-react";
 
@@ -21,6 +23,7 @@ export default async function ReabastecimientoPage({ searchParams }: PageProps) 
   await ensureSuppliersFromHistory().catch(() => {});
 
   const plan = await getReplenishmentPlan(coverage).catch(() => null);
+  const leadTimeDays = await getLeadTimeDays().catch(() => 7);
   const suppliers = await prisma.supplier.findMany({
     where: { active: true },
     orderBy: { name: "asc" },
@@ -95,6 +98,8 @@ export default async function ReabastecimientoPage({ searchParams }: PageProps) 
           </p>
         </div>
       </div>
+
+      <LeadTimeSetting current={leadTimeDays} />
 
       <ReplenishmentPending pending={plan.pending} />
 
