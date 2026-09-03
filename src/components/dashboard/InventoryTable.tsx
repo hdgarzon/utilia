@@ -69,8 +69,8 @@ export function InventoryTable({ rows }: Props) {
     const csv = buildCsv(filtered, [
       { header: "Producto", value: (r) => r.name },
       { header: "Categoría", value: (r) => r.category ?? "" },
-      { header: "Stock", value: (r) => Math.round(r.stockQty) },
-      { header: "Días de stock", value: (r) => r.daysOfStock.toFixed(1) },
+      { header: "Stock", value: (r) => Math.ceil(r.stockQty) },
+      { header: "Días de stock", value: (r) => Math.ceil(r.daysOfStock) },
       { header: "Precio", value: (r) => r.salePrice },
       { header: "Estado", value: (r) => STATUS_LABEL[r.status] },
     ]);
@@ -143,14 +143,14 @@ export function InventoryTable({ rows }: Props) {
               filtered.map((p) => (
                 <tr key={p.id} className="border-b border-border last:border-0 hover:bg-secondary/20">
                   <td className="py-2 px-3 font-medium max-w-64 truncate">{p.name}</td>
-                  <td className="py-2 px-3 text-right">{p.stockQty.toFixed(0)}</td>
+                  <td className="py-2 px-3 text-right">{Math.ceil(p.stockQty)}</td>
                   <td
                     className={cn(
                       "py-2 px-3 text-right font-medium",
                       p.status === "critical" ? "text-destructive" : p.status === "warning" ? "text-warning" : "text-primary"
                     )}
                   >
-                    {p.daysOfStock.toFixed(0)}d
+                    {Math.ceil(p.daysOfStock)}d
                   </td>
                   <td
                     className={cn(

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { isServiceCategory } from "@/lib/service-categories";
+import { getSeasonalIndex, fortnightKey, fortnightKeyIn, lookupIndex } from "@/lib/analytics/seasonality";
 
 /**
  * Niveles minimo y maximo de stock por producto.
@@ -32,6 +33,32 @@ export interface StockLevels {
   safetyStock: number;
   minStock: number;
   maxStock: number;
+  seasonalFactor: number;
+}
+
+/**
+ * Techo y piso del ajuste estacional. Con uno o dos años de historia un indice
+ * extremo puede ser una racha, no un patron: sin topes, una piñateria con
+ * indice 3,2 en diciembre dispararia un pedido enorme por una sola navidad
+ * observada.
+ */
+const SEASONAL_MAX = 2.5;
+const SEASONAL_MIN = 0.5;
+
+/**
+ * Cuanto hay que ajustar la velocidad actual para la temporada que viene.
+ *
+ * La velocidad de los ultimos 7 dias YA trae el efecto de la temporada actual,
+ * asi que lo que importa es el cambio relativo: si hoy estamos en una quincena
+ * floja y entramos a una alta, el cociente sube; si es al reves, baja.
+ */
+export function seasonalFactorFor(
+  indiceActual: number | null,
+  indiceFuturo: number | null
+): number {
+  if (!indiceActual || !indiceFuturo || indiceActual <= 0) return 1;
+  const raw = indiceFuturo / indiceActual;
+  return Math.min(SEASONAL_MAX, Math.max(SEASONAL_MIN, raw));
 }
 
 /**
@@ -45,16 +72,20 @@ export interface StockLevels {
 export function computeStockLevels(
   p: LevelInput,
   leadTimeDays: number,
-  coverageDays: number = DEFAULT_COVERAGE_DAYS
+  coverageDays: number = DEFAULT_COVERAGE_DAYS,
+  seasonalFactor = 1
 ): StockLevels {
   const noSeRepone =
     isServiceCategory(p.category) || p.avgDailySales7d <= 0 || p.rotationDays > 45;
-  if (noSeRepone) return { safetyStock: 0, minStock: 0, maxStock: 0 };
+  if (noSeRepone) return { safetyStock: 0, minStock: 0, maxStock: 0, seasonalFactor: 1 };
 
+  // La velocidad se proyecta a la temporada en la que se consumira el pedido,
+  // no a la de hoy: por eso el factor multiplica antes de calcular los niveles.
+  const velocidad = p.avgDailySales7d * seasonalFactor;
   const safetyStock = Math.ceil(SERVICE_FACTOR * p.demandStdDev * Math.sqrt(leadTimeDays));
-  const minStock = Math.ceil(p.avgDailySales7d * leadTimeDays) + safetyStock;
-  const maxStock = Math.ceil(p.avgDailySales7d * (leadTimeDays + coverageDays)) + safetyStock;
-  return { safetyStock, minStock, maxStock };
+  const minStock = Math.ceil(velocidad * leadTimeDays) + safetyStock;
+  const maxStock = Math.ceil(velocidad * (leadTimeDays + coverageDays)) + safetyStock;
+  return { safetyStock, minStock, maxStock, seasonalFactor };
 }
 
 /** Dias de entrega configurados. Cae al default si no se ha fijado o es invalido. */
@@ -80,6 +111,8 @@ export interface RecomputeResult {
   evaluated: number;
   withLevels: number; // productos que si se reponen
   leadTimeDays: number;
+  seasonallyAdjusted: number; // productos cuyo nivel cambio por temporada
+  fortnightAhead: string; // quincena para la que se proyecto
 }
 
 /**
@@ -95,13 +128,28 @@ export async function recomputeStockLevels(): Promise<RecomputeResult> {
     },
   });
 
+  // El pedido se consumira durante la cobertura que empieza cuando llegue, asi
+  // que la temporada relevante es la de mitad de esa ventana, no la de hoy.
+  const idx = await getSeasonalIndex().catch((err) => {
+    console.error("[stock-levels] no se pudo calcular el indice estacional:", err);
+    return [];
+  });
   const now = new Date();
+  const quincenaActual = fortnightKey(now);
+  const quincenaFutura = fortnightKeyIn(leadTimeDays + Math.round(DEFAULT_COVERAGE_DAYS / 2), now);
+
   let withLevels = 0;
+  let seasonallyAdjusted = 0;
   const values: string[] = [];
   for (const r of rows) {
-    const l = computeStockLevels(r, leadTimeDays);
+    const factor = seasonalFactorFor(
+      lookupIndex(idx, r.category, quincenaActual)?.index ?? null,
+      lookupIndex(idx, r.category, quincenaFutura)?.index ?? null
+    );
+    const l = computeStockLevels(r, leadTimeDays, DEFAULT_COVERAGE_DAYS, factor);
     if (l.minStock > 0) withLevels++;
-    values.push(`(${r.odooProductId}, ${l.minStock}, ${l.maxStock}, ${l.safetyStock})`);
+    if (l.minStock > 0 && Math.abs(factor - 1) > 0.05) seasonallyAdjusted++;
+    values.push(`(${r.odooProductId}, ${l.minStock}, ${l.maxStock}, ${l.safetyStock}, ${l.seasonalFactor})`);
   }
 
   // Escritura en lote: solo numeros, una sentencia por bloque de 1000.
@@ -111,11 +159,11 @@ export async function recomputeStockLevels(): Promise<RecomputeResult> {
     await prisma.$executeRawUnsafe(`
       UPDATE "ProductInsight" p
       SET "minStock" = v.min_s, "maxStock" = v.max_s, "safetyStock" = v.safe_s,
-          "levelsUpdatedAt" = '${now.toISOString()}'
-      FROM (VALUES ${slice}) AS v("odooProductId", min_s, max_s, safe_s)
+          "seasonalFactor" = v.season, "levelsUpdatedAt" = '${now.toISOString()}'
+      FROM (VALUES ${slice}) AS v("odooProductId", min_s, max_s, safe_s, season)
       WHERE p."odooProductId" = v."odooProductId"
     `);
   }
 
-  return { evaluated: rows.length, withLevels, leadTimeDays };
+  return { evaluated: rows.length, withLevels, leadTimeDays, seasonallyAdjusted, fortnightAhead: quincenaFutura };
 }
