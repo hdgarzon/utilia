@@ -7,6 +7,7 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { createDraftPurchaseOrder, translateOdooError } from "@/lib/odoo-write";
 import { importSuppliersFromOdoo } from "@/lib/suppliers";
+import { setLeadTimeDays, recomputeStockLevels } from "@/lib/analytics/stock-levels";
 
 // Un archivo "use server" solo puede exportar funciones async; el tipo queda interno.
 type ActionResult = { ok: boolean; error?: string };
@@ -417,6 +418,28 @@ export async function importSuppliersAction(): Promise<
     const res = await importSuppliersFromOdoo();
     revalidatePath("/reabastecimiento");
     return { ok: true, ...res };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+const leadTimeSchema = z.object({ days: z.number().int().min(1).max(120) });
+
+/**
+ * Ajusta los dias de entrega usados para calcular el punto de reorden y
+ * recalcula los niveles de inmediato, para que el cambio se vea al instante
+ * en vez de esperar al sync.
+ */
+export async function setLeadTimeAction(days: number): Promise<ActionResult & { withLevels?: number }> {
+  await requireSession();
+  const parsed = leadTimeSchema.safeParse({ days });
+  if (!parsed.success) return { ok: false, error: "Los dias de entrega deben estar entre 1 y 120" };
+  try {
+    await setLeadTimeDays(parsed.data.days);
+    const r = await recomputeStockLevels();
+    revalidatePath("/reabastecimiento");
+    revalidatePath("/inventario");
+    return { ok: true, withLevels: r.withLevels };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }

@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { odoo } from "@/lib/odoo";
-import { colombiaStartOfPreviousMonth } from "@/lib/timezone";
+import { colombiaStartOfPreviousMonth, COLOMBIA_OFFSET_MS } from "@/lib/timezone";
+import { recomputeStockLevels } from "@/lib/analytics/stock-levels";
 
 // Sentinel: la primera vez no existe el registro, devolvemos undefined
 async function getLastSync(entity: string): Promise<Date | undefined> {
@@ -329,6 +330,147 @@ export async function syncStock() {
   }
 }
 
+/** Fecha local Colombia (UTC-5) de una orden, como "YYYY-MM-DD". */
+function colombiaDateKey(dateOrderUtc: string): string {
+  const dt = new Date(dateOrderUtc + "Z");
+  return new Date(dt.getTime() - COLOMBIA_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+/**
+ * Agrega ordenes y lineas en filas de snapshot diario. Unica fuente del calculo
+ * de ingreso, costo, utilidad y margen: la usan el sync incremental y el
+ * backfill historico, para que no puedan divergir.
+ */
+async function buildSnapshotRows(
+  orders: Array<{ id: number; date_order: string; amount_total: number }>,
+  lines: Array<{ order_id: [number, string]; product_id: [number, string]; product_uom_qty: number; purchase_price?: number | false }>,
+  cmpByProduct: Map<number, number>
+): Promise<SnapshotRow[]> {
+  const orderDateKey = new Map(orders.map((o) => [o.id, colombiaDateKey(o.date_order)]));
+  const salesByDate = new Map<string, { revenue: number; cost: number; count: number; tickets: number[] }>();
+
+  for (const order of orders) {
+    const dateKey = colombiaDateKey(order.date_order);
+    const bucket = salesByDate.get(dateKey) ?? { revenue: 0, cost: 0, count: 0, tickets: [] };
+    bucket.revenue += order.amount_total;
+    bucket.tickets.push(order.amount_total);
+    bucket.count += 1;
+    salesByDate.set(dateKey, bucket);
+  }
+
+  for (const line of lines) {
+    const dateKey = orderDateKey.get(line.order_id[0]);
+    if (!dateKey) continue;
+    const bucket = salesByDate.get(dateKey);
+    if (!bucket) continue;
+    // Prioridad: purchase_price historico > CMP actual del producto > 0
+    const unitCost =
+      typeof line.purchase_price === "number" && line.purchase_price > 0
+        ? line.purchase_price
+        : cmpByProduct.get(line.product_id[0]) ?? 0;
+    bucket.cost += unitCost * line.product_uom_qty;
+  }
+
+  // Gasto fijo prorrateado por mes, memoizado por (año, mes).
+  const fixedPerDayByMonth = new Map<string, number>();
+  async function getFixedPerDay(year: number, month: number): Promise<number> {
+    const key = `${year}-${month}`;
+    const cached = fixedPerDayByMonth.get(key);
+    if (cached !== undefined) return cached;
+    const budgets = await prisma.expenseBudget.findMany({ where: { year, month } });
+    const totalMonthly = budgets.reduce((sum, b) => sum + b.budgetAmount, 0);
+    const perDay = totalMonthly / new Date(year, month, 0).getDate();
+    fixedPerDayByMonth.set(key, perDay);
+    return perDay;
+  }
+
+  const rows: SnapshotRow[] = [];
+  for (const [dateKey, data] of salesByDate) {
+    const [year, month] = dateKey.split("-").map(Number);
+    const avgTicket = data.tickets.reduce((a, b) => a + b, 0) / data.tickets.length;
+    const grossProfit = data.revenue - data.cost;
+    const fixedExpenses = await getFixedPerDay(year, month);
+    const netProfit = grossProfit - fixedExpenses;
+    rows.push({
+      dateKey,
+      totalRevenue: data.revenue,
+      totalCost: data.cost,
+      grossProfit,
+      fixedExpenses,
+      netProfit,
+      netMarginPct: data.revenue > 0 ? (netProfit / data.revenue) * 100 : 0,
+      transactionCount: data.count,
+      avgTicket,
+    });
+  }
+  return rows;
+}
+
+type CategoryRow = {
+  dateKey: string;
+  category: string;
+  revenue: number;
+  cost: number;
+  units: number;
+  lines: number;
+};
+
+async function bulkUpsertCategorySnapshots(rows: CategoryRow[]) {
+  if (rows.length === 0) return;
+  const CHUNK = 500;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const values = rows.slice(i, i + CHUNK).map(
+      (r) => Prisma.sql`(gen_random_uuid()::text, ${r.dateKey}::date, ${r.category}, ${r.revenue}, ${r.cost}, ${r.units}, ${r.lines}, now())`
+    );
+    await prisma.$executeRaw`
+      INSERT INTO "CategorySnapshot" ("id","date","category","revenue","cost","units","lines","updatedAt")
+      VALUES ${Prisma.join(values)}
+      ON CONFLICT ("date","category") DO UPDATE SET
+        "revenue"   = EXCLUDED."revenue",
+        "cost"      = EXCLUDED."cost",
+        "units"     = EXCLUDED."units",
+        "lines"     = EXCLUDED."lines",
+        "updatedAt" = now()
+    `;
+  }
+}
+
+/**
+ * Agrega las lineas de venta por dia y categoria. Separa lo que el snapshot
+ * financiero mezcla: sin esto no se puede distinguir la temporada escolar
+ * (papeleria) de la de regalos (piñateria, cosmeticos, cuidado personal).
+ *
+ * `categoryOf` resuelve la categoria de cada producto; los que no aparecen
+ * caen en "Sin categoria" para que su venta no se pierda del total.
+ */
+function buildCategoryRows(
+  orders: Array<{ id: number; date_order: string }>,
+  lines: Array<{ order_id: [number, string]; product_id: [number, string]; product_uom_qty: number; price_subtotal?: number; purchase_price?: number | false }>,
+  categoryOf: Map<number, string>,
+  cmpByProduct: Map<number, number>
+): CategoryRow[] {
+  const orderDateKey = new Map(orders.map((o) => [o.id, colombiaDateKey(o.date_order)]));
+  const agg = new Map<string, CategoryRow>();
+
+  for (const l of lines) {
+    const dateKey = orderDateKey.get(l.order_id[0]);
+    if (!dateKey) continue;
+    const category = categoryOf.get(l.product_id[0]) ?? "Sin categoria";
+    const key = `${dateKey}|${category}`;
+    const row = agg.get(key) ?? { dateKey, category, revenue: 0, cost: 0, units: 0, lines: 0 };
+    const unitCost =
+      typeof l.purchase_price === "number" && l.purchase_price > 0
+        ? l.purchase_price
+        : cmpByProduct.get(l.product_id[0]) ?? 0;
+    row.revenue += l.price_subtotal ?? 0;
+    row.cost += unitCost * l.product_uom_qty;
+    row.units += l.product_uom_qty;
+    row.lines += 1;
+    agg.set(key, row);
+  }
+  return Array.from(agg.values());
+}
+
 export async function syncSalesAndComputeMetrics() {
   const runStart = new Date();
   // Para POS, los datos viven en pos.order (no sale.order). Usamos ese modelo.
@@ -338,7 +480,6 @@ export async function syncSalesAndComputeMetrics() {
   // expresado en UTC, para que el sync siempre re-traiga TODAS las órdenes del
   // día actual aunque ya haya corrido antes. Sin esto, un sync incremental a
   // las 7pm sobreescribiría el snapshot del día con solo las órdenes nuevas.
-  const COLOMBIA_OFFSET_MS = 5 * 60 * 60 * 1000;
   const nowCO = new Date(Date.now() - COLOMBIA_OFFSET_MS);
   const startOfTodayCO = new Date(
     Date.UTC(nowCO.getUTCFullYear(), nowCO.getUTCMonth(), nowCO.getUTCDate()) + COLOMBIA_OFFSET_MS
@@ -377,6 +518,7 @@ export async function syncSalesAndComputeMetrics() {
       order_id: l.order_id,
       product_id: l.product_id,
       product_uom_qty: l.qty,
+      price_subtotal: l.price_subtotal,
       // total_cost ya viene multiplicado (qty * unit_cost) — convertimos a unit_cost
       // para que la lógica downstream (que multiplica por qty) dé el costo total correcto.
       purchase_price: l.qty > 0 ? l.total_cost / l.qty : 0,
@@ -390,41 +532,19 @@ export async function syncSalesAndComputeMetrics() {
     });
     const cmpByProduct = new Map(productCosts.map((p) => [p.odooProductId, p.cmp]));
 
-    // ── 1. Agregar ventas + costos por día ─────────────────────────────────
-    // Odoo guarda date_order en UTC. Convertimos a fecha local Colombia (UTC-5)
-    // para que órdenes del 25 de mayo a las 8pm Colombia (= 1am UTC 26 mayo)
-    // queden en el snapshot del 25, no del 26.
-    const toColombiaDateKey = (dateOrderUtc: string): string => {
-      const dt = new Date(dateOrderUtc + "Z");
-      const localMs = dt.getTime() - COLOMBIA_OFFSET_MS;
-      return new Date(localMs).toISOString().slice(0, 10);
-    };
+    // ── 1. Snapshots diarios (mismo calculo que usa el backfill) ──────────
+    const snapshotRows = await buildSnapshotRows(orders, lines, cmpByProduct);
 
-    const orderDateKey = new Map(orders.map((o) => [o.id, toColombiaDateKey(o.date_order)]));
-    const salesByDate = new Map<string, { revenue: number; cost: number; count: number; tickets: number[] }>();
-
-    for (const order of orders) {
-      const dateKey = toColombiaDateKey(order.date_order);
-      const bucket = salesByDate.get(dateKey) ?? { revenue: 0, cost: 0, count: 0, tickets: [] };
-      bucket.revenue += order.amount_total;
-      bucket.tickets.push(order.amount_total);
-      bucket.count += 1;
-      salesByDate.set(dateKey, bucket);
-    }
-
-    // Sumar costos por día a partir de las líneas
-    for (const line of lines) {
-      const dateKey = orderDateKey.get(line.order_id[0]);
-      if (!dateKey) continue;
-      const bucket = salesByDate.get(dateKey);
-      if (!bucket) continue;
-      // Prioridad: purchase_price histórico > CMP actual del producto > 0
-      const unitCost =
-        typeof line.purchase_price === "number" && line.purchase_price > 0
-          ? line.purchase_price
-          : cmpByProduct.get(line.product_id[0]) ?? 0;
-      bucket.cost += unitCost * line.product_uom_qty;
-    }
+    // Venta por categoria del mismo periodo, para que el historico estacional
+    // siga vivo en vez de congelarse en la fecha del backfill.
+    const catRows = await prisma.productInsight.findMany({
+      where: { odooProductId: { in: referencedIdsForCosts } },
+      select: { odooProductId: true, category: true },
+    });
+    const categoryOf = new Map(
+      catRows.filter((c) => c.category).map((c) => [c.odooProductId, c.category as string])
+    );
+    await bulkUpsertCategorySnapshots(buildCategoryRows(orders, lines, categoryOf, cmpByProduct));
 
     // ── 2. Agregar ventas por producto ─────────────────────────────────────
     // O(1) lookup de fecha de orden con un Map
@@ -442,41 +562,6 @@ export async function syncSalesAndComputeMetrics() {
       }
     }
 
-    // ── 3. Upsert snapshots financieros diarios con utilidad real ─────────
-    // Gasto fijo prorrateado por mes (memoizado: máx ~2 meses en el backfill).
-    const fixedPerDayByMonth = new Map<string, number>();
-    async function getFixedPerDay(year: number, month: number): Promise<number> {
-      const key = `${year}-${month}`;
-      const cached = fixedPerDayByMonth.get(key);
-      if (cached !== undefined) return cached;
-      const budgets = await prisma.expenseBudget.findMany({ where: { year, month } });
-      const totalMonthly = budgets.reduce((sum, b) => sum + b.budgetAmount, 0);
-      const daysInMonth = new Date(year, month, 0).getDate();
-      const perDay = totalMonthly / daysInMonth;
-      fixedPerDayByMonth.set(key, perDay);
-      return perDay;
-    }
-
-    const snapshotRows: SnapshotRow[] = [];
-    for (const [dateKey, data] of salesByDate) {
-      const [year, month] = dateKey.split("-").map(Number);
-      const avgTicket = data.tickets.reduce((a, b) => a + b, 0) / data.tickets.length;
-      const grossProfit = data.revenue - data.cost;
-      const fixedExpenses = await getFixedPerDay(year, month);
-      const netProfit = grossProfit - fixedExpenses;
-      const netMarginPct = data.revenue > 0 ? (netProfit / data.revenue) * 100 : 0;
-      snapshotRows.push({
-        dateKey,
-        totalRevenue: data.revenue,
-        totalCost: data.cost,
-        grossProfit,
-        fixedExpenses,
-        netProfit,
-        netMarginPct,
-        transactionCount: data.count,
-        avgTicket,
-      });
-    }
     await bulkUpsertSnapshots(snapshotRows);
 
     // ── 3.5. Crear stubs para productos que referencian las líneas pero no
@@ -549,6 +634,19 @@ async function recomputeDaysOfStock() {
   `;
 }
 
+async function bulkUpdateDemandStdDev(rows: Array<{ pid: number; sd: number }>) {
+  if (rows.length === 0) return;
+  const CHUNK = 1000;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const values = rows.slice(i, i + CHUNK).map((r) => `(${r.pid}, ${r.sd})`).join(",");
+    await prisma.$executeRawUnsafe(`
+      UPDATE "ProductInsight" p SET "demandStdDev" = v.sd
+      FROM (VALUES ${values}) AS v("odooProductId", sd)
+      WHERE p."odooProductId" = v."odooProductId"
+    `);
+  }
+}
+
 /**
  * Recalcula la velocidad de venta REAL por producto sobre ventanas fijas de
  * 7/14/30 días (no sobre la ventana incremental del sync). Es la fuente de
@@ -579,10 +677,17 @@ export async function recomputeVelocities() {
   const c30 = nowMs - 30 * 86_400_000;
 
   const byProduct = new Map<number, { q7: number; q14: number; q30: number; last: number }>();
+  // Venta por producto y por dia: alimenta la desviacion estandar de la demanda
+  // que usa el stock de seguridad. Se acumula aqui para no releer Odoo.
+  const byProductDay = new Map<number, Map<number, number>>();
   for (const l of lines) {
     const t = orderMs.get(l.order_id[0]);
     if (t === undefined || t < c30) continue;
     const pid = l.product_id[0];
+    const dayIdx = Math.floor((nowMs - t) / 86_400_000);
+    const days = byProductDay.get(pid) ?? new Map<number, number>();
+    days.set(dayIdx, (days.get(dayIdx) ?? 0) + l.qty);
+    byProductDay.set(pid, days);
     const e = byProduct.get(pid) ?? { q7: 0, q14: 0, q30: 0, last: 0 };
     e.q30 += l.qty;
     if (t >= c14) e.q14 += l.qty;
@@ -631,7 +736,23 @@ export async function recomputeVelocities() {
       rotationDays: Math.floor((nowMs - e.last) / 86_400_000),
     }))
   );
+
+  // Desviacion de la venta diaria sobre los 30 dias completos. Los dias sin
+  // venta cuentan como cero a proposito: un producto que vende 10 un dia y
+  // nada el resto es mucho mas volatil que uno que vende 1 cada dia, y ese
+  // riesgo es justo lo que el stock de seguridad debe cubrir.
+  const DIAS = 30;
+  await bulkUpdateDemandStdDev(
+    Array.from(byProductDay.entries()).map(([pid, days]) => {
+      const media = Array.from(days.values()).reduce((a, b) => a + b, 0) / DIAS;
+      let acc = 0;
+      for (let d = 0; d < DIAS; d++) acc += ((days.get(d) ?? 0) - media) ** 2;
+      return { pid, sd: Math.sqrt(acc / DIAS) };
+    })
+  );
+
   await recomputeDaysOfStock();
+  await recomputeStockLevels();
 }
 
 export async function runFullSync() {
@@ -650,4 +771,98 @@ export async function runFullSync() {
     }
   }
   return results;
+}
+
+// ─── Backfill histórico ───────────────────────────────────────────────────────
+
+export interface BackfillMonth {
+  month: string; // "YYYY-MM"
+  orders: number;
+  days: number;
+  revenue: number;
+}
+
+/**
+ * Trae la historia de ventas de Odoo mes a mes y la convierte en snapshots
+ * diarios. Existe porque el sync incremental solo hace backfill del mes
+ * anterior en su primera corrida: sin esto no hay con qué comparar temporadas
+ * (regreso a clases, Día de la Madre, Amor y Amistad, Navidad).
+ *
+ * Va mes a mes a propósito: `getPosOrders` no pagina y corta en `limit`, así
+ * que pedir 20 meses de una truncaría en silencio. Un mes son ~1.200 órdenes,
+ * muy por debajo del tope, y además deja el proceso reanudable.
+ */
+export async function backfillSalesHistory(
+  from: Date,
+  to: Date = new Date(),
+  onMonth?: (m: BackfillMonth) => void
+): Promise<BackfillMonth[]> {
+  const resultados: BackfillMonth[] = [];
+  const cursor = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), 1));
+
+  while (cursor < to) {
+    const inicio = new Date(cursor);
+    const fin = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1));
+    const etiqueta = inicio.toISOString().slice(0, 7);
+
+    const posOrders = await odoo.getPosOrdersBetween(inicio, fin);
+    if (posOrders.length > 0) {
+      const orders = posOrders.map((o) => ({
+        id: o.id,
+        date_order: o.date_order,
+        amount_total: o.amount_total,
+      }));
+      const posLines = await odoo.getPosOrderLines(orders.map((o) => o.id));
+      const lines = posLines.map((l) => ({
+        order_id: l.order_id,
+        product_id: l.product_id,
+        product_uom_qty: l.qty,
+        price_subtotal: l.price_subtotal,
+        purchase_price: l.qty > 0 ? l.total_cost / l.qty : 0,
+      }));
+
+      // CMP actual como respaldo cuando la línea no trae costo histórico.
+      const ids = Array.from(new Set(lines.map((l) => l.product_id[0])));
+      const costos = await prisma.productInsight.findMany({
+        where: { odooProductId: { in: ids } },
+        select: { odooProductId: true, cmp: true, category: true },
+      });
+      const cmpByProduct = new Map(costos.map((c) => [c.odooProductId, c.cmp]));
+      const categoryOf = new Map(
+        costos.filter((c) => c.category).map((c) => [c.odooProductId, c.category as string])
+      );
+
+      // Productos vendidos que ya no estan en el catalogo (archivados en Odoo).
+      // Sin esto su venta cae en "Sin categoria" y distorsiona el analisis de
+      // temporada: en la ventana de Amor y Amistad 2025 eran el bloque mayor.
+      const faltantes = ids.filter((id) => !categoryOf.has(id));
+      if (faltantes.length > 0) {
+        const desdeOdoo = await odoo.getProductsByIds(faltantes);
+        for (const p of desdeOdoo) {
+          if (p.categ_id?.[1]) categoryOf.set(p.id, p.categ_id[1]);
+        }
+      }
+
+      const rows = await buildSnapshotRows(orders, lines, cmpByProduct);
+      await bulkUpsertSnapshots(rows);
+      await bulkUpsertCategorySnapshots(buildCategoryRows(orders, lines, categoryOf, cmpByProduct));
+
+      const m: BackfillMonth = {
+        month: etiqueta,
+        orders: orders.length,
+        days: rows.length,
+        revenue: rows.reduce((s, r) => s + r.totalRevenue, 0),
+      };
+      resultados.push(m);
+      onMonth?.(m);
+    } else {
+      const m: BackfillMonth = { month: etiqueta, orders: 0, days: 0, revenue: 0 };
+      resultados.push(m);
+      onMonth?.(m);
+    }
+
+    cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+  }
+
+  return resultados;
 }

@@ -13,6 +13,8 @@ export interface InventoryRow {
   stockQty: number;
   daysOfStock: number;
   salePrice: number;
+  minStock: number;
+  maxStock: number;
   status: "critical" | "warning" | "ok";
 }
 
@@ -124,6 +126,8 @@ export function InventoryTable({ rows }: Props) {
               <SortableHeader label="Producto" active={sortKey === "name"} dir={sortDir} onClick={() => toggleSort("name")} align="left" />
               <SortableHeader label="Stock" active={sortKey === "stockQty"} dir={sortDir} onClick={() => toggleSort("stockQty")} />
               <SortableHeader label="Días Stock" active={sortKey === "daysOfStock"} dir={sortDir} onClick={() => toggleSort("daysOfStock")} />
+              <th className="py-2 px-3 text-right font-medium" title="Punto de reorden: entrega + colchon por variabilidad">Mín.</th>
+              <th className="py-2 px-3 text-right font-medium" title="Tope de reposicion: no conviene tener mas que esto">Máx.</th>
               <SortableHeader label="Precio" active={sortKey === "salePrice"} dir={sortDir} onClick={() => toggleSort("salePrice")} />
               <SortableHeader label="Estado" active={sortKey === "status"} dir={sortDir} onClick={() => toggleSort("status")} />
             </tr>
@@ -131,7 +135,7 @@ export function InventoryTable({ rows }: Props) {
           <tbody>
             {filtered.length === 0 ? (
               <tr>
-                <td colSpan={5} className="py-6 text-center text-muted-foreground">
+                <td colSpan={7} className="py-6 text-center text-muted-foreground">
                   Sin resultados para este filtro.
                 </td>
               </tr>
@@ -147,6 +151,24 @@ export function InventoryTable({ rows }: Props) {
                     )}
                   >
                     {p.daysOfStock.toFixed(0)}d
+                  </td>
+                  <td
+                    className={cn(
+                      "py-2 px-3 text-right tabular-nums",
+                      p.minStock > 0 && p.stockQty < p.minStock ? "font-semibold text-destructive" : "text-muted-foreground"
+                    )}
+                    title={p.minStock > 0 && p.stockQty < p.minStock ? "Por debajo del minimo: toca pedir" : undefined}
+                  >
+                    {p.minStock > 0 ? p.minStock : "—"}
+                  </td>
+                  <td
+                    className={cn(
+                      "py-2 px-3 text-right tabular-nums",
+                      p.maxStock > 0 && p.stockQty > p.maxStock ? "font-semibold text-warning" : "text-muted-foreground"
+                    )}
+                    title={p.maxStock > 0 && p.stockQty > p.maxStock ? "Por encima del maximo: capital inmovilizado" : undefined}
+                  >
+                    {p.maxStock > 0 ? p.maxStock : "—"}
                   </td>
                   <td className="py-2 px-3 text-right text-muted-foreground">{formatCurrency(p.salePrice)}</td>
                   <td className="py-2 px-3 text-right">
