@@ -86,6 +86,25 @@ model FinancialSnapshot {
   updatedAt        DateTime @updatedAt
 }
 
+// Venta diaria por categoria. Los FinancialSnapshot son agregados (todo el dia
+// en una cifra), asi que no permiten separar la temporada escolar de la de
+// regalos: papeleria y piñateria van sumadas. Esta tabla existe para eso.
+model CategorySnapshot {
+  id        String   @id @default(cuid())
+  date      DateTime @db.Date
+  category  String // "Sin categoria" cuando el producto no la tiene
+  revenue   Float    @default(0)
+  cost      Float    @default(0)
+  units     Float    @default(0)
+  lines     Int      @default(0) // lineas de venta, proxy de frecuencia
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([date, category])
+  @@index([date])
+  @@index([category])
+}
+
 model ExpenseBudget {
   id           String   @id @default(cuid())
   category     String

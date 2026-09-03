@@ -406,6 +406,71 @@ async function buildSnapshotRows(
   return rows;
 }
 
+type CategoryRow = {
+  dateKey: string;
+  category: string;
+  revenue: number;
+  cost: number;
+  units: number;
+  lines: number;
+};
+
+async function bulkUpsertCategorySnapshots(rows: CategoryRow[]) {
+  if (rows.length === 0) return;
+  const CHUNK = 500;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const values = rows.slice(i, i + CHUNK).map(
+      (r) => Prisma.sql`(gen_random_uuid()::text, ${r.dateKey}::date, ${r.category}, ${r.revenue}, ${r.cost}, ${r.units}, ${r.lines}, now())`
+    );
+    await prisma.$executeRaw`
+      INSERT INTO "CategorySnapshot" ("id","date","category","revenue","cost","units","lines","updatedAt")
+      VALUES ${Prisma.join(values)}
+      ON CONFLICT ("date","category") DO UPDATE SET
+        "revenue"   = EXCLUDED."revenue",
+        "cost"      = EXCLUDED."cost",
+        "units"     = EXCLUDED."units",
+        "lines"     = EXCLUDED."lines",
+        "updatedAt" = now()
+    `;
+  }
+}
+
+/**
+ * Agrega las lineas de venta por dia y categoria. Separa lo que el snapshot
+ * financiero mezcla: sin esto no se puede distinguir la temporada escolar
+ * (papeleria) de la de regalos (piñateria, cosmeticos, cuidado personal).
+ *
+ * `categoryOf` resuelve la categoria de cada producto; los que no aparecen
+ * caen en "Sin categoria" para que su venta no se pierda del total.
+ */
+function buildCategoryRows(
+  orders: Array<{ id: number; date_order: string }>,
+  lines: Array<{ order_id: [number, string]; product_id: [number, string]; product_uom_qty: number; price_subtotal?: number; purchase_price?: number | false }>,
+  categoryOf: Map<number, string>,
+  cmpByProduct: Map<number, number>
+): CategoryRow[] {
+  const orderDateKey = new Map(orders.map((o) => [o.id, colombiaDateKey(o.date_order)]));
+  const agg = new Map<string, CategoryRow>();
+
+  for (const l of lines) {
+    const dateKey = orderDateKey.get(l.order_id[0]);
+    if (!dateKey) continue;
+    const category = categoryOf.get(l.product_id[0]) ?? "Sin categoria";
+    const key = `${dateKey}|${category}`;
+    const row = agg.get(key) ?? { dateKey, category, revenue: 0, cost: 0, units: 0, lines: 0 };
+    const unitCost =
+      typeof l.purchase_price === "number" && l.purchase_price > 0
+        ? l.purchase_price
+        : cmpByProduct.get(l.product_id[0]) ?? 0;
+    row.revenue += l.price_subtotal ?? 0;
+    row.cost += unitCost * l.product_uom_qty;
+    row.units += l.product_uom_qty;
+    row.lines += 1;
+    agg.set(key, row);
+  }
+  return Array.from(agg.values());
+}
+
 export async function syncSalesAndComputeMetrics() {
   const runStart = new Date();
   // Para POS, los datos viven en pos.order (no sale.order). Usamos ese modelo.
@@ -453,6 +518,7 @@ export async function syncSalesAndComputeMetrics() {
       order_id: l.order_id,
       product_id: l.product_id,
       product_uom_qty: l.qty,
+      price_subtotal: l.price_subtotal,
       // total_cost ya viene multiplicado (qty * unit_cost) — convertimos a unit_cost
       // para que la lógica downstream (que multiplica por qty) dé el costo total correcto.
       purchase_price: l.qty > 0 ? l.total_cost / l.qty : 0,
@@ -468,6 +534,17 @@ export async function syncSalesAndComputeMetrics() {
 
     // ── 1. Snapshots diarios (mismo calculo que usa el backfill) ──────────
     const snapshotRows = await buildSnapshotRows(orders, lines, cmpByProduct);
+
+    // Venta por categoria del mismo periodo, para que el historico estacional
+    // siga vivo en vez de congelarse en la fecha del backfill.
+    const catRows = await prisma.productInsight.findMany({
+      where: { odooProductId: { in: referencedIdsForCosts } },
+      select: { odooProductId: true, category: true },
+    });
+    const categoryOf = new Map(
+      catRows.filter((c) => c.category).map((c) => [c.odooProductId, c.category as string])
+    );
+    await bulkUpsertCategorySnapshots(buildCategoryRows(orders, lines, categoryOf, cmpByProduct));
 
     // ── 2. Agregar ventas por producto ─────────────────────────────────────
     // O(1) lookup de fecha de orden con un Map
@@ -740,6 +817,7 @@ export async function backfillSalesHistory(
         order_id: l.order_id,
         product_id: l.product_id,
         product_uom_qty: l.qty,
+        price_subtotal: l.price_subtotal,
         purchase_price: l.qty > 0 ? l.total_cost / l.qty : 0,
       }));
 
@@ -747,12 +825,27 @@ export async function backfillSalesHistory(
       const ids = Array.from(new Set(lines.map((l) => l.product_id[0])));
       const costos = await prisma.productInsight.findMany({
         where: { odooProductId: { in: ids } },
-        select: { odooProductId: true, cmp: true },
+        select: { odooProductId: true, cmp: true, category: true },
       });
       const cmpByProduct = new Map(costos.map((c) => [c.odooProductId, c.cmp]));
+      const categoryOf = new Map(
+        costos.filter((c) => c.category).map((c) => [c.odooProductId, c.category as string])
+      );
+
+      // Productos vendidos que ya no estan en el catalogo (archivados en Odoo).
+      // Sin esto su venta cae en "Sin categoria" y distorsiona el analisis de
+      // temporada: en la ventana de Amor y Amistad 2025 eran el bloque mayor.
+      const faltantes = ids.filter((id) => !categoryOf.has(id));
+      if (faltantes.length > 0) {
+        const desdeOdoo = await odoo.getProductsByIds(faltantes);
+        for (const p of desdeOdoo) {
+          if (p.categ_id?.[1]) categoryOf.set(p.id, p.categ_id[1]);
+        }
+      }
 
       const rows = await buildSnapshotRows(orders, lines, cmpByProduct);
       await bulkUpsertSnapshots(rows);
+      await bulkUpsertCategorySnapshots(buildCategoryRows(orders, lines, categoryOf, cmpByProduct));
 
       const m: BackfillMonth = {
         month: etiqueta,
