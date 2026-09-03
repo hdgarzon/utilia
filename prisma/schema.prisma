@@ -62,6 +62,7 @@ model ProductInsight {
   safetyStock      Int       @default(0) // colchon por variabilidad de la demanda
   demandStdDev     Float     @default(0) // desviacion estandar de la venta diaria (30d)
   levelsUpdatedAt  DateTime? // ultima vez que se recalcularon los niveles
+  seasonalFactor   Float     @default(1) // ajuste por temporada aplicado al calcular los niveles
   reorderQty       Int       @default(0)
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
