@@ -393,6 +393,20 @@ export const odoo = {
     );
   },
 
+  /** Órdenes POS en un rango [desde, hasta). Para el backfill histórico mes a mes. */
+  async getPosOrdersBetween(desde: Date, hasta: Date, limit = 5000): Promise<OdooPosOrder[]> {
+    return searchRead<OdooPosOrder>(
+      "pos.order",
+      [
+        ["state", "in", ["paid", "done", "invoiced"]],
+        ["date_order", ">=", formatOdooDate(desde)],
+        ["date_order", "<", formatOdooDate(hasta)],
+      ],
+      ["id", "name", "date_order", "amount_total", "amount_paid", "state", "partner_id", "lines", "session_id"],
+      { limit, order: "date_order asc" }
+    );
+  },
+
   /** Trae las órdenes POS de hoy (UTC-5) agregadas por hora local. */
   async getTodayHourlySales(): Promise<Array<{ hour: number; revenue: number; transactions: number }>> {
     // Colombia siempre es UTC-5 (sin horario de verano). Calcular "inicio
