@@ -87,7 +87,7 @@ listTemplates(filters, page) → { rows: CatalogRow[], total: number }
 
 Construye el dominio desde los filtros (`[["categ_id","=",id], ["is_published","=",false]]`), pide una página con `search_read`, y **enriquece** cada fila con `ProductInsight` desde Postgres (rotación, días de stock, venta diaria) haciendo `findMany` por `odooTemplateId in [...]`. Postgres aporta la analítica que Odoo no calcula barato; Odoo aporta la verdad del catálogo.
 
-`getCatalogOptions()` trae y cachea por request las listas de referencia: categorías internas, categorías web, impuestos de compra y proveedores. Alimenta tanto los filtros como los selectores de la hoja de carga.
+`getCatalogOptions()` trae las listas de referencia: categorías internas, categorías web, impuestos de compra y proveedores. Alimenta tanto los filtros como los selectores de la hoja de carga. La página la llama **una sola vez por request**, en el mismo `Promise.all` que el listado, y pasa el resultado como prop — por eso no lleva memoización. Si algún día la llamara un segundo componente, ahí sí valdría envolverla en `cache()` de React.
 
 Si Odoo no responde, la página muestra un estado de error explícito en vez de una tabla vacía silenciosa — el patrón que ya usan `/inventario` y `/financiero`.
 
