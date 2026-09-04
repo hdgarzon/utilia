@@ -41,22 +41,45 @@ export async function updateTemplates(ids: number[], patch: TemplatePatch): Prom
     try {
       await write(lote, values);
       result.ok.push(...lote);
-    } catch {
-      // El lote fallo pero Odoo no dice por cual producto. Se reintenta uno a
-      // uno para poder nombrar al culpable: reportar 50 fallos cuando solo uno
-      // esta archivado le haria perder el cambio a los otros 49.
+    } catch (err) {
+      if (!esRechazoDeNegocio(err)) {
+        // Odoo no respondio. Aislar aqui seria repetir el mismo timeout 50
+        // veces: 50 x 60s = 50 minutos con la accion del servidor colgada,
+        // para descubrir lo que ya sabemos. Se marca lo que queda como
+        // fallido y se corta, para devolver un resultado honesto en segundos.
+        const mensaje = translateOdooError(err);
+        for (const id of ids.slice(i)) result.failed.push({ id, error: mensaje });
+        return result;
+      }
+      // Rechazo de negocio: Odoo no dice CUAL producto lo causo, asi que se
+      // reintenta uno a uno para poder nombrar al culpable. Reportar 50
+      // fallos cuando solo uno esta archivado le quitaria el cambio a 49.
       for (const id of lote) {
         try {
           await write([id], values);
           result.ok.push(id);
-        } catch (err) {
-          result.failed.push({ id, error: translateOdooError(err) });
+        } catch (errItem) {
+          result.failed.push({ id, error: translateOdooError(errItem) });
         }
       }
     }
   }
 
   return result;
+}
+
+/**
+ * Distingue un rechazo de negocio de Odoo (producto archivado, impuesto
+ * inexistente) de un fallo de transporte (red caida, HTTP no-OK, timeout).
+ *
+ * Es la misma distincion que hace `translateOdooError` para redactar el
+ * mensaje: el cliente antepone "Odoo RPC error:" cuando llego al servidor y
+ * este respondio con un error de negocio. Sin respuesta de negocio, el fallo
+ * es de transporte y reintentar linea por linea no descubre nada.
+ */
+function esRechazoDeNegocio(err: unknown): boolean {
+  const raw = err instanceof Error ? err.message : String(err);
+  return raw.toLowerCase().includes("odoo rpc error");
 }
 
 function write(ids: number[], values: Record<string, unknown>): Promise<boolean> {

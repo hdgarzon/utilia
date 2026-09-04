@@ -6,7 +6,14 @@ vi.mock("@/lib/odoo-write", () => ({ translateOdooError: (e: unknown) => String(
 
 import { updateTemplates } from "./odoo-catalog-write";
 
-beforeEach(() => executeKw.mockReset());
+// Cuerpo de bloque a proposito: si la arrow function devolviera el mock
+// (retorno implicito de mockReset), Vitest la registraria como callback de
+// limpieza y la invocaria sola despues de cada test. Es inofensivo mientras
+// el mock quede en resolve/no-op, pero con un mockRejectedValue persistente
+// esa llamada automatica dispara un rechazo sin capturar ajeno al test.
+beforeEach(() => {
+  executeKw.mockReset();
+});
 
 describe("updateTemplates", () => {
   it("no llama a Odoo si no hay ids", async () => {
@@ -39,22 +46,62 @@ describe("updateTemplates", () => {
   });
 
   it("aisla al culpable reintentando uno por uno cuando el lote falla", async () => {
-    // 1a llamada: el lote de 3 falla. Luego uno por uno: 1 ok, 2 falla, 3 ok.
+    // 1a llamada: el lote de 3 lo rechaza Odoo. Luego uno por uno: 1 ok, 2 falla, 3 ok.
     executeKw
-      .mockRejectedValueOnce(new Error("lote invalido"))
+      .mockRejectedValueOnce(new Error("Odoo RPC error: lote invalido"))
       .mockResolvedValueOnce(true)
-      .mockRejectedValueOnce(new Error("producto archivado"))
+      .mockRejectedValueOnce(new Error("Odoo RPC error: producto archivado"))
       .mockResolvedValueOnce(true);
 
     const r = await updateTemplates([1, 2, 3], { isPublished: true });
     expect(r.ok).toEqual([1, 3]);
-    expect(r.failed).toEqual([{ id: 2, error: "Error: producto archivado" }]);
+    expect(r.failed).toEqual([{ id: 2, error: "Error: Odoo RPC error: producto archivado" }]);
     expect(executeKw).toHaveBeenCalledTimes(4);
   });
 
-  it("nunca deja pasar un campo de inventario", async () => {
+  it("ante un fallo de transporte corta en vez de repetir el timeout 50 veces", async () => {
+    // Sin "Odoo RPC error" en el mensaje: es red caida, no rechazo de negocio.
+    executeKw.mockRejectedValue(new Error("Odoo HTTP 502: Bad Gateway"));
+
+    const r = await updateTemplates([1, 2, 3], { isPublished: true });
+    // Un solo intento: NO reintenta uno por uno.
+    expect(executeKw).toHaveBeenCalledTimes(1);
+    expect(r.ok).toEqual([]);
+    expect(r.failed.map((f) => f.id)).toEqual([1, 2, 3]);
+  });
+
+  it("un fallo de transporte no sigue con los lotes siguientes", async () => {
+    executeKw
+      .mockResolvedValueOnce(true) // lote 1 (ids 1..50) OK
+      .mockRejectedValue(new Error("Odoo HTTP 502: Bad Gateway")); // lote 2 cae
+
+    const ids = Array.from({ length: 120 }, (_, i) => i + 1);
+    const r = await updateTemplates(ids, { categoryId: 3 });
+    expect(executeKw).toHaveBeenCalledTimes(2); // no intenta el tercer lote
+    expect(r.ok).toHaveLength(50);
+    expect(r.failed).toHaveLength(70);
+  });
+
+  it("un patch sin ningun campo conocido se rechaza sin tocar Odoo", async () => {
     executeKw.mockResolvedValue(true);
     // @ts-expect-error se fuerza un patch invalido a proposito
     await expect(updateTemplates([1], { qty_available: 5 })).rejects.toThrow(/sin cambios/i);
+    expect(executeKw).not.toHaveBeenCalled();
+  });
+
+  it("la barrera esta cableada: un campo prohibido traducido no llega a Odoo", async () => {
+    // toOdooValues nunca produce un campo prohibido, asi que la unica forma de
+    // comprobar que assertWritable esta REALMENTE en el camino es interceptar
+    // la traduccion. Sin esta prueba, borrar la llamada a assertWritable no
+    // rompe ningun test.
+    executeKw.mockResolvedValue(true);
+    const guard = await import("./write-guard");
+    const spy = vi.spyOn(guard, "toOdooValues").mockReturnValue({ qty_available: 5 });
+    try {
+      await expect(updateTemplates([1], { isPublished: true })).rejects.toThrow(/no permitido/i);
+      expect(executeKw).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
