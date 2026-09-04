@@ -5,26 +5,29 @@ import type { TemplatePatch } from "./types";
  * tiene que poder probarse sola, porque es la garantia de que Utilia nunca
  * mueve inventario en produccion.
  *
- * La lista es EXACTAMENTE lo que el modulo escribe, ni un campo mas.
- * `qty_available`, `inventory_quantity` y `free_qty` quedan fuera por
- * construccion, no por olvido.
+ * La lista es EXACTAMENTE lo que el modulo escribe hoy, ni un campo mas:
+ * los cinco que produce `toOdooValues`. `qty_available`,
+ * `inventory_quantity` y `free_qty` quedan fuera por construccion.
  *
- * `standard_price` NO esta en la lista: en Fase 1 no se crean productos, y
- * escribir el costo sobre un producto con stock dispara una revalorizacion
- * contable de inventario en Odoo. Se agregara cuando exista la carga masiva.
+ * Regla para mantenerla: un campo entra a esta lista en el MISMO cambio que
+ * introduce quien lo escribe, nunca antes. Una lista con campos sin escritor
+ * es una puerta abierta sin nadie que la use.
+ *
+ * Por eso no estan todavia los campos de creacion de producto (`name`,
+ * `type`, `is_storable`, `list_price`, `image_1920`, `show_availability`,
+ * `standard_price`): los escribe `createTemplate`, que es Fase 2. Dos de
+ * ellos son delicados y merecen mencion aparte: `is_storable` ES el rastreo
+ * de inventario, y escribir `standard_price` sobre un producto con stock
+ * dispara una revalorizacion contable en Odoo (seguro solo al crear, con
+ * stock en 0). `list_price` ademas quedo fuera de la edicion masiva de la
+ * v1 por prudencia comercial (ver spec).
  */
 export const WRITABLE_FIELDS: ReadonlySet<string> = new Set([
-  "name",
-  "type",
-  "is_storable",
-  "list_price",
   "categ_id",
-  "supplier_taxes_id",
-  "seller_ids",
-  "image_1920",
   "is_published",
   "public_categ_ids",
-  "show_availability",
+  "supplier_taxes_id",
+  "seller_ids",
 ]);
 
 /** Escribir en cualquiera de estos genera movimiento de inventario. */
