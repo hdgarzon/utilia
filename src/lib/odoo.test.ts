@@ -108,3 +108,70 @@ describe("authenticate: deduplicacion de peticiones concurrentes", () => {
     expect(authAttempts).toBe(2);
   });
 });
+
+describe("jsonRpc: tope de concurrencia", () => {
+  it("nunca deja mas de 3 peticiones fetch simultaneas en vuelo", async () => {
+    // Sin autenticacion de por medio: se llama directo a searchRead (que pasa
+    // por jsonRpc dos veces, auth + execute_kw) pero fijamos el uid de una
+    // sola vez primero para que las 8 llamadas de la prueba compitan solo por
+    // el slot de execute_kw, que es el escenario real (6 lecturas simultaneas
+    // de /productos).
+    let active = 0;
+    let peak = 0;
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      active += 1;
+      peak = Math.max(peak, active);
+      // Retardo artificial: sin el, todas las peticiones podrian resolver
+      // antes de que la siguiente alcance a pedir su turno, y la prueba no
+      // observaria contencion real.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      active -= 1;
+      const body = parseBody(init);
+      if (body.params.method === "authenticate") return jsonResponse(7);
+      return jsonResponse(0);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { odooRpc } = await import("./odoo");
+
+    // Primera llamada aparte para resolver la autenticacion antes de medir:
+    // aisla el pico de concurrencia al pool de execute_kw, no al de auth.
+    await odooRpc.executeKw("product.template", "search_count", [[]]);
+    peak = 0;
+
+    await Promise.all(
+      Array.from({ length: 8 }, () => odooRpc.executeKw("product.template", "search_count", [[]]))
+    );
+
+    expect(peak).toBeLessThanOrEqual(3);
+  });
+
+  it("una peticion rechazada libera su turno en vez de reducir el cupo para siempre", async () => {
+    let call = 0;
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const body = parseBody(init);
+      if (body.params.method === "authenticate") return jsonResponse(7);
+      call += 1;
+      // Las primeras 3 llamadas de execute_kw fallan con 429: si el slot no
+      // se liberara en el `finally`, el pool se reduciria en 3 y las
+      // llamadas siguientes (que superan el cupo original de 3) se
+      // quedarian esperando un turno para siempre.
+      if (call <= 3) return jsonResponse(null, { status: 429, statusText: "Too Many Requests" });
+      return jsonResponse(0);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { odooRpc } = await import("./odoo");
+
+    // La autenticacion (deduplicada, una sola peticion) va incluida en el
+    // primer lote: no hace falta una llamada aparte para dispararla.
+    const resultados = await Promise.allSettled(
+      Array.from({ length: 6 }, () => odooRpc.executeKw("product.template", "search_count", [[]]))
+    );
+
+    const fallidas = resultados.filter((r) => r.status === "rejected");
+    const exitosas = resultados.filter((r) => r.status === "fulfilled");
+    expect(fallidas).toHaveLength(3);
+    expect(exitosas).toHaveLength(3);
+  });
+});

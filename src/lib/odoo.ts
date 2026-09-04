@@ -25,36 +25,74 @@ interface JsonRpcResponse<T> {
 }
 
 /**
+ * Tope de peticiones simultaneas contra Odoo.
+ *
+ * Medido contra la instancia real: en secuencia no hay limite (8 seguidas sin
+ * pausa pasan), 4 en paralelo pasan, 6 pierden 1 con HTTP 429 y 8 pierden 3.
+ * Odoo.sh corta alrededor de las 5 concurrentes y NO envia ninguna cabecera de
+ * limite, asi que el respeto tiene que venir de este lado.
+ *
+ * 3 deja margen bajo el umbral medido sin costar latencia perceptible: las
+ * cuatro lecturas de getCatalogOptions pasan en dos tandas.
+ */
+const MAX_CONCURRENT_REQUESTS = 3;
+
+let activeRequests = 0;
+const waiting: Array<() => void> = [];
+
+async function withSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (activeRequests >= MAX_CONCURRENT_REQUESTS) {
+    await new Promise<void>((resolve) => waiting.push(resolve));
+  }
+  activeRequests++;
+  try {
+    return await fn();
+  } finally {
+    activeRequests--;
+    waiting.shift()?.();
+  }
+}
+
+/**
  * `timeoutMs` es opcional y por defecto NO acota nada (sin `AbortSignal`,
  * exactamente el comportamiento de siempre): el sync y las lecturas pueden
  * tardar legítimamente mucho y no deben cortarse. Solo el camino de
  * escritura (ver `src/lib/odoo-write.ts`) pasa un valor explícito.
+ *
+ * Unico punto donde ocurre el `fetch`, por eso el semaforo de concurrencia
+ * envuelve justo esta llamada y no `executeKw`: `executeKw` llama primero a
+ * `authenticate` (que a su vez pasa por aqui) y despues llama aqui otra vez,
+ * asi que envolverlo a el anidaria dos tomas de turno y se bloquearia solo.
+ * Envolver `jsonRpc` es seguro porque cada turno se toma y se libera antes
+ * de pedir el siguiente.
  */
 async function jsonRpc<T>(service: string, method: string, args: unknown[], timeoutMs?: number): Promise<T> {
-  const res = await fetch(`${ODOO_BASE_URL}/jsonrpc`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      method: "call",
-      id: Date.now(),
-      params: { service, method, args },
-    }),
-    ...(timeoutMs !== undefined ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
+  return withSlot(async () => {
+    const res = await fetch(`${ODOO_BASE_URL}/jsonrpc`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        method: "call",
+        id: Date.now(),
+        params: { service, method, args },
+      }),
+      ...(timeoutMs !== undefined ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
+    });
+
+    if (!res.ok) {
+      throw new Error(`Odoo HTTP ${res.status}: ${res.statusText}`);
+    }
+
+    const data = (await res.json()) as JsonRpcResponse<T>;
+    if (data.error) {
+      throw new Error(`Odoo RPC error: ${data.error.message} ${JSON.stringify(data.error.data ?? "")}`);
+    }
+    if (data.result === undefined) {
+      throw new Error("Odoo RPC returned no result");
+    }
+    return data.result;
   });
-
-  if (!res.ok) {
-    throw new Error(`Odoo HTTP ${res.status}: ${res.statusText}`);
-  }
-
-  const data = (await res.json()) as JsonRpcResponse<T>;
-  if (data.error) {
-    throw new Error(`Odoo RPC error: ${data.error.message} ${JSON.stringify(data.error.data ?? "")}`);
-  }
-  if (data.result === undefined) {
-    throw new Error("Odoo RPC returned no result");
-  }
-  return data.result;
 }
 
 /** Autentica contra Odoo y devuelve el UID numérico del usuario. Se cachea. */
