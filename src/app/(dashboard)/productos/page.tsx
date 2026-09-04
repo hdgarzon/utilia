@@ -22,6 +22,14 @@ function numeroOpcional(v: string | undefined): number | undefined {
   return Number.isInteger(n) && n > 0 ? n : undefined;
 }
 
+// La pagina viene de la URL, que es compartible y editable a mano. Un valor
+// fraccionario como ?page=1.3 llegaria a Odoo como un offset con decimales, y
+// se mostraria tal cual en "Pagina 1.3 de N". Se exige entero positivo.
+function paginaValida(v: string | undefined): number {
+  const n = Number(v);
+  return Number.isInteger(n) && n > 0 ? n : 1;
+}
+
 function parseFilters(sp: Record<string, string | string[] | undefined>): Filters {
   const uno = (k: string) => (Array.isArray(sp[k]) ? sp[k][0] : (sp[k] as string | undefined));
   const tipo = uno("tipo");
@@ -44,7 +52,7 @@ export default async function ProductosPage({
 }) {
   const sp = await searchParams;
   const filters = parseFilters(sp);
-  const page = Math.max(1, Number(Array.isArray(sp.page) ? sp.page[0] : sp.page) || 1);
+  const page = paginaValida(Array.isArray(sp.page) ? sp.page[0] : sp.page);
 
   let data: Awaited<ReturnType<typeof listTemplates>> | null = null;
   let options: Awaited<ReturnType<typeof getCatalogOptions>> | null = null;
@@ -75,10 +83,16 @@ export default async function ProductosPage({
   }
 
   const totalPaginas = Math.max(1, Math.ceil(data.total / PAGE_SIZE));
+  // Conserva exactamente el valor que uso parseFilters. Filtrar por
+  // `typeof v === "string"` perderia los parametros repetidos (?cat=3&cat=5),
+  // que parseFilters SI acepta tomando el primero: la pagina mostraria el
+  // filtro aplicado pero el enlace a la siguiente lo dejaria caer.
   const qs = (p: number) => {
     const next = new URLSearchParams();
     for (const [k, v] of Object.entries(sp)) {
-      if (typeof v === "string" && k !== "page") next.set(k, v);
+      if (k === "page") continue;
+      const valor = Array.isArray(v) ? v[0] : v;
+      if (valor) next.set(k, valor);
     }
     next.set("page", String(p));
     return `/productos?${next.toString()}`;

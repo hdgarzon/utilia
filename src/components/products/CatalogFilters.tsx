@@ -55,6 +55,7 @@ export function CatalogFilters({ options, total }: { options: CatalogOptions; to
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Buscar por nombre o referencia…"
+            aria-label="Buscar productos por nombre o referencia"
             className="w-full rounded-lg border border-border bg-card pl-8 pr-3 py-1.5 text-xs outline-none focus:border-primary"
           />
         </form>
@@ -62,6 +63,7 @@ export function CatalogFilters({ options, total }: { options: CatalogOptions; to
         <select
           value={params.get("cat") ?? ""}
           onChange={(e) => setParam("cat", e.target.value)}
+          aria-label="Filtrar por categoría interna"
           className="rounded-lg border border-border bg-card px-2 py-1.5 text-xs"
         >
           <option value="">Toda categoría</option>
@@ -73,6 +75,7 @@ export function CatalogFilters({ options, total }: { options: CatalogOptions; to
         <select
           value={params.get("web") ?? ""}
           onChange={(e) => setParam("web", e.target.value)}
+          aria-label="Filtrar por categoría de ecommerce"
           className="rounded-lg border border-border bg-card px-2 py-1.5 text-xs"
         >
           <option value="">Toda categoría web</option>
