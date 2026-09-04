@@ -15,6 +15,7 @@ const ODOO_API_KEY = process.env.ODOO_API_KEY!;
 
 // Cache global del UID autenticado (válido mientras la API key esté activa)
 let cachedUid: number | null = null;
+let pendingAuth: Promise<number> | null = null;
 
 interface JsonRpcResponse<T> {
   jsonrpc: "2.0";
@@ -59,22 +60,35 @@ async function jsonRpc<T>(service: string, method: string, args: unknown[], time
 /** Autentica contra Odoo y devuelve el UID numérico del usuario. Se cachea. */
 async function authenticate(timeoutMs?: number): Promise<number> {
   if (cachedUid !== null) return cachedUid;
+  // Sin esta deduplicacion, N llamadas concurrentes sobre un proceso frio
+  // disparan N autenticaciones simultaneas. Odoo.sh responde 429 a esa rafaga
+  // y tumba la pagina entera en cada arranque en frio.
+  if (pendingAuth !== null) return pendingAuth;
 
-  const uid = await jsonRpc<number | false>(
-    "common",
-    "authenticate",
-    [ODOO_DB, ODOO_LOGIN, ODOO_API_KEY, {}],
-    timeoutMs
-  );
-
-  if (uid === false || uid === 0) {
-    throw new Error(
-      `Odoo authentication failed. Verifica ODOO_DB="${ODOO_DB}", ODOO_LOGIN y ODOO_API_KEY.`
+  pendingAuth = (async () => {
+    const uid = await jsonRpc<number | false>(
+      "common",
+      "authenticate",
+      [ODOO_DB, ODOO_LOGIN, ODOO_API_KEY, {}],
+      timeoutMs
     );
-  }
+    if (uid === false || uid === 0) {
+      throw new Error(
+        `Odoo authentication failed. Verifica ODOO_DB="${ODOO_DB}", ODOO_LOGIN y ODOO_API_KEY.`
+      );
+    }
+    cachedUid = uid as number;
+    return cachedUid;
+  })();
 
-  cachedUid = uid as number;
-  return cachedUid;
+  try {
+    return await pendingAuth;
+  } finally {
+    // Se libera pase lo que pase: si la autenticacion fallo, el proximo
+    // llamador debe poder reintentar en vez de heredar para siempre una
+    // promesa rechazada.
+    pendingAuth = null;
+  }
 }
 
 /**
