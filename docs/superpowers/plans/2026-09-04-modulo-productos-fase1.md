@@ -51,6 +51,7 @@
 |---|---|
 | `package.json` | `vitest` en devDependencies, scripts `test` y `test:watch` |
 | `src/components/layout/nav-config.tsx:16-28` | Entrada `Productos` entre Inventario y Categorías |
+| `src/lib/odoo.ts` | Deduplicar la autenticación en vuelo (ver Task 3, § Autenticación concurrente) |
 
 `write-guard.ts` y `domain.ts` se mantienen **sin imports** a propósito: son la lógica que hay que poder probar sin levantar Odoo, Prisma ni variables de entorno.
 
@@ -791,6 +792,64 @@ Expected: ambos sin errores.
 git add src/lib/products/catalog.ts scripts/check-catalog.ts package.json
 git commit -m "feat(productos): lectura del catalogo desde odoo con enriquecimiento local"
 ```
+
+---
+
+#### Autenticación concurrente — corrección obligatoria en `src/lib/odoo.ts`
+
+`authenticate()` cachea el **uid resuelto**, no la promesa en vuelo:
+
+```ts
+async function authenticate(timeoutMs?: number): Promise<number> {
+  if (cachedUid !== null) return cachedUid;
+  const uid = await jsonRpc<number | false>("common", "authenticate", [...]);
+```
+
+Sobre un proceso frío, N llamadas concurrentes ven `cachedUid === null` a la vez y disparan **N autenticaciones simultáneas**. `getCatalogOptions` lanza 4 `searchRead` en paralelo y `listTemplates` otras 2: hasta 6 autenticaciones por arranque en frío.
+
+Odoo.sh estrangula ese endpoint. Verificado contra la instancia real: 4 autenticaciones en paralelo devuelven **HTTP 429** de forma reproducible incluso tras 30 s de enfriamiento, mientras que una sola autenticación seguida de 4 lecturas en paralelo funciona sin problema. En Vercel esto rompería `/productos` en cada arranque en frío.
+
+Cambiar `src/lib/odoo.ts` para cachear la promesa:
+
+```ts
+let cachedUid: number | null = null;
+let pendingAuth: Promise<number> | null = null;
+
+async function authenticate(timeoutMs?: number): Promise<number> {
+  if (cachedUid !== null) return cachedUid;
+  // Sin esta deduplicacion, N llamadas concurrentes sobre un proceso frio
+  // disparan N autenticaciones simultaneas. Odoo.sh responde 429 a esa rafaga
+  // y tumba la pagina entera en cada arranque en frio.
+  if (pendingAuth !== null) return pendingAuth;
+
+  pendingAuth = (async () => {
+    const uid = await jsonRpc<number | false>(
+      "common",
+      "authenticate",
+      [ODOO_DB, ODOO_LOGIN, ODOO_API_KEY, {}],
+      timeoutMs
+    );
+    if (uid === false || uid === 0) {
+      throw new Error(
+        `Odoo authentication failed. Verifica ODOO_DB="${ODOO_DB}", ODOO_LOGIN y ODOO_API_KEY.`
+      );
+    }
+    cachedUid = uid as number;
+    return cachedUid;
+  })();
+
+  try {
+    return await pendingAuth;
+  } finally {
+    // Se libera pase lo que pase: si la autenticacion fallo, el proximo
+    // llamador debe poder reintentar en vez de heredar para siempre una
+    // promesa rechazada.
+    pendingAuth = null;
+  }
+}
+```
+
+Es una mejora estricta y también beneficia al sync, que comparte este cliente. Prueba en `src/lib/odoo.test.ts` que lo fija: con `fetch` mockeado, cuatro llamadas concurrentes que necesiten uid deben producir **una sola** petición de `authenticate`.
 
 ---
 
