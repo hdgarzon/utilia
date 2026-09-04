@@ -1341,7 +1341,14 @@ vi.mock("@/lib/odoo-write", () => ({ translateOdooError: (e: unknown) => String(
 
 import { updateTemplates } from "./odoo-catalog-write";
 
-beforeEach(() => executeKw.mockReset());
+// Cuerpo en bloque a proposito: `beforeEach(() => executeKw.mockReset())`
+// devuelve implicitamente el mock, y Vitest registra cualquier funcion
+// devuelta por un hook como callback de limpieza. Esa limpieza accidental
+// dispara un rechazo no capturado en las pruebas que dejan un
+// mockRejectedValue persistente.
+beforeEach(() => {
+  executeKw.mockReset();
+});
 
 describe("updateTemplates", () => {
   it("no llama a Odoo si no hay ids", async () => {
