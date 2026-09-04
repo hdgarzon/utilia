@@ -1,7 +1,7 @@
 # Módulo de Productos — Design Spec
 
 **Fecha:** 2026-09-04
-**Origen:** Utilia lee el catálogo de Odoo pero no lo administra. Crear un producto, corregir su categoría o asignarle proveedor obliga a entrar a Odoo y hacerlo de a uno. Con 1.574 plantillas —muchas con categorías duplicadas o mal escritas, y decenas sin proveedor ni impuesto de compra— el mantenimiento del catálogo es hoy el trabajo manual más caro del negocio.
+**Origen:** Utilia lee el catálogo de Odoo pero no lo administra. Crear un producto, corregir su categoría o asignarle proveedor obliga a entrar a Odoo y hacerlo de a uno. Con casi 1.600 plantillas —muchas con categorías duplicadas o mal escritas, y decenas sin proveedor ni impuesto de compra— el mantenimiento del catálogo es hoy el trabajo manual más caro del negocio.
 
 ## Estado verificado del Odoo (2026-09-04)
 
@@ -77,9 +77,9 @@ Que el ciclo quede así: abrir `/productos` → filtrar ("sin proveedor", "categ
 
 El listado **lee en vivo de Odoo**, no de Postgres. Razones:
 
-1. Todo lo editable vive en `product.template`; `ProductInsight` es a nivel de variante (2.160 filas para 1.574 plantillas) y no guarda imagen, tipo, impuesto, publicado ni proveedor. Cubrirlo exigiría una tabla espejo nueva, un job de sync nuevo y write-through en cada edición.
+1. Todo lo editable vive en `product.template`; `ProductInsight` es a nivel de variante (más filas que plantillas) y no guarda imagen, tipo, impuesto, publicado ni proveedor. Cubrirlo exigiría una tabla espejo nueva, un job de sync nuevo y write-through en cada edición.
 2. Después de un cambio masivo la tabla tiene que reflejar la verdad **de inmediato**. Con un espejo en Postgres el usuario aplicaría un cambio y seguiría viendo el valor viejo hasta el próximo sync.
-3. Los filtros se traducen a dominios de Odoo, que ya resuelven búsqueda y paginación del lado del servidor. 1.574 registros con `limit: 50` es una consulta trivial.
+3. Los filtros se traducen a dominios de Odoo, que ya resuelven búsqueda y paginación del lado del servidor. Menos de 2.000 registros con `limit: 50` es una consulta trivial.
 
 ```ts
 listTemplates(filters, page) → { rows: CatalogRow[], total: number }
@@ -99,13 +99,17 @@ La barrera de inventario es una constante del módulo:
 
 ```ts
 // Campos que este módulo puede escribir. La lista es EXACTAMENTE lo que el
-// diseño escribe, ni un campo más: cualquier cosa fuera de ella se rechaza
+// módulo escribe hoy, ni un campo más: cualquier cosa fuera de ella se rechaza
 // antes de salir a la red. No es una convención — es la barrera que garantiza
 // que Utilia jamás mueva inventario en producción.
+//
+// Regla para mantenerla: un campo entra en el MISMO cambio que introduce
+// quien lo escribe, nunca antes. Los de creación de producto (`name`, `type`,
+// `is_storable`, `list_price`, `image_1920`, `show_availability`,
+// `standard_price`) entran con `createTemplate`, en Fase 2.
 const WRITABLE_FIELDS = new Set([
-  "name", "type", "is_storable", "list_price", "standard_price",
-  "categ_id", "supplier_taxes_id", "seller_ids", "image_1920",
-  "is_published", "public_categ_ids", "show_availability",
+  "categ_id", "is_published", "public_categ_ids",
+  "supplier_taxes_id", "seller_ids",
 ]);
 
 // Modelos intocables. Escribir en cualquiera de estos genera movimiento de
