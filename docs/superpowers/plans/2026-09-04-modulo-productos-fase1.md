@@ -1374,23 +1374,63 @@ describe("updateTemplates", () => {
   });
 
   it("aisla al culpable reintentando uno por uno cuando el lote falla", async () => {
-    // 1a llamada: el lote de 3 falla. Luego uno por uno: 1 ok, 2 falla, 3 ok.
+    // 1a llamada: el lote de 3 lo rechaza Odoo. Luego uno por uno: 1 ok, 2 falla, 3 ok.
     executeKw
-      .mockRejectedValueOnce(new Error("lote invalido"))
+      .mockRejectedValueOnce(new Error("Odoo RPC error: lote invalido"))
       .mockResolvedValueOnce(true)
-      .mockRejectedValueOnce(new Error("producto archivado"))
+      .mockRejectedValueOnce(new Error("Odoo RPC error: producto archivado"))
       .mockResolvedValueOnce(true);
 
     const r = await updateTemplates([1, 2, 3], { isPublished: true });
     expect(r.ok).toEqual([1, 3]);
-    expect(r.failed).toEqual([{ id: 2, error: "Error: producto archivado" }]);
+    expect(r.failed).toEqual([{ id: 2, error: "Error: Odoo RPC error: producto archivado" }]);
     expect(executeKw).toHaveBeenCalledTimes(4);
   });
 
-  it("nunca deja pasar un campo de inventario", async () => {
+  it("ante un fallo de transporte corta en vez de repetir el timeout 50 veces", async () => {
+    // Sin "Odoo RPC error" en el mensaje: es red caida, no rechazo de negocio.
+    executeKw.mockRejectedValue(new Error("Odoo HTTP 502: Bad Gateway"));
+
+    const r = await updateTemplates([1, 2, 3], { isPublished: true });
+    // Un solo intento: NO reintenta uno por uno.
+    expect(executeKw).toHaveBeenCalledTimes(1);
+    expect(r.ok).toEqual([]);
+    expect(r.failed.map((f) => f.id)).toEqual([1, 2, 3]);
+  });
+
+  it("un fallo de transporte no sigue con los lotes siguientes", async () => {
+    executeKw
+      .mockResolvedValueOnce(true) // lote 1 (ids 1..50) OK
+      .mockRejectedValue(new Error("Odoo HTTP 502: Bad Gateway")); // lote 2 cae
+
+    const ids = Array.from({ length: 120 }, (_, i) => i + 1);
+    const r = await updateTemplates(ids, { categoryId: 3 });
+    expect(executeKw).toHaveBeenCalledTimes(2); // no intenta el tercer lote
+    expect(r.ok).toHaveLength(50);
+    expect(r.failed).toHaveLength(70);
+  });
+
+  it("un patch sin ningun campo conocido se rechaza sin tocar Odoo", async () => {
     executeKw.mockResolvedValue(true);
     // @ts-expect-error se fuerza un patch invalido a proposito
     await expect(updateTemplates([1], { qty_available: 5 })).rejects.toThrow(/sin cambios/i);
+    expect(executeKw).not.toHaveBeenCalled();
+  });
+
+  it("la barrera esta cableada: un campo prohibido traducido no llega a Odoo", async () => {
+    // toOdooValues nunca produce un campo prohibido, asi que la unica forma de
+    // comprobar que assertWritable esta REALMENTE en el camino es interceptar
+    // la traduccion. Sin esta prueba, borrar la llamada a assertWritable no
+    // rompe ningun test.
+    executeKw.mockResolvedValue(true);
+    const guard = await import("./write-guard");
+    const spy = vi.spyOn(guard, "toOdooValues").mockReturnValue({ qty_available: 5 });
+    try {
+      await expect(updateTemplates([1], { isPublished: true })).rejects.toThrow(/no permitido/i);
+      expect(executeKw).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 ```
@@ -1448,22 +1488,45 @@ export async function updateTemplates(ids: number[], patch: TemplatePatch): Prom
     try {
       await write(lote, values);
       result.ok.push(...lote);
-    } catch {
-      // El lote fallo pero Odoo no dice por cual producto. Se reintenta uno a
-      // uno para poder nombrar al culpable: reportar 50 fallos cuando solo uno
-      // esta archivado le haria perder el cambio a los otros 49.
+    } catch (err) {
+      if (!esRechazoDeNegocio(err)) {
+        // Odoo no respondio. Aislar aqui seria repetir el mismo timeout 50
+        // veces: 50 x 60s = 50 minutos con la accion del servidor colgada,
+        // para descubrir lo que ya sabemos. Se marca lo que queda como
+        // fallido y se corta, para devolver un resultado honesto en segundos.
+        const mensaje = translateOdooError(err);
+        for (const id of ids.slice(i)) result.failed.push({ id, error: mensaje });
+        return result;
+      }
+      // Rechazo de negocio: Odoo no dice CUAL producto lo causo, asi que se
+      // reintenta uno a uno para poder nombrar al culpable. Reportar 50
+      // fallos cuando solo uno esta archivado le quitaria el cambio a 49.
       for (const id of lote) {
         try {
           await write([id], values);
           result.ok.push(id);
-        } catch (err) {
-          result.failed.push({ id, error: translateOdooError(err) });
+        } catch (errItem) {
+          result.failed.push({ id, error: translateOdooError(errItem) });
         }
       }
     }
   }
 
   return result;
+}
+
+/**
+ * Distingue un rechazo de negocio de Odoo (producto archivado, impuesto
+ * inexistente) de un fallo de transporte (red caida, HTTP no-OK, timeout).
+ *
+ * Es la misma distincion que hace `translateOdooError` para redactar el
+ * mensaje: el cliente antepone "Odoo RPC error:" cuando llego al servidor y
+ * este respondio con un error de negocio. Sin respuesta de negocio, el fallo
+ * es de transporte y reintentar linea por linea no descubre nada.
+ */
+function esRechazoDeNegocio(err: unknown): boolean {
+  const raw = err instanceof Error ? err.message : String(err);
+  return raw.toLowerCase().includes("odoo rpc error");
 }
 
 function write(ids: number[], values: Record<string, unknown>): Promise<boolean> {
