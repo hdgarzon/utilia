@@ -772,7 +772,9 @@ Registrarlo en `package.json`, junto a los otros scripts de diagnostico que ya u
 
 Run: `npm run check:catalog`
 
-Expected: `total: 1574`, `filas: 50`, categorías 24, web 14, impuestos 20, proveedores 24. `sin imagen` debe dar cerca de 43. Las primeras filas deben mostrar nombre y categoría reales.
+Expected (foto del 2026-09-04, el catálogo se mueve): `total` ≈ 1.588, `filas: 50`, categorías 24, web 14, impuestos de compra 44, proveedores 24, `sin imagen` ≈ 46. Las primeras filas deben mostrar nombre y categoría reales.
+
+Los conteos exactos van a diferir según el día — lo que importa es el orden de magnitud y que ninguna lista venga vacía. Nótese que `search_count` sobre `product.template` cuenta solo las **activas**: hay ~998 plantillas archivadas que el catálogo no debe mostrar, y ese es el comportamiento correcto.
 
 - [ ] **Step 3: Confirmar que no se filtró ningún secreto**
 

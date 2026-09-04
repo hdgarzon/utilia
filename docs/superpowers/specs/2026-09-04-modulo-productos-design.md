@@ -5,18 +5,19 @@
 
 ## Estado verificado del Odoo (2026-09-04)
 
-Consultado en modo lectura contra la instancia de producción:
+Consultado en modo lectura contra la instancia de producción. **Son una foto del 2026-09-04**: el catálogo se mueve solo, así que los conteos sirven para dimensionar decisiones, no como valores esperados de una prueba.
 
 | Dato | Valor |
 |---|---|
 | Servidor | Odoo **19.0+e** (Enterprise) |
 | Almacenes | 1 — `Utilia`, ubicación de stock `WH/Sabaneta` (id 8) |
-| `product.template` | 1.574 |
+| `product.template` (activas) | 1.588 |
+| `product.template` incluyendo archivadas | 2.586 |
 | `product.product` (variantes) | 2.160 |
 | Categorías internas | 24 |
 | Categorías de ecommerce (`product.public.category`) | 14 |
 | Proveedores (`supplier_rank > 0`) | 24 |
-| Impuestos de compra (`type_tax_use = purchase`) | 20 |
+| Impuestos de compra (`type_tax_use = purchase`) | 44 |
 | Con imagen | 1.531 |
 | Publicados en web | 1.420 |
 | Módulos instalados | `stock`, `purchase`, `website`, `website_sale`, `point_of_sale` |
