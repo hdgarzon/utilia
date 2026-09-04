@@ -10,6 +10,7 @@ import {
   ShoppingBag,
   PackageX,
   ClipboardList,
+  Boxes,
   type LucideIcon,
 } from "lucide-react";
 
@@ -17,6 +18,7 @@ export const navItems: { href: string; label: string; icon: LucideIcon }[] = [
   { href: "/", label: "Resumen", icon: LayoutDashboard },
   { href: "/ventas", label: "Ventas", icon: TrendingUp },
   { href: "/inventario", label: "Inventario", icon: Package },
+  { href: "/productos", label: "Productos", icon: Boxes },
   { href: "/categorias", label: "Categorías", icon: Tags },
   { href: "/abc", label: "ABC / Pareto", icon: BarChart3 },
   { href: "/financiero", label: "Financiero", icon: DollarSign },
