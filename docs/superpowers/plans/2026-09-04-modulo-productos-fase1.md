@@ -27,7 +27,7 @@
 
 | Archivo | Responsabilidad |
 |---|---|
-| `vitest.config.ts` | Config del runner: solo `src/**/*.test.ts`, alias `@/` |
+| `vitest.config.mts` | Config del runner: solo `src/**/*.test.ts`, alias `@/` |
 | `src/lib/products/types.ts` | Tipos compartidos. Cero lógica, cero imports |
 | `src/lib/products/write-guard.ts` | **La barrera.** Lista blanca, modelos prohibidos, traducción patch→Odoo. Puro, sin imports |
 | `src/lib/products/write-guard.test.ts` | Prueba de la barrera |
@@ -60,7 +60,7 @@
 Es la garantía central del diseño y va primero. Al terminar esta tarea existe una prueba que falla si alguien intenta escribir un campo de inventario.
 
 **Files:**
-- Create: `vitest.config.ts`
+- Create: `vitest.config.mts`
 - Create: `src/lib/products/types.ts`
 - Create: `src/lib/products/write-guard.ts`
 - Test: `src/lib/products/write-guard.test.ts`
@@ -91,21 +91,25 @@ En `package.json`, dentro de `"scripts"`, agregar junto a `"lint"`:
 
 - [ ] **Step 2: Crear la configuración del runner**
 
-`vitest.config.ts`:
+`vitest.config.mts`:
 
 ```ts
 import { defineConfig } from "vitest/config";
-import path from "node:path";
 
 // Solo logica pura: nada de React, base de datos ni Odoo. Por eso el entorno
 // es "node" y el include no alcanza componentes.
+//
+// Extension .mts, no .ts: el package.json no declara "type": "module" (y no
+// debe hacerlo, cambiaria la resolucion de modulos de toda la app Next), asi
+// que un .ts se cargaria como CommonJS y Vite avisaria. Por lo mismo el alias
+// usa import.meta.dirname y no __dirname, que no existe en ESM.
 export default defineConfig({
   test: {
     include: ["src/**/*.test.ts"],
     environment: "node",
   },
   resolve: {
-    alias: { "@": path.resolve(__dirname, "src") },
+    alias: { "@": `${import.meta.dirname}/src` },
   },
 });
 ```
@@ -360,7 +364,7 @@ Expected: ambos sin errores.
 - [ ] **Step 9: Commit**
 
 ```bash
-git add package.json package-lock.json vitest.config.ts src/lib/products/types.ts src/lib/products/write-guard.ts src/lib/products/write-guard.test.ts
+git add package.json package-lock.json vitest.config.mts src/lib/products/types.ts src/lib/products/write-guard.ts src/lib/products/write-guard.test.ts
 git commit -m "feat(productos): barrera de escritura que excluye inventario"
 ```
 
