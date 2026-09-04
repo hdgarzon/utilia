@@ -855,6 +855,61 @@ Es una mejora estricta y también beneficia al sync, que comparte este cliente. 
 
 ---
 
+#### Tope de concurrencia — segunda corrección obligatoria en `src/lib/odoo.ts`
+
+Medido contra la instancia real (sin cabeceras de límite de ningún tipo, hay que descubrirlo probando):
+
+| Patrón | Resultado |
+|---|---|
+| 8 peticiones en **secuencia**, sin pausa | todas 200 — no hay límite de volumen |
+| 4 en **paralelo** | todas 200 |
+| 6 en paralelo | 1 de 6 → **HTTP 429** |
+| 8 en paralelo | 3 de 8 → **HTTP 429** |
+| 4 autenticaciones en paralelo | 1 de 4 → **HTTP 429** |
+
+Odoo.sh corta alrededor de las 5 concurrentes. La página dispara `Promise.all([listTemplates, getCatalogOptions])`: 4 lecturas de las opciones más 2 del listado = **6 simultáneas**, justo en la zona de fallo. De ahí los 429 intermitentes e irreproducibles durante el desarrollo — y lo mismo pasaría en producción.
+
+La solución no es quitar el paralelismo (en secuencia no hay límite, pero serializar todo cuesta latencia sin necesidad) sino **acotarlo**. Un semáforo en `src/lib/odoo.ts`, en `jsonRpc`, que es el único punto donde ocurre el `fetch`:
+
+```ts
+/**
+ * Tope de peticiones simultaneas contra Odoo.
+ *
+ * Medido contra la instancia real: en secuencia no hay limite (8 seguidas sin
+ * pausa pasan), 4 en paralelo pasan, 6 pierden 1 con HTTP 429 y 8 pierden 3.
+ * Odoo.sh corta alrededor de las 5 concurrentes y NO envia ninguna cabecera de
+ * limite, asi que el respeto tiene que venir de este lado.
+ *
+ * 3 deja margen bajo el umbral medido sin costar latencia perceptible: las
+ * cuatro lecturas de getCatalogOptions pasan en dos tandas.
+ */
+const MAX_CONCURRENT_REQUESTS = 3;
+
+let activeRequests = 0;
+const waiting: Array<() => void> = [];
+
+async function withSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (activeRequests >= MAX_CONCURRENT_REQUESTS) {
+    await new Promise<void>((resolve) => waiting.push(resolve));
+  }
+  activeRequests++;
+  try {
+    return await fn();
+  } finally {
+    activeRequests--;
+    waiting.shift()?.();
+  }
+}
+```
+
+`jsonRpc` envuelve su `fetch` con `withSlot`. **No** envolver `executeKw`: llama a `authenticate` y luego a `jsonRpc`, y anidar dos tomas de turno se bloquearía a sí mismo. `jsonRpc` es el punto correcto porque cada toma se libera antes de la siguiente.
+
+Beneficia también al sync, que comparte el cliente y hoy pagina productos en lotes.
+
+Prueba en `src/lib/odoo.test.ts`: con `fetch` mockeado y un retardo, lanzar 8 llamadas concurrentes y afirmar que el máximo de peticiones simultáneas observadas nunca pasa de 3.
+
+---
+
 ### Task 4: Página de listado con filtros
 
 Al terminar esta tarea `/productos` ya sirve: es software entregable aunque no se toque nada más.
