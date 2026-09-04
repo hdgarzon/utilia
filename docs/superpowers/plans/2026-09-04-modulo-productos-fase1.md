@@ -34,6 +34,7 @@
 | `src/lib/products/domain.ts` | `buildCatalogDomain(filters)`: filtros → dominio de Odoo. Puro |
 | `src/lib/products/domain.test.ts` | Prueba de la traducción de filtros |
 | `src/lib/products/catalog.ts` | Lectura: `listTemplates`, `getCatalogOptions` |
+| `scripts/check-catalog.ts` | Diagnóstico de solo lectura: comprueba contra el Odoo real que la lectura del catálogo sigue viva |
 | `src/lib/products/odoo-catalog-write.ts` | Escritura: `updateTemplates` con loteo y aislamiento de fallos |
 | `src/lib/products/odoo-catalog-write.test.ts` | Prueba del loteo y la forma del resultado |
 | `src/app/(dashboard)/productos/page.tsx` | Página del listado (server component) |
@@ -733,9 +734,11 @@ export async function getCatalogOptions(): Promise<CatalogOptions> {
 }
 ```
 
-- [ ] **Step 2: Verificar contra el Odoo real con un script desechable**
+- [ ] **Step 2: Verificar contra el Odoo real**
 
-Crear `scripts/_check-catalog.ts`:
+El script se queda en el repo como herramienta de diagnóstico: sirve para comprobar de un vistazo que la lectura del catálogo sigue viva después de un cambio en Odoo, y no hay razón para tirarlo tras usarlo una vez. Es de **solo lectura**.
+
+Crear `scripts/check-catalog.ts`:
 
 ```ts
 import { listTemplates, getCatalogOptions } from "../src/lib/products/catalog";
@@ -760,15 +763,22 @@ import { listTemplates, getCatalogOptions } from "../src/lib/products/catalog";
 })();
 ```
 
-Run: `npx tsx --env-file=.env.local scripts/_check-catalog.ts`
+Registrarlo en `package.json`, junto a los otros scripts de diagnostico que ya usan `tsx --env-file`:
+
+```json
+    "check:catalog": "tsx --env-file=.env.local scripts/check-catalog.ts",
+```
+
+Run: `npm run check:catalog`
 
 Expected: `total: 1574`, `filas: 50`, categorías 24, web 14, impuestos 20, proveedores 24. `sin imagen` debe dar cerca de 43. Las primeras filas deben mostrar nombre y categoría reales.
 
-- [ ] **Step 3: Borrar el script desechable**
+- [ ] **Step 3: Confirmar que no se filtró ningún secreto**
 
-```bash
-rm scripts/_check-catalog.ts
-```
+El script lee credenciales de `.env.local` por el flag `--env-file`, pero no debe contener ninguna. Verificar que no hay URLs, llaves ni logins escritos a mano en el archivo, y que `.env.local` no quedó preparado para commit:
+
+Run: `grep -nE "ODOO_|SUPABASE|DATABASE_URL|sk-|api_key" scripts/check-catalog.ts; git status --short`
+Expected: el grep no encuentra nada, y `.env.local` no aparece en el estado.
 
 - [ ] **Step 4: Verificar tipos y lint**
 
@@ -778,7 +788,7 @@ Expected: ambos sin errores.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/lib/products/catalog.ts
+git add src/lib/products/catalog.ts scripts/check-catalog.ts package.json
 git commit -m "feat(productos): lectura del catalogo desde odoo con enriquecimiento local"
 ```
 
@@ -1833,7 +1843,7 @@ git commit -m "feat(productos): acciones masivas de categoria proveedor y public
 La prueba unitaria demuestra que la barrera rechaza los campos prohibidos. Esta tarea demuestra que **el módulo entero, corriendo de verdad, no movió inventario**. Es la que cierra el compromiso con el dueño.
 
 **Files:**
-- Create (temporal, se borra): `scripts/_verify-inventario.ts`
+- Create: `scripts/verify-inventario.ts` (queda en el repo)
 
 **Interfaces:**
 - Consumes: todo lo anterior.
@@ -1841,11 +1851,14 @@ La prueba unitaria demuestra que la barrera rechaza los campos prohibidos. Esta 
 
 - [ ] **Step 1: Tomar la foto del inventario ANTES**
 
-Crear `scripts/_verify-inventario.ts`:
+El script se queda en el repo: es la comprobacion de la promesa central del modulo y hay que poder repetirla cada vez que se toque la capa de escritura, no solo hoy.
+
+Crear `scripts/verify-inventario.ts`:
 
 ```ts
-/* Verificacion temporal: compara qty_available antes y despues de los cambios
-   masivos y cuenta los movimientos de stock del dia. Se borra al terminar. */
+/* Compara qty_available antes y despues de una tanda de cambios masivos y
+   cuenta los movimientos de stock del dia. Solo lectura contra Odoo.
+   Uso: npm run verify:inventario antes  ...aplicar cambios...  npm run verify:inventario despues */
 import { odooRpc } from "../src/lib/odoo";
 import fs from "node:fs";
 
@@ -1886,7 +1899,13 @@ const SNAPSHOT = "/tmp/utilia-inventario.json";
 })();
 ```
 
-Run: `npx tsx --env-file=.env.local scripts/_verify-inventario.ts antes`
+Registrarlo en `package.json` junto a los otros scripts de diagnostico:
+
+```json
+    "verify:inventario": "tsx --env-file=.env.local scripts/verify-inventario.ts",
+```
+
+Run: `npm run verify:inventario antes`
 Expected: `Foto guardada: 1574 productos, N movimientos hoy.`
 
 - [ ] **Step 2: Ejercitar todas las acciones masivas**
@@ -1895,7 +1914,7 @@ En `/productos`, sobre **al menos 20 productos seleccionados**, aplicar una tras
 
 - [ ] **Step 3: Comparar contra la foto**
 
-Run: `npx tsx --env-file=.env.local scripts/_verify-inventario.ts despues`
+Run: `npm run verify:inventario despues`
 
 Expected:
 - `OK: ninguna cantidad cambio.`
@@ -1903,16 +1922,18 @@ Expected:
 
 Si alguna cantidad cambió o aparecieron movimientos nuevos, es un fallo bloqueante: hay que encontrar por dónde se escapó la escritura antes de seguir. La causa más probable sería un campo agregado a `WRITABLE_FIELDS` sin pensarlo.
 
-- [ ] **Step 4: Borrar el script de verificación**
+- [ ] **Step 4: Limpiar solo la foto, no el script**
+
+La foto es un archivo temporal de una corrida concreta; el script se queda.
 
 ```bash
-rm scripts/_verify-inventario.ts /tmp/utilia-inventario.json
+rm /tmp/utilia-inventario.json
 ```
 
-- [ ] **Step 5: Confirmar que el árbol quedó limpio**
+- [ ] **Step 5: Confirmar que no se filtró ningún secreto**
 
-Run: `git status --short`
-Expected: sin archivos sin seguimiento en `scripts/`.
+Run: `grep -nE "ODOO_|SUPABASE|DATABASE_URL|sk-|api_key" scripts/verify-inventario.ts; git status --short`
+Expected: el grep no encuentra nada, y `.env.local` no aparece en el estado.
 
 - [ ] **Step 6: Documentar el resultado en el spec**
 
@@ -1929,7 +1950,7 @@ Ejecutada el <fecha>, tras aplicar las cinco acciones masivas sobre <N> producto
 - [ ] **Step 7: Commit**
 
 ```bash
-git add docs/superpowers/specs/2026-09-04-modulo-productos-design.md
+git add docs/superpowers/specs/2026-09-04-modulo-productos-design.md scripts/verify-inventario.ts package.json
 git commit -m "docs(productos): registro de la verificacion de la barrera de inventario"
 ```
 
