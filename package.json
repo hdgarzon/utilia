@@ -21,7 +21,8 @@
     "co:audit": "tsx --env-file=.env.local scripts/co-edi-audit.ts",
     "co:unspsc": "tsx --env-file=.env.local scripts/co-edi-unspsc.ts",
     "co:partners": "tsx --env-file=.env.local scripts/co-edi-partners.ts",
-    "backfill": "tsx --env-file=.env.local scripts/backfill-history.ts"
+    "backfill": "tsx --env-file=.env.local scripts/backfill-history.ts",
+    "check:catalog": "tsx --env-file=.env.local scripts/check-catalog.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.56",
