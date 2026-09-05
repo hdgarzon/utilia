@@ -1611,7 +1611,12 @@ async function requireSession() {
  */
 const bulkSchema = z
   .object({
-    ids: z.array(z.number().int().positive()).min(1).max(500),
+    ids: z
+      .array(z.number().int().positive())
+      // Mensajes propios: los de Zod salen en ingles y esta app es toda en
+      // español. El de 500 ademas tiene que decir QUE hacer, no solo que no.
+      .min(1, { message: "No hay productos seleccionados" })
+      .max(500, { message: "Maximo 500 productos por operacion. Filtra y aplica en tandas." }),
     categoryId: z.number().int().positive().optional(),
     publicCategoryIds: z.array(z.number().int().positive()).optional(),
     isPublished: z.boolean().optional(),
@@ -1754,13 +1759,26 @@ export function BulkActionDialog({
             : [];
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" onClick={onCancel}>
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4"
+      // Mientras la escritura esta en vuelo, ni el fondo ni Cancelar cierran:
+      // cerrar NO cancela nada (la accion sigue corriendo en el servidor) y
+      // dejaria al usuario creyendo que freno un cambio irreversible.
+      onClick={pending ? undefined : onCancel}
+      onKeyDown={(e) => {
+        if (e.key === "Escape" && !pending) onCancel();
+      }}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="bulk-dialog-titulo"
+      tabIndex={-1}
+    >
       <div
         className="w-full max-w-md rounded-xl border border-border bg-card p-5 space-y-4"
         onClick={(e) => e.stopPropagation()}
       >
         <div>
-          <h2 className="text-sm font-semibold">{BULK_LABEL[field]}</h2>
+          <h2 id="bulk-dialog-titulo" className="text-sm font-semibold">{BULK_LABEL[field]}</h2>
           <p className="text-xs text-muted-foreground mt-0.5">
             Se aplicará a {count} producto{count !== 1 ? "s" : ""}.
           </p>
@@ -1770,6 +1788,7 @@ export function BulkActionDialog({
           <select
             value={value}
             onChange={(e) => onValueChange(e.target.value)}
+            aria-label={BULK_LABEL[field]}
             className="w-full rounded-lg border border-border bg-background px-2 py-1.5 text-xs"
           >
             <option value="">Elegir…</option>
@@ -1780,6 +1799,7 @@ export function BulkActionDialog({
           <select
             value={value}
             onChange={(e) => onValueChange(e.target.value)}
+            aria-label={BULK_LABEL[field]}
             className="w-full rounded-lg border border-border bg-background px-2 py-1.5 text-xs"
           >
             <option value="">Elegir…</option>
@@ -1805,7 +1825,8 @@ export function BulkActionDialog({
         <div className="flex justify-end gap-2">
           <button
             onClick={onCancel}
-            className="rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-secondary"
+            disabled={pending}
+            className="rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-secondary disabled:opacity-50"
           >
             Cancelar
           </button>
@@ -1847,7 +1868,7 @@ export function BulkActionBar({
 }: {
   seleccion: SeleccionItem[];
   options: CatalogOptions;
-  onDone: () => void;
+  onDone: (conservarIds?: number[]) => void;
 }) {
   const router = useRouter();
   const [field, setField] = useState<BulkField | null>(null);
@@ -1889,6 +1910,13 @@ export function BulkActionBar({
     let res;
     try {
       res = await applyBulkChange({ ids: selectedIds, ...patch });
+    } catch (err) {
+      // La server action misma no llego (red caida, deploy a mitad). Sin este
+      // catch la excepcion se pierde: el dialogo queda abierto, el boton
+      // habilitado y el usuario sin ninguna señal de que no paso nada.
+      console.error("[productos] la accion masiva no llego al servidor:", err);
+      toast.error("No se pudo contactar al servidor. Revisa la conexion e intenta de nuevo.");
+      return;
     } finally {
       setSubmitting(false);
     }
@@ -1906,13 +1934,16 @@ export function BulkActionBar({
         `${res.okCount} aplicados, ${fallidos.length} fallaron: ${fallidos
           .slice(0, 3)
           .map((f) => `${nombrePorId.get(f.id) ?? `#${f.id}`}: ${f.error}`)
-          .join(" · ")}${fallidos.length > 3 ? "…" : ""}`,
+          .join(" · ")}${fallidos.length > 3 ? "…" : ""}. Los que fallaron siguen seleccionados.`,
         { duration: 10_000 }
       );
     }
 
     setField(null);
-    onDone();
+    // Los que fallaron se conservan seleccionados: el toast solo alcanza a
+    // nombrar tres y caduca, asi que sin esto el usuario no tendria forma de
+    // volver a los que faltan sin re-auditar el catalogo a mano.
+    onDone(fallidos.length > 0 ? fallidos.map((f) => f.id) : undefined);
     startTransition(() => router.refresh());
   }
 
@@ -2026,7 +2057,17 @@ export function CatalogWorkspace({
       <BulkActionBar
         seleccion={[...selected.values()]}
         options={options}
-        onDone={() => setSelected(new Map())}
+        onDone={(conservarIds) =>
+          setSelected((prev) => {
+            if (!conservarIds || conservarIds.length === 0) return new Map();
+            const next = new Map<number, SeleccionItem>();
+            for (const id of conservarIds) {
+              const item = prev.get(id);
+              if (item) next.set(id, item);
+            }
+            return next;
+          })
+        }
       />
     </>
   );
