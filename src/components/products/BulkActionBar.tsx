@@ -5,18 +5,17 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { applyBulkChange } from "@/app/(dashboard)/productos/actions";
 import { BulkActionDialog, BULK_LABEL, type BulkField } from "./BulkActionDialog";
-import type { CatalogOptions, CatalogRow } from "@/lib/products/types";
+import type { CatalogOptions } from "@/lib/products/types";
+import type { SeleccionItem } from "./CatalogWorkspace";
 
 const CAMPOS: BulkField[] = ["categoria", "categoriaWeb", "publicar", "impuesto", "proveedor"];
 
 export function BulkActionBar({
-  selectedIds,
-  rows,
+  seleccion,
   options,
   onDone,
 }: {
-  selectedIds: number[];
-  rows: CatalogRow[];
+  seleccion: SeleccionItem[];
   options: CatalogOptions;
   onDone: () => void;
 }) {
@@ -29,10 +28,12 @@ export function BulkActionBar({
   const [submitting, setSubmitting] = useState(false);
   const [pending, startTransition] = useTransition();
 
-  if (selectedIds.length === 0) return null;
+  if (seleccion.length === 0) return null;
 
-  const seleccion = new Set(selectedIds);
-  const conProveedor = rows.filter((r) => seleccion.has(r.templateId) && r.supplierName).length;
+  const selectedIds = seleccion.map((s) => s.templateId);
+  // Sobre la seleccion completa, no sobre la pagina visible.
+  const conProveedor = seleccion.filter((s) => s.supplierName).length;
+  const nombrePorId = new Map(seleccion.map((s) => [s.templateId, s.name]));
 
   function abrir(f: BulkField) {
     setField(f);
@@ -74,7 +75,7 @@ export function BulkActionBar({
       toast.warning(
         `${res.okCount} aplicados, ${fallidos.length} fallaron: ${fallidos
           .slice(0, 3)
-          .map((f) => `#${f.id} ${f.error}`)
+          .map((f) => `${nombrePorId.get(f.id) ?? `#${f.id}`}: ${f.error}`)
           .join(" · ")}${fallidos.length > 3 ? "…" : ""}`,
         { duration: 10_000 }
       );

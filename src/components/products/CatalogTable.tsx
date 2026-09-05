@@ -17,8 +17,10 @@ export function CatalogTable({
   onToggleAll,
 }: {
   rows: CatalogRow[];
-  selected: Set<number>;
-  onToggle: (id: number) => void;
+  // Solo se consulta con .has: un Map sirve igual que un Set y permite que
+  // la seleccion recuerde datos de productos que no estan en esta pagina.
+  selected: ReadonlyMap<number, unknown>;
+  onToggle: (row: CatalogRow) => void;
   onToggleAll: () => void;
 }) {
   const todosMarcados = rows.length > 0 && rows.every((r) => selected.has(r.templateId));
@@ -62,7 +64,7 @@ export function CatalogTable({
                 <input
                   type="checkbox"
                   checked={selected.has(r.templateId)}
-                  onChange={() => onToggle(r.templateId)}
+                  onChange={() => onToggle(r)}
                   aria-label={`Seleccionar ${r.name}`}
                   className="h-3.5 w-3.5 accent-primary"
                 />
