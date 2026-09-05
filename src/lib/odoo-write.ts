@@ -82,12 +82,21 @@ export async function createDraftPurchaseOrder(input: {
 }
 
 /**
+ * A qué flujo de escritura pertenece el error, para elegir la redacción
+ * correcta. Esta función nació para `createDraftPurchaseOrder`
+ * (reabastecimiento) y ese sigue siendo el default: ningún llamador
+ * existente pasa el segundo argumento y su redacción no cambia. El catálogo
+ * (`src/lib/products/odoo-catalog-write.ts`) pasa "catalogo" explícitamente.
+ */
+export type OdooErrorContext = "compras" | "catalogo";
+
+/**
  * Traduce un error del cliente Odoo (que puede incluir un traceback de
  * Python embebido en JSON, ver `Odoo RPC error` en src/lib/odoo.ts) a un
  * mensaje corto en español apto para un toast. El error técnico completo se
  * registra con `console.error` para diagnóstico; nunca se expone al usuario.
  */
-export function translateOdooError(err: unknown): string {
+export function translateOdooError(err: unknown, context: OdooErrorContext = "compras"): string {
   console.error("[odoo-write] error al escribir en Odoo:", err);
   const raw = err instanceof Error ? err.message : String(err);
 
@@ -106,7 +115,9 @@ export function translateOdooError(err: unknown): string {
       lower.includes("denied") ||
       lower.includes("forbidden")
     ) {
-      return "El usuario de la API no tiene permisos para crear órdenes de compra en Odoo. Revisa el grupo de Compras del usuario.";
+      return context === "catalogo"
+        ? "El usuario de la API no tiene permisos para modificar productos en Odoo. Revisa sus permisos sobre el catálogo."
+        : "El usuario de la API no tiene permisos para crear órdenes de compra en Odoo. Revisa el grupo de Compras del usuario.";
     }
     if (lower.includes("partner")) {
       return "El proveedor no es válido en Odoo (revisa que el contacto exista y no esté archivado).";
@@ -114,7 +125,9 @@ export function translateOdooError(err: unknown): string {
     if (lower.includes("product")) {
       return "Uno de los productos no es válido en Odoo (revisa que no esté archivado o eliminado).";
     }
-    return "No se pudo crear el borrador en Odoo. Revisa la conexión e intenta de nuevo.";
+    return context === "catalogo"
+      ? "No se pudo aplicar el cambio en Odoo. Revisa la conexión e intenta de nuevo."
+      : "No se pudo crear el borrador en Odoo. Revisa la conexión e intenta de nuevo.";
   }
 
   // No hubo respuesta de negocio de Odoo: fallo de red, HTTP no-OK o

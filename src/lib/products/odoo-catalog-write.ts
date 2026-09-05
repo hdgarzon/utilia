@@ -47,7 +47,7 @@ export async function updateTemplates(ids: number[], patch: TemplatePatch): Prom
         // veces: 50 x 60s = 50 minutos con la accion del servidor colgada,
         // para descubrir lo que ya sabemos. Se marca lo que queda como
         // fallido y se corta, para devolver un resultado honesto en segundos.
-        const mensaje = translateOdooError(err);
+        const mensaje = translateOdooError(err, "catalogo");
         for (const id of ids.slice(i)) result.failed.push({ id, error: mensaje });
         return result;
       }
@@ -59,7 +59,7 @@ export async function updateTemplates(ids: number[], patch: TemplatePatch): Prom
           await write([id], values);
           result.ok.push(id);
         } catch (errItem) {
-          result.failed.push({ id, error: translateOdooError(errItem) });
+          result.failed.push({ id, error: translateOdooError(errItem, "catalogo") });
         }
       }
     }

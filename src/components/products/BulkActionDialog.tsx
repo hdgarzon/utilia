@@ -1,0 +1,116 @@
+"use client";
+
+import { AlertTriangle } from "lucide-react";
+import type { CatalogOptions } from "@/lib/products/types";
+
+export type BulkField = "categoria" | "categoriaWeb" | "publicar" | "impuesto" | "proveedor";
+
+export const BULK_LABEL: Record<BulkField, string> = {
+  categoria: "Categoría interna",
+  categoriaWeb: "Categoría de ecommerce",
+  publicar: "Publicación en web",
+  impuesto: "Impuesto de compra",
+  proveedor: "Proveedor",
+};
+
+export function BulkActionDialog({
+  field,
+  count,
+  conProveedor,
+  options,
+  value,
+  onValueChange,
+  onCancel,
+  onConfirm,
+  pending,
+}: {
+  field: BulkField;
+  count: number;
+  /** Cuantos de los seleccionados ya tienen proveedor. Solo se usa en "proveedor". */
+  conProveedor: number;
+  options: CatalogOptions;
+  value: string;
+  onValueChange: (v: string) => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+  pending: boolean;
+}) {
+  const lista =
+    field === "categoria"
+      ? options.categories
+      : field === "categoriaWeb"
+        ? options.publicCategories
+        : field === "impuesto"
+          ? options.purchaseTaxes
+          : field === "proveedor"
+            ? options.suppliers
+            : [];
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" onClick={onCancel}>
+      <div
+        className="w-full max-w-md rounded-xl border border-border bg-card p-5 space-y-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div>
+          <h2 className="text-sm font-semibold">{BULK_LABEL[field]}</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Se aplicará a {count} producto{count !== 1 ? "s" : ""}.
+          </p>
+        </div>
+
+        {field === "publicar" ? (
+          <select
+            value={value}
+            onChange={(e) => onValueChange(e.target.value)}
+            className="w-full rounded-lg border border-border bg-background px-2 py-1.5 text-xs"
+          >
+            <option value="">Elegir…</option>
+            <option value="1">Publicar en la tienda</option>
+            <option value="0">Quitar de la tienda</option>
+          </select>
+        ) : (
+          <select
+            value={value}
+            onChange={(e) => onValueChange(e.target.value)}
+            className="w-full rounded-lg border border-border bg-background px-2 py-1.5 text-xs"
+          >
+            <option value="">Elegir…</option>
+            {lista.map((o) => (
+              <option key={o.id} value={o.id}>{o.name}</option>
+            ))}
+          </select>
+        )}
+
+        {field === "proveedor" && conProveedor > 0 && (
+          <div className="rounded-lg border border-warning/40 bg-warning/5 p-3 flex items-start gap-2">
+            <AlertTriangle className="h-3.5 w-3.5 text-warning shrink-0 mt-0.5" />
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              <span className="font-semibold text-foreground">
+                {conProveedor} de los {count} seleccionados ya tienen proveedor.
+              </span>{" "}
+              El proveedor nuevo los reemplaza: se pierden los precios y plazos que tengan cargados
+              en Odoo. Esto no se puede deshacer.
+            </p>
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={onCancel}
+            className="rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-secondary"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={!value || pending}
+            className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground disabled:opacity-50"
+          >
+            {pending ? "Aplicando…" : "Aplicar"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

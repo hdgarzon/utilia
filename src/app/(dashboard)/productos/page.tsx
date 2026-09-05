@@ -4,7 +4,7 @@ import Link from "next/link";
 import { AlertTriangle } from "lucide-react";
 import { listTemplates, getCatalogOptions, PAGE_SIZE } from "@/lib/products/catalog";
 import { CatalogFilters } from "@/components/products/CatalogFilters";
-import { CatalogTable } from "@/components/products/CatalogTable";
+import { CatalogWorkspace } from "@/components/products/CatalogWorkspace";
 import type { CatalogFilters as Filters, CatalogProblem, ProductType } from "@/lib/products/types";
 
 const PROBLEMAS_VALIDOS: CatalogProblem[] = [
@@ -103,7 +103,7 @@ export default async function ProductosPage({
       <h1 className="text-xl font-bold">Productos</h1>
 
       <CatalogFilters options={options} total={data.total} />
-      <CatalogTable rows={data.rows} />
+      <CatalogWorkspace rows={data.rows} options={options} />
 
       {totalPaginas > 1 && (
         <div className="flex items-center justify-between text-xs">

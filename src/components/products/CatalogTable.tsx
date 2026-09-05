@@ -10,7 +10,19 @@ const TIPO_LABEL: Record<CatalogRow["type"], string> = {
   combo: "Combo",
 };
 
-export function CatalogTable({ rows }: { rows: CatalogRow[] }) {
+export function CatalogTable({
+  rows,
+  selected,
+  onToggle,
+  onToggleAll,
+}: {
+  rows: CatalogRow[];
+  selected: Set<number>;
+  onToggle: (id: number) => void;
+  onToggleAll: () => void;
+}) {
+  const todosMarcados = rows.length > 0 && rows.every((r) => selected.has(r.templateId));
+
   if (rows.length === 0) {
     return (
       <div className="rounded-xl border border-border bg-card p-10 text-center">
@@ -25,6 +37,15 @@ export function CatalogTable({ rows }: { rows: CatalogRow[] }) {
       <table className="w-full text-xs">
         <thead className="text-muted-foreground border-b border-border">
           <tr>
+            <th className="py-2 px-3 w-8">
+              <input
+                type="checkbox"
+                checked={todosMarcados}
+                onChange={onToggleAll}
+                aria-label="Seleccionar toda la página"
+                className="h-3.5 w-3.5 accent-primary"
+              />
+            </th>
             <th className="py-2 px-3 text-left font-medium">Producto</th>
             <th className="py-2 px-3 text-left font-medium">Categoría</th>
             <th className="py-2 px-3 text-left font-medium">Proveedor</th>
@@ -37,6 +58,15 @@ export function CatalogTable({ rows }: { rows: CatalogRow[] }) {
         <tbody>
           {rows.map((r) => (
             <tr key={r.templateId} className="border-b border-border last:border-0 hover:bg-secondary/40">
+              <td className="py-2 px-3">
+                <input
+                  type="checkbox"
+                  checked={selected.has(r.templateId)}
+                  onChange={() => onToggle(r.templateId)}
+                  aria-label={`Seleccionar ${r.name}`}
+                  className="h-3.5 w-3.5 accent-primary"
+                />
+              </td>
               <td className="py-2 px-3">
                 <div className="flex items-center gap-2">
                   {r.imageThumb ? (
