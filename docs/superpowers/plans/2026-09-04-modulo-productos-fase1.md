@@ -1963,7 +1963,9 @@ export function BulkActionBar({
             {BULK_LABEL[f]}
           </button>
         ))}
-        <button onClick={onDone} className="text-xs text-muted-foreground hover:text-foreground px-1">
+        {/* Envuelto y no `onClick={onDone}`: React pasa el evento de clic como
+            primer argumento, que no encaja con `conservarIds?: number[]`. */}
+        <button onClick={() => onDone()} className="text-xs text-muted-foreground hover:text-foreground px-1">
           Limpiar
         </button>
       </div>
