@@ -295,7 +295,7 @@ Los componentes de la hoja se mantienen chicos a propósito: `ImportSheetRow` y 
 
 ## Pruebas
 
-El repo tiene suite de pruebas automatizadas (vitest): 32 pruebas en 4 archivos, incluida la barrera de escritura. Además de correrla, hay que verificar manualmente, con `npm run build` y `npm run lint`, en orden:
+El repo tiene suite de pruebas automatizadas (vitest): 33 pruebas en 4 archivos, incluida la barrera de escritura. Además de correrla, hay que verificar manualmente, con `npm run build` y `npm run lint`, en orden:
 
 1. **La barrera de inventario, primero.** `assertWritable` rechaza `qty_available`, `inventory_quantity`, `free_qty` y cualquier campo no listado. Es la garantía central del diseño y se prueba antes que nada.
 2. Validación por celda: categoría inexistente, impuesto inexistente, servicio con rastreo, precio negativo.
@@ -388,3 +388,28 @@ nuevos, hay que mirarlos en Odoo antes de concluir nada. La garantía dura no
 la da este script sino la lista blanca de `write-guard.ts`, que no puede
 emitir un campo de inventario, y su prueba unitaria — verificada borrando la
 llamada a `assertWritable` y comprobando que la prueba falla.
+
+## Pendientes conocidos (no bloquean el merge)
+
+La revisión final de rama los clasificó como no bloqueantes. Ninguno toca la
+barrera de inventario ni la integridad de los datos.
+
+1. **Carrera en la caja de búsqueda** (`src/components/products/CatalogFilters.tsx`).
+   Si el usuario sigue escribiendo después de pulsar Enter pero antes de que la
+   navegación resuelva, la resincronización sobrescribe lo tecleado en el
+   intervalo. Solo cliente, se recupera volviendo a escribir. La ventana no es
+   despreciable porque la página es `force-dynamic` contra un Odoo con límite
+   de peticiones. Arreglo sugerido: no resincronizar mientras el input tiene el
+   foco, o recordar el último valor enviado en vez de fiarse solo de la URL.
+
+2. **El foco no vuelve al botón que abrió el diálogo** (`BulkActionDialog.tsx`).
+   Ahora el diálogo recibe el foco al abrirse —eso era el arreglo— pero al
+   cerrarse el foco queda en `<body>` en vez de volver al disparador. Molesta
+   solo a quien navega con teclado.
+
+3. **`parseFilters` / `paginaValida` / `qs` siguen sin pruebas**
+   (`src/app/(dashboard)/productos/page.tsx`). Son funciones puras que procesan
+   parámetros de URL —entrada no confiable— y ya acumulan tres defectos
+   encontrados en revisión. No se pueden probar donde están, dentro de un
+   server component. Extraerlas a `src/lib/products/query.ts` la próxima vez
+   que se toquen.
