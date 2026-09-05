@@ -313,3 +313,20 @@ El repo no tiene suite de pruebas automatizadas; la verificación es manual más
 | Proveedor en masa | **Reemplazar** el existente, con aviso de cuántos se pierden | Agregar sin borrar; decidir en el momento |
 | Origen del listado | Odoo en vivo + enriquecido con `ProductInsight` | Tabla espejo en Postgres con sync propio |
 | Costo (`standard_price`) | Solo al crear | Editable en masa (dispara revalorización) |
+
+## Verificación de la barrera (Fase 1)
+
+Ejecutada el 2026-09-05, tras aplicar las cinco acciones masivas (categoría
+interna, categoría de ecommerce, publicar/quitar de la tienda, impuesto de
+compra y proveedor) sobre 10 productos reales de producción, elegidos con el
+filtro "Sin proveedor" para poder ejercitar también la acción de proveedor sin
+pisar uno existente: `qty_available` sin cambios en las 1.602 plantillas, y
+cero movimientos de `stock.move` nuevos (0 antes, 0 después). La barrera se
+comporta como está diseñada.
+
+Los 10 productos se restauraron a sus valores originales de `categ_id`,
+`is_published`, `public_categ_ids`, `supplier_taxes_id` y `seller_ids`
+inmediatamente después de la prueba, usando el mismo camino de escritura de
+la app (`updateTemplates`, con la barrera de por medio). Una relectura
+posterior de los 10 productos confirmó una coincidencia exacta con los
+valores guardados antes de tocarlos: cero diferencias.

@@ -22,7 +22,8 @@
     "co:unspsc": "tsx --env-file=.env.local scripts/co-edi-unspsc.ts",
     "co:partners": "tsx --env-file=.env.local scripts/co-edi-partners.ts",
     "backfill": "tsx --env-file=.env.local scripts/backfill-history.ts",
-    "check:catalog": "tsx --env-file=.env.local scripts/check-catalog.ts"
+    "check:catalog": "tsx --env-file=.env.local scripts/check-catalog.ts",
+    "verify:inventario": "tsx --env-file=.env.local scripts/verify-inventario.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.56",
