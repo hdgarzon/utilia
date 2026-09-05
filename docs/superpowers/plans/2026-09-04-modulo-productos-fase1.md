@@ -2285,7 +2285,7 @@ Registrarlo en `package.json` junto a los otros scripts de diagnostico:
 ```
 
 Run: `npm run verify:inventario antes`
-Expected: `Foto guardada: 1574 productos, N movimientos hoy.`
+Expected: `Foto guardada: N plantillas, M ajustes de inventario el AAAA-MM-DD.`
 
 - [ ] **Step 2: Ejercitar todas las acciones masivas**
 
@@ -2295,9 +2295,9 @@ En `/productos`, sobre **al menos 20 productos seleccionados**, aplicar una tras
 
 Run: `npm run verify:inventario despues`
 
-Expected:
-- `OK: ninguna cantidad cambio.`
-- El conteo de movimientos de stock del día debe ser **idéntico** al de la foto.
+Expected: `OK: cero ajustes de inventario nuevos sobre N plantillas comparadas.` y salida con código 0.
+
+Si entre las dos fotos la tienda vendió algo, el script lo reporta como movimiento normal del negocio y el veredicto sigue siendo OK — esa es justamente la diferencia entre contar ajustes y contar movimientos.
 
 Si alguna cantidad cambió o aparecieron movimientos nuevos, es un fallo bloqueante: hay que encontrar por dónde se escapó la escritura antes de seguir. La causa más probable sería un campo agregado a `WRITABLE_FIELDS` sin pensarlo.
 
