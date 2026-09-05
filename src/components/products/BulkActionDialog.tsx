@@ -47,13 +47,26 @@ export function BulkActionDialog({
             : [];
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" onClick={onCancel}>
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4"
+      // Mientras la escritura esta en vuelo, ni el fondo ni Cancelar cierran:
+      // cerrar NO cancela nada (la accion sigue corriendo en el servidor) y
+      // dejaria al usuario creyendo que freno un cambio irreversible.
+      onClick={pending ? undefined : onCancel}
+      onKeyDown={(e) => {
+        if (e.key === "Escape" && !pending) onCancel();
+      }}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="bulk-dialog-titulo"
+      tabIndex={-1}
+    >
       <div
         className="w-full max-w-md rounded-xl border border-border bg-card p-5 space-y-4"
         onClick={(e) => e.stopPropagation()}
       >
         <div>
-          <h2 className="text-sm font-semibold">{BULK_LABEL[field]}</h2>
+          <h2 id="bulk-dialog-titulo" className="text-sm font-semibold">{BULK_LABEL[field]}</h2>
           <p className="text-xs text-muted-foreground mt-0.5">
             Se aplicará a {count} producto{count !== 1 ? "s" : ""}.
           </p>
@@ -63,6 +76,7 @@ export function BulkActionDialog({
           <select
             value={value}
             onChange={(e) => onValueChange(e.target.value)}
+            aria-label={BULK_LABEL[field]}
             className="w-full rounded-lg border border-border bg-background px-2 py-1.5 text-xs"
           >
             <option value="">Elegir…</option>
@@ -73,6 +87,7 @@ export function BulkActionDialog({
           <select
             value={value}
             onChange={(e) => onValueChange(e.target.value)}
+            aria-label={BULK_LABEL[field]}
             className="w-full rounded-lg border border-border bg-background px-2 py-1.5 text-xs"
           >
             <option value="">Elegir…</option>
@@ -98,7 +113,8 @@ export function BulkActionDialog({
         <div className="flex justify-end gap-2">
           <button
             onClick={onCancel}
-            className="rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-secondary"
+            disabled={pending}
+            className="rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-secondary disabled:opacity-50"
           >
             Cancelar
           </button>

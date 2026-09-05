@@ -64,7 +64,17 @@ export function CatalogWorkspace({
       <BulkActionBar
         seleccion={[...selected.values()]}
         options={options}
-        onDone={() => setSelected(new Map())}
+        onDone={(conservarIds) =>
+          setSelected((prev) => {
+            if (!conservarIds || conservarIds.length === 0) return new Map();
+            const next = new Map<number, SeleccionItem>();
+            for (const id of conservarIds) {
+              const item = prev.get(id);
+              if (item) next.set(id, item);
+            }
+            return next;
+          })
+        }
       />
     </>
   );

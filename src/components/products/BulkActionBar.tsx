@@ -17,7 +17,7 @@ export function BulkActionBar({
 }: {
   seleccion: SeleccionItem[];
   options: CatalogOptions;
-  onDone: () => void;
+  onDone: (conservarIds?: number[]) => void;
 }) {
   const router = useRouter();
   const [field, setField] = useState<BulkField | null>(null);
@@ -59,6 +59,13 @@ export function BulkActionBar({
     let res;
     try {
       res = await applyBulkChange({ ids: selectedIds, ...patch });
+    } catch (err) {
+      // La server action misma no llego (red caida, deploy a mitad). Sin este
+      // catch la excepcion se pierde: el dialogo queda abierto, el boton
+      // habilitado y el usuario sin ninguna señal de que no paso nada.
+      console.error("[productos] la accion masiva no llego al servidor:", err);
+      toast.error("No se pudo contactar al servidor. Revisa la conexion e intenta de nuevo.");
+      return;
     } finally {
       setSubmitting(false);
     }
@@ -76,13 +83,16 @@ export function BulkActionBar({
         `${res.okCount} aplicados, ${fallidos.length} fallaron: ${fallidos
           .slice(0, 3)
           .map((f) => `${nombrePorId.get(f.id) ?? `#${f.id}`}: ${f.error}`)
-          .join(" · ")}${fallidos.length > 3 ? "…" : ""}`,
+          .join(" · ")}${fallidos.length > 3 ? "…" : ""}. Los que fallaron siguen seleccionados.`,
         { duration: 10_000 }
       );
     }
 
     setField(null);
-    onDone();
+    // Los que fallaron se conservan seleccionados: el toast solo alcanza a
+    // nombrar tres y caduca, asi que sin esto el usuario no tendria forma de
+    // volver a los que faltan sin re-auditar el catalogo a mano.
+    onDone(fallidos.length > 0 ? fallidos.map((f) => f.id) : undefined);
     startTransition(() => router.refresh());
   }
 
@@ -102,7 +112,7 @@ export function BulkActionBar({
             {BULK_LABEL[f]}
           </button>
         ))}
-        <button onClick={onDone} className="text-xs text-muted-foreground hover:text-foreground px-1">
+        <button onClick={() => onDone()} className="text-xs text-muted-foreground hover:text-foreground px-1">
           Limpiar
         </button>
       </div>

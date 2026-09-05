@@ -27,7 +27,12 @@ async function requireSession() {
  */
 const bulkSchema = z
   .object({
-    ids: z.array(z.number().int().positive()).min(1).max(500),
+    ids: z
+      .array(z.number().int().positive())
+      // Mensajes propios: los de Zod salen en ingles y esta app es toda en
+      // español. El de 500 ademas tiene que decir QUE hacer, no solo que no.
+      .min(1, { message: "No hay productos seleccionados" })
+      .max(500, { message: "Maximo 500 productos por operacion. Filtra y aplica en tandas." }),
     categoryId: z.number().int().positive().optional(),
     publicCategoryIds: z.array(z.number().int().positive()).optional(),
     isPublished: z.boolean().optional(),
