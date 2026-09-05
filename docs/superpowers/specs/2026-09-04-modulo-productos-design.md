@@ -320,22 +320,39 @@ Ejecutada el 2026-09-05, tras aplicar las cinco acciones masivas (categoría
 interna, categoría de ecommerce, publicar/quitar de la tienda, impuesto de
 compra y proveedor) sobre 10 productos reales de producción, elegidos con el
 filtro "Sin proveedor" para poder ejercitar también la acción de proveedor sin
-pisar uno existente: `qty_available` sin cambios en las 1.602 plantillas
-activas, y cero movimientos de `stock.move` nuevos (0 antes, 0 después). La
-barrera se comporta como está diseñada.
+pisar uno existente.
 
-**Alcance real de esa corrida.** El verificador usado entonces leía solo
-plantillas activas, así que las ~998 archivadas quedaron fuera de la
-comparación de cantidades. La conclusión se sostiene igual, porque el conteo
-de `stock.move` **no** filtra por `active`: un movimiento sobre cualquier
-producto, archivado incluido, habría aparecido allí, y no apareció. Aun así,
-el script se endureció después para leer ambos estados — hoy compara 2.600
-plantillas — junto con paginado, fecha de Colombia y un veredicto que siempre
-dice cuántas comparó. Una corrida futura cubre el catálogo completo.
+**Resultado:** `qty_available` sin cambios en las plantillas comparadas, y
+**cero ajustes de inventario** (`stock.move` con `is_inventory = true`) en todo
+el día de la prueba.
 
 Los 10 productos se restauraron a sus valores originales de `categ_id`,
 `is_published`, `public_categ_ids`, `supplier_taxes_id` y `seller_ids`
-inmediatamente después de la prueba, usando el mismo camino de escritura de
-la app (`updateTemplates`, con la barrera de por medio). Una relectura
-posterior de los 10 productos confirmó una coincidencia exacta con los
-valores guardados antes de tocarlos: cero diferencias.
+inmediatamente después, usando el mismo camino de escritura de la app
+(`updateTemplates`, con la barrera de por medio). Una relectura posterior
+confirmó coincidencia exacta con los valores guardados: cero diferencias.
+
+### Por qué se mide en ajustes y no en movimientos
+
+La primera versión del verificador comparaba el total de `stock.move` del día
+y reportó "0 antes, 0 después". Ese número era engañoso por dos motivos:
+
+1. Calculaba la fecha en UTC, no en Colombia, así que después de las 7pm
+   locales medía una ventana casi vacía.
+2. Aun bien calculada, la cifra no sirve: **la tienda genera movimientos todo
+   el día**. Solo entre el 3 y el 5 de septiembre hubo 249, casi todos ventas
+   de POS y recepciones de mercancía. Un verificador que exija "cero
+   movimientos" da FALLO en cualquier día hábil, por razones ajenas a Utilia.
+
+La señal correcta es el **ajuste de inventario**: es lo único que Utilia
+crearía si la barrera fallara, y una venta o una entrada no lo llevan. El
+catálogo registra 7.762 ajustes históricos —el negocio corrige inventario a
+mano con regularidad, 18 solo en septiembre— y **cero el día de la prueba**.
+
+**Limitación conocida:** la API de Utilia autentica con la misma cuenta de
+Odoo que usa el POS (uid 2), así que `create_uid` no distingue un ajuste
+hecho por la app de uno hecho a mano. Si una corrida futura reporta ajustes
+nuevos, hay que mirarlos en Odoo antes de concluir nada. La garantía dura no
+la da este script sino la lista blanca de `write-guard.ts`, que no puede
+emitir un campo de inventario, y su prueba unitaria — verificada borrando la
+llamada a `assertWritable` y comprobando que la prueba falla.
