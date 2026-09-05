@@ -2,7 +2,7 @@
    cuenta los movimientos de stock del dia. Solo lectura contra Odoo.
    Uso: npm run verify:inventario antes  ...aplicar cambios...  npm run verify:inventario despues */
 import { odooRpc } from "../src/lib/odoo";
-import { colombiaToday } from "../src/lib/timezone";
+import { colombiaToday, colombiaDayString } from "../src/lib/timezone";
 import fs from "node:fs";
 
 const SNAPSHOT = "/tmp/utilia-inventario.json";
@@ -99,19 +99,35 @@ async function leerPlantillas(): Promise<Fila[]> {
   const nuevas = plantillas.length - comparadas;
   const huboAjustes = ajustes !== previo.ajustes;
 
+  // `hoy` se recalcula en cada corrida (proceso nuevo). Si "antes" y
+  // "despues" cayeron en dias Colombia distintos -el proceso quedo corriendo
+  // de un dia para otro, o alguien corrio "antes" ayer y "despues" hoy- cada
+  // conteo de ajustes mide una ventana distinta y el delta no dice nada.
+  const diaPrevio = previo.tomadaEn ? colombiaDayString(new Date(previo.tomadaEn)) : null;
+  const diasDistintos = diaPrevio !== null && diaPrevio !== hoy;
+
   // Se imprime SIEMPRE cuantas se compararon: sin ese numero, un "OK" seria
   // indistinguible de una lectura vacia que no comparo nada.
   console.log(`Foto previa: ${previo.tomadaEn ?? "(sin fecha)"}`);
+  if (diasDistintos) {
+    console.log(
+      `AVISO: la foto 'antes' es del dia Colombia ${diaPrevio} y esta corrida ('despues') es del ${hoy}. ` +
+        "El conteo de ajustes de cada lado mide un dia distinto -- la comparacion no es valida. " +
+        "Corre 'antes' de nuevo el mismo dia que 'despues'."
+    );
+  }
   console.log(
     `Comparadas: ${comparadas} plantillas (${nuevas} nuevas desde la foto, ${desaparecidas.length} desaparecidas)`
   );
-  console.log(`Ajustes de inventario el ${hoy}: antes ${previo.ajustes} -> ahora ${ajustes}`);
+  console.log(`Ajustes de inventario: antes (${diaPrevio ?? "?"}) ${previo.ajustes} -> ahora (${hoy}) ${ajustes}`);
 
   // El veredicto lo decide `huboAjustes`, no los cambios de cantidad: con la
   // tienda abierta las cantidades cambian solas por cada venta, y tratar eso
   // como fallo convertiria la herramienta en ruido. Un cambio de cantidad SIN
-  // ajuste nuevo es una venta; con ajuste nuevo, hay que mirar.
-  if (!huboAjustes && desaparecidas.length === 0) {
+  // ajuste nuevo es una venta; con ajuste nuevo, hay que mirar. Un cruce de
+  // dia tampoco es OK aunque huboAjustes de casualidad false: la comparacion
+  // en si no es valida.
+  if (!huboAjustes && desaparecidas.length === 0 && !diasDistintos) {
     console.log(
       `OK: cero ajustes de inventario nuevos sobre ${comparadas} plantillas comparadas.`
     );

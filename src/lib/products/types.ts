@@ -34,9 +34,6 @@ export interface CatalogRow {
   purchaseTaxIds: number[];
   supplierName: string | null;
   imageThumb: string | null;
-  /** Enriquecido desde ProductInsight; null si el producto no esta en Postgres. */
-  daysOfStock: number | null;
-  rotationDays: number | null;
 }
 
 export interface CatalogOptions {

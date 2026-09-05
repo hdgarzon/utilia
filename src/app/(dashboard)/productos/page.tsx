@@ -1,4 +1,9 @@
 export const dynamic = "force-dynamic";
+// Sin esto la funcion serverless de esta ruta corre con el limite por
+// defecto de Vercel (muy por debajo de 300s): el comentario del tope de 500
+// ids en actions.ts asume este presupuesto. Mismo patron que
+// api/sync/route.ts y api/recommendations/generate/route.ts.
+export const maxDuration = 300;
 
 import Link from "next/link";
 import { AlertTriangle } from "lucide-react";

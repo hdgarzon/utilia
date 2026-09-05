@@ -85,7 +85,7 @@ El listado **lee en vivo de Odoo**, no de Postgres. Razones:
 listTemplates(filters, page) → { rows: CatalogRow[], total: number }
 ```
 
-Construye el dominio desde los filtros (`[["categ_id","=",id], ["is_published","=",false]]`), pide una página con `search_read`, y **enriquece** cada fila con `ProductInsight` desde Postgres (rotación, días de stock, venta diaria) haciendo `findMany` por `odooTemplateId in [...]`. Postgres aporta la analítica que Odoo no calcula barato; Odoo aporta la verdad del catálogo.
+Construye el dominio desde los filtros (`[["categ_id","=",id], ["is_published","=",false]]`) y pide una página con `search_read`. Hoy **no** enriquece con `ProductInsight`: esa analítica (rotación, días de stock, venta diaria) solo tiene sentido el día que el listado sume una columna que la necesite, y entra en ese mismo cambio — no antes. La decisión de leer en vivo de Odoo no depende de ese enriquecimiento futuro: se sostiene sola por las tres razones de arriba (campos a nivel de plantilla, verdad inmediata tras escribir, filtrado del lado de Odoo).
 
 `getCatalogOptions()` trae las listas de referencia: categorías internas, categorías web, impuestos de compra y proveedores. Alimenta tanto los filtros como los selectores de la hoja de carga. La página la llama **una sola vez por request**, en el mismo `Promise.all` que el listado, y pasa el resultado como prop — por eso no lleva memoización. Si algún día la llamara un segundo componente, ahí sí valdría envolverla en `cache()` de React.
 
@@ -117,7 +117,9 @@ const WRITABLE_FIELDS = new Set([
 const FORBIDDEN_MODELS = new Set(["stock.quant", "stock.move", "stock.inventory"]);
 ```
 
-`assertWritable(fields)` lanza si aparece un campo fuera de la lista. `qty_available`, `inventory_quantity` y `free_qty` no están en `WRITABLE_FIELDS`, así que quedan bloqueados por construcción; el `FORBIDDEN_MODELS` cierra la vía de escribir el modelo directamente.
+`assertWritable(fields)` lanza si aparece un campo fuera de la lista. `qty_available`, `inventory_quantity` y `free_qty` no están en `WRITABLE_FIELDS`, así que quedan bloqueados por construcción.
+
+`assertModelAllowed` es una barrera más angosta de lo que parece a primera vista: hoy se llama una sola vez, dentro de `updateTemplates`, con la constante `MODEL = "product.template"` del propio módulo — la llamada es una tautología en tiempo de ejecución, porque `MODEL` nunca cambia en el camino de escritura actual. Protege contra que alguien edite esa constante por descuido en el futuro, no contra que otro módulo del código base llame directo `odooRpc.executeKw("stock.quant", …)`; ese caso queda fuera de lo que esta función puede impedir.
 
 API:
 
@@ -126,7 +128,9 @@ createTemplate(input: NewProductInput): Promise<number>          // devuelve odo
 updateTemplates(ids: number[], patch: TemplatePatch): Promise<BulkResult>
 ```
 
-`WRITABLE_FIELDS` es una barrera de **campo**, no de operación: `standard_price` está en la lista porque `createTemplate` lo escribe. La exclusión del costo en la edición masiva (§ Corolario) se hace en el **tipo** `TemplatePatch`, que solo admite `categ_id`, `public_categ_ids`, `is_published`, `supplier_taxes_id` y `seller_ids`. Son dos barreras distintas y ambas hacen falta.
+`WRITABLE_FIELDS` contiene exactamente los cinco campos de Odoo que el módulo escribe **hoy**: `categ_id`, `is_published`, `public_categ_ids`, `supplier_taxes_id` y `seller_ids`. `standard_price` **no** está en la lista — no tiene escritor todavía.
+
+`TemplatePatch` es el tipo de **intención a nivel de app**, no de Odoo: usa nombres propios (`categoryId`, `publicCategoryIds`, `isPublished`, `purchaseTaxIds`, `supplierPartnerId`), y es `toOdooValues` quien los traduce a los nombres de campo de Odoo antes de que el resultado pase por `assertWritable`. Los campos de creación —incluido `standard_price`— entran junto con `createTemplate`, en el mismo cambio de Fase 2 que los escribe: hasta entonces no tienen lugar ni en `WRITABLE_FIELDS` ni en `TemplatePatch`.
 
 `updateTemplates` procesa en lotes de 50 y **captura el error de cada lote por separado**, devolviendo `{ ok: number[], failed: Array<{id, error}> }`. Un producto archivado o con una restricción de Odoo no puede tumbar la operación entera.
 
@@ -291,7 +295,7 @@ Los componentes de la hoja se mantienen chicos a propósito: `ImportSheetRow` y 
 
 ## Pruebas
 
-El repo no tiene suite de pruebas automatizadas; la verificación es manual más `npm run build` y `npm run lint`. Lo que hay que verificar, en orden:
+El repo tiene suite de pruebas automatizadas (vitest): 32 pruebas en 4 archivos, incluida la barrera de escritura. Además de correrla, hay que verificar manualmente, con `npm run build` y `npm run lint`, en orden:
 
 1. **La barrera de inventario, primero.** `assertWritable` rechaza `qty_available`, `inventory_quantity`, `free_qty` y cualquier campo no listado. Es la garantía central del diseño y se prueba antes que nada.
 2. Validación por celda: categoría inexistente, impuesto inexistente, servicio con rastreo, precio negativo.
@@ -311,43 +315,71 @@ El repo no tiene suite de pruebas automatizadas; la verificación es manual más
 | Imagen | Link **y** archivo | Solo link; solo archivo |
 | Imágenes en el borrador | Se guardan, con topes de 1920px / 500 KB / 200 filas | No guardar archivos, solo links |
 | Proveedor en masa | **Reemplazar** el existente, con aviso de cuántos se pierden | Agregar sin borrar; decidir en el momento |
-| Origen del listado | Odoo en vivo + enriquecido con `ProductInsight` | Tabla espejo en Postgres con sync propio |
+| Origen del listado | Odoo en vivo (el enriquecimiento con `ProductInsight` queda para cuando haya una columna que lo necesite) | Tabla espejo en Postgres con sync propio |
 | Costo (`standard_price`) | Solo al crear | Editable en masa (dispara revalorización) |
 
 ## Verificación de la barrera (Fase 1)
 
-Ejecutada el 2026-09-05, tras aplicar las cinco acciones masivas (categoría
-interna, categoría de ecommerce, publicar/quitar de la tienda, impuesto de
-compra y proveedor) sobre 10 productos reales de producción, elegidos con el
-filtro "Sin proveedor" para poder ejercitar también la acción de proveedor sin
-pisar uno existente.
+Ejecutada el 2026-09-05: las cinco acciones masivas (categoría interna,
+categoría de ecommerce, publicar/quitar de la tienda, impuesto de compra y
+proveedor) se aplicaron sobre 10 productos reales de producción, elegidos
+con el filtro "Sin proveedor" para poder ejercitar también la acción de
+proveedor sin pisar uno existente. Esta sección junta hechos de **dos
+corridas distintas del verificador** —la original y la corregida—, así que
+van por separado para no atribuirle a una lo que solo probó la otra.
 
-**Resultado:** `qty_available` sin cambios en las plantillas comparadas, y
-**cero ajustes de inventario** (`stock.move` con `is_inventory = true`) en todo
-el día de la prueba.
+**Lo que sí bracketó la escritura real** (corrida original, con la primera
+versión de `scripts/verify-inventario.ts`): una foto de `qty_available`
+antes de las seis acciones y otra después, sobre las **1.602 plantillas
+activas**, sin diferencias. Esa misma corrida reportó además "0 movimientos
+antes, 0 después", pero esa cifra puntual es inservible: el script calculaba
+la fecha en UTC, no en Colombia, así que después de las 7pm locales su
+ventana quedaba casi vacía. Que la escritura ocurrió y fue benigna quedó
+confirmado por una vía independiente del script: lectura directa en Odoo
+justo después de las seis acciones (los 10 productos con exactamente los
+valores esperados) y, tras restaurar los cinco campos a su valor original
+por el mismo camino de escritura de la app (`updateTemplates`, con la
+barrera de por medio), una relectura campo por campo con cero diferencias
+contra la foto tomada antes de tocar nada.
 
-Los 10 productos se restauraron a sus valores originales de `categ_id`,
-`is_published`, `public_categ_ids`, `supplier_taxes_id` y `seller_ids`
-inmediatamente después, usando el mismo camino de escritura de la app
-(`updateTemplates`, con la barrera de por medio). Una relectura posterior
-confirmó coincidencia exacta con los valores guardados: cero diferencias.
+**Lo que el verificador corregido todavía no ha probado:** después de esa
+prueba, `scripts/verify-inventario.ts` se corrigió — fecha Colombia,
+paginado, plantillas archivadas incluidas, y la métrica de "movimientos
+totales" cambiada a "ajustes de inventario" (`is_inventory = true`). Las
+corridas que validaron esas correcciones se hicieron **a propósito sin
+ninguna acción masiva de por medio** — solo para confirmar que el script
+cuenta bien —, y por eso ven **2.600 plantillas** (activas + archivadas,
+contra las 1.602 solo-activas de la corrida original) con 0 ajustes antes y
+0 después. **El verificador en su forma final —el que queda en el
+repo— todavía no ha bracketado una escritura real.** La próxima vez que se
+corra alrededor de una acción masiva de verdad será la primera vez que lo
+haga con la métrica correcta.
+
+Dicho eso, "cero ajustes de inventario el día de la prueba" sigue siendo una
+afirmación sostenida, aunque por un camino indirecto: el conteo de ajustes
+es acumulado desde la medianoche Colombia, no un delta entre dos marcas
+puestas alrededor de la escritura. La foto `antes` de la corrida corregida
+se tomó ese mismo 2026-09-05, después de que las seis acciones originales ya
+se hubieran ejecutado y restaurado — así que su "0 ajustes" ya cubre esa
+ventana. Si las seis acciones originales hubieran generado un ajuste, esta
+foto lo habría mostrado. Esto no reemplaza un bracket dedicado con la
+métrica correcta, pero corrobora con esa métrica lo que la corrida original
+solo pudo sugerir con una métrica rota.
 
 ### Por qué se mide en ajustes y no en movimientos
 
-La primera versión del verificador comparaba el total de `stock.move` del día
-y reportó "0 antes, 0 después". Ese número era engañoso por dos motivos:
-
-1. Calculaba la fecha en UTC, no en Colombia, así que después de las 7pm
-   locales medía una ventana casi vacía.
-2. Aun bien calculada, la cifra no sirve: **la tienda genera movimientos todo
-   el día**. Solo entre el 3 y el 5 de septiembre hubo 249, casi todos ventas
-   de POS y recepciones de mercancía. Un verificador que exija "cero
-   movimientos" da FALLO en cualquier día hábil, por razones ajenas a Utilia.
+La primera versión del verificador comparaba el total de `stock.move` del
+día. Más allá del bug de zona horaria de arriba, la cifra no sirve ni bien
+calculada: **la tienda genera movimientos todo el día**. Solo entre el 3 y
+el 5 de septiembre hubo 249, casi todos ventas de POS y recepciones de
+mercancía. Un verificador que exija "cero movimientos" da FALLO en cualquier
+día hábil, por razones ajenas a Utilia.
 
 La señal correcta es el **ajuste de inventario**: es lo único que Utilia
 crearía si la barrera fallara, y una venta o una entrada no lo llevan. El
 catálogo registra 7.762 ajustes históricos —el negocio corrige inventario a
-mano con regularidad, 18 solo en septiembre— y **cero el día de la prueba**.
+mano con regularidad, 18 solo en septiembre— y cero en las corridas del
+verificador corregido.
 
 **Limitación conocida:** la API de Utilia autentica con la misma cuenta de
 Odoo que usa el POS (uid 2), así que `create_uid` no distingue un ajuste

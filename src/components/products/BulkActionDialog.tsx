@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { AlertTriangle } from "lucide-react";
 import type { CatalogOptions } from "@/lib/products/types";
 
@@ -46,8 +47,19 @@ export function BulkActionDialog({
             ? options.suppliers
             : [];
 
+  const ref = useRef<HTMLDivElement>(null);
+
+  // aria-modal="true" declara el fondo inerte, pero eso no mueve el foco por
+  // si solo: sin esto, Escape no hace nada en el primer intento tras abrir
+  // con el mouse (el foco sigue en el boton que abrio el dialogo) y Tab
+  // puede sacar el foco hacia el fondo que se supone bloqueado.
+  useEffect(() => {
+    ref.current?.focus();
+  }, []);
+
   return (
     <div
+      ref={ref}
       className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4"
       // Mientras la escritura esta en vuelo, ni el fondo ni Cancelar cierran:
       // cerrar NO cancela nada (la accion sigue corriendo en el servidor) y

@@ -24,7 +24,19 @@ export function CatalogFilters({ options, total }: { options: CatalogOptions; to
   const router = useRouter();
   const params = useSearchParams();
   const [pending, startTransition] = useTransition();
-  const [query, setQuery] = useState(params.get("q") ?? "");
+  const paramQuery = params.get("q") ?? "";
+  const [query, setQuery] = useState(paramQuery);
+  // El input es local para no navegar en cada tecla (la busqueda se dispara
+  // al enviar el formulario, ver mas abajo). Pero si el "q" de la URL cambia
+  // por otra via -- "Limpiar", Atras/Adelante del navegador -- hay que
+  // re-sincronizar, o el input se queda mostrando texto viejo mientras la
+  // lista ya cambio. Se ajusta durante el render, no en un efecto, para no
+  // pintar un frame de mas con el valor desincronizado.
+  const [prevParamQuery, setPrevParamQuery] = useState(paramQuery);
+  if (paramQuery !== prevParamQuery) {
+    setPrevParamQuery(paramQuery);
+    setQuery(paramQuery);
+  }
 
   // Cada cambio de filtro vuelve a la pagina 1: mantener el offset viejo
   // mostraria una pagina vacia cuando el filtro nuevo devuelve menos filas.

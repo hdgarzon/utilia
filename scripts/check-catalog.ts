@@ -13,7 +13,10 @@ import { listTemplates, getCatalogOptions } from "../src/lib/products/catalog";
   })));
 
   const sinImagen = await listTemplates({ problem: "sin_imagen" }, 1);
-  console.log("sin imagen:", sinImagen.total, "(esperado ~43)");
+  // Sin numero fijo a proposito: el catalogo real cambia a diario, asi que
+  // "esperado ~N" queda desactualizado en dias. Deberia ser un puñado de
+  // productos, no cientos -- eso es lo que hay que chequear a ojo aqui.
+  console.log("sin imagen:", sinImagen.total);
 
   const busqueda = await listTemplates({ query: "cuaderno" }, 1);
   console.log("busqueda 'cuaderno':", busqueda.total);

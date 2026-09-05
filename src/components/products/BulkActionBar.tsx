@@ -83,7 +83,7 @@ export function BulkActionBar({
         `${res.okCount} aplicados, ${fallidos.length} fallaron: ${fallidos
           .slice(0, 3)
           .map((f) => `${nombrePorId.get(f.id) ?? `#${f.id}`}: ${f.error}`)
-          .join(" · ")}${fallidos.length > 3 ? "…" : ""}. Los que fallaron siguen seleccionados.`,
+          .join(" · ")}${fallidos.length > 3 ? "…" : "."} Los que fallaron siguen seleccionados.`,
         { duration: 10_000 }
       );
     }

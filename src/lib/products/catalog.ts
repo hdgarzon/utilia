@@ -1,5 +1,4 @@
 import { odooRpc } from "@/lib/odoo";
-import { prisma } from "@/lib/prisma";
 import { buildCatalogDomain } from "./domain";
 import type { CatalogFilters, CatalogOptions, CatalogRow, ProductType } from "./types";
 
@@ -37,8 +36,7 @@ interface RawTemplate {
 }
 
 /**
- * Lee una pagina del catalogo directo de Odoo y la enriquece con la analitica
- * que vive en Postgres.
+ * Lee una pagina del catalogo directo de Odoo.
  *
  * Se lee en vivo y no de una tabla espejo por dos razones: todo lo editable
  * vive en product.template (ProductInsight es a nivel de variante y no guarda
@@ -65,16 +63,9 @@ export async function listTemplates(
 
   // El nombre del proveedor no viene en product.template: seller_ids apunta a
   // product.supplierinfo. Una consulta extra por pagina, no por producto.
-  //
-  // En paralelo: una consulta va a Odoo y la otra a Postgres, no dependen
-  // entre si. Encadenarlas con dos await seguidos seria una cascada gratuita.
-  const [supplierByTemplate, insightByTemplate] = await Promise.all([
-    getSupplierNames(templateIds),
-    getInsights(templateIds),
-  ]);
+  const supplierByTemplate = await getSupplierNames(templateIds);
 
   const rows = raw.map((t): CatalogRow => {
-    const insight = insightByTemplate.get(t.id);
     return {
       templateId: t.id,
       name: t.name,
@@ -90,8 +81,6 @@ export async function listTemplates(
       purchaseTaxIds: t.supplier_taxes_id ?? [],
       supplierName: supplierByTemplate.get(t.id) ?? null,
       imageThumb: t.image_128 ? `data:image/png;base64,${t.image_128}` : null,
-      daysOfStock: insight?.daysOfStock ?? null,
-      rotationDays: insight?.rotationDays ?? null,
     };
   });
 
@@ -122,34 +111,10 @@ async function getSupplierNames(templateIds: number[]): Promise<Map<number, stri
 }
 
 /**
- * Rotacion y cobertura desde ProductInsight, que es por VARIANTE. Una plantilla
- * con varias variantes se resume con la peor cobertura (el minimo daysOfStock),
- * que es la que manda para decidir si hay que reponer.
- */
-async function getInsights(
-  templateIds: number[]
-): Promise<Map<number, { daysOfStock: number; rotationDays: number }>> {
-  const out = new Map<number, { daysOfStock: number; rotationDays: number }>();
-  if (templateIds.length === 0) return out;
-
-  const insights = await prisma.productInsight.findMany({
-    where: { odooTemplateId: { in: templateIds } },
-    select: { odooTemplateId: true, daysOfStock: true, rotationDays: true },
-  });
-
-  for (const i of insights) {
-    if (i.odooTemplateId === null) continue;
-    const prev = out.get(i.odooTemplateId);
-    if (!prev || i.daysOfStock < prev.daysOfStock) {
-      out.set(i.odooTemplateId, { daysOfStock: i.daysOfStock, rotationDays: i.rotationDays });
-    }
-  }
-  return out;
-}
-
-/**
  * Catalogos de referencia para filtros y dialogos. Se piden en paralelo; son
- * listas cortas (24 categorias, 14 web, 20 impuestos, 24 proveedores).
+ * listas cortas (24 categorias, 14 web, decenas de impuestos, 24 proveedores).
+ * Las cifras se mueven con el catalogo real: son para dimensionar, no un
+ * valor esperado de prueba.
  */
 export async function getCatalogOptions(): Promise<CatalogOptions> {
   const [categories, publicCategories, purchaseTaxes, suppliers] = await Promise.all([

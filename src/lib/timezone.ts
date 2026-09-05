@@ -17,6 +17,19 @@ export function colombiaToday(): Date {
   return new Date(Date.UTC(nowCO.getUTCFullYear(), nowCO.getUTCMonth(), nowCO.getUTCDate()));
 }
 
+/**
+ * Dia calendario en Colombia (YYYY-MM-DD) de una fecha cualquiera, no solo
+ * "ahora". Mismo desplazamiento que colombiaToday(), para poder comparar si
+ * dos timestamps -por ejemplo, dos fotos de un verificador- cayeron en el
+ * mismo dia Colombia o no.
+ */
+export function colombiaDayString(date: Date): string {
+  const co = new Date(date.getTime() - COLOMBIA_OFFSET_MS);
+  return new Date(Date.UTC(co.getUTCFullYear(), co.getUTCMonth(), co.getUTCDate()))
+    .toISOString()
+    .slice(0, 10);
+}
+
 /** Año, mes (1-12) y día actuales en Colombia. */
 export function colombiaYearMonthDay(): { year: number; month: number; day: number } {
   const nowCO = new Date(Date.now() - COLOMBIA_OFFSET_MS);

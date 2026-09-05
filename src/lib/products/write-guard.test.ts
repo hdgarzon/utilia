@@ -22,6 +22,17 @@ describe("barrera de inventario", () => {
     }
   });
 
+  it("la lista blanca es exactamente los cinco campos que el modulo escribe", () => {
+    expect(WRITABLE_FIELDS.size).toBe(5);
+    expect([...WRITABLE_FIELDS].sort()).toEqual([
+      "categ_id",
+      "is_published",
+      "public_categ_ids",
+      "seller_ids",
+      "supplier_taxes_id",
+    ]);
+  });
+
   it("prohibe los modelos que mueven stock", () => {
     for (const modelo of ["stock.quant", "stock.move", "stock.inventory"]) {
       expect(() => assertModelAllowed(modelo)).toThrow(/inventario/i);
