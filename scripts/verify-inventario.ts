@@ -57,16 +57,26 @@ async function leerPlantillas(): Promise<Fila[]> {
   // `new Date().toISOString()` ya devuelve el dia siguiente, y las dos fotos
   // medirian ventanas distintas sin avisar (ver src/lib/timezone.ts).
   const hoy = colombiaToday().toISOString().slice(0, 10);
-  const movimientos = await odooRpc.executeKw<number>("stock.move", "search_count", [
-    [["date", ">=", `${hoy} 00:00:00`]],
+  // Solo los AJUSTES de inventario, no todos los movimientos.
+  //
+  // La tienda vende todo el dia: el POS genera decenas de stock.move por
+  // jornada y una entrada de mercancia genera mas. Comparar el total daria
+  // FALLO siempre en horario comercial, por razones que no tienen nada que
+  // ver con Utilia.
+  //
+  // `is_inventory` marca exactamente lo que Utilia crearia si la barrera
+  // fallara: un ajuste de cantidad. Una venta o una recepcion no lo llevan.
+  // Ese contador es la senal honesta, y aguanta con la tienda abierta.
+  const ajustes = await odooRpc.executeKw<number>("stock.move", "search_count", [
+    [["is_inventory", "=", true], ["date", ">=", `${hoy} 00:00:00`]],
   ]);
 
   if (modo === "antes") {
     fs.writeFileSync(
       SNAPSHOT,
-      JSON.stringify({ tomadaEn: new Date().toISOString(), mapa, movimientos })
+      JSON.stringify({ tomadaEn: new Date().toISOString(), mapa, ajustes })
     );
-    console.log(`Foto guardada: ${plantillas.length} plantillas, ${movimientos} movimientos el ${hoy}.`);
+    console.log(`Foto guardada: ${plantillas.length} plantillas, ${ajustes} ajustes de inventario el ${hoy}.`);
     return;
   }
 
@@ -78,7 +88,7 @@ async function leerPlantillas(): Promise<Fila[]> {
   const previo = JSON.parse(fs.readFileSync(SNAPSHOT, "utf8")) as {
     tomadaEn?: string;
     mapa: Record<number, number>;
-    movimientos: number;
+    ajustes: number;
   };
 
   const cambios = plantillas.filter(
@@ -87,7 +97,7 @@ async function leerPlantillas(): Promise<Fila[]> {
   const comparadas = plantillas.filter((p) => previo.mapa[p.id] !== undefined).length;
   const desaparecidas = Object.keys(previo.mapa).filter((id) => mapa[Number(id)] === undefined);
   const nuevas = plantillas.length - comparadas;
-  const movio = movimientos !== previo.movimientos;
+  const huboAjustes = ajustes !== previo.ajustes;
 
   // Se imprime SIEMPRE cuantas se compararon: sin ese numero, un "OK" seria
   // indistinguible de una lectura vacia que no comparo nada.
@@ -95,21 +105,40 @@ async function leerPlantillas(): Promise<Fila[]> {
   console.log(
     `Comparadas: ${comparadas} plantillas (${nuevas} nuevas desde la foto, ${desaparecidas.length} desaparecidas)`
   );
-  console.log(`Movimientos de stock el ${hoy}: antes ${previo.movimientos} -> ahora ${movimientos}`);
+  console.log(`Ajustes de inventario el ${hoy}: antes ${previo.ajustes} -> ahora ${ajustes}`);
 
-  if (cambios.length === 0 && !movio && desaparecidas.length === 0) {
-    console.log(`OK: ninguna de las ${comparadas} cantidades cambio y no aparecieron movimientos.`);
+  // El veredicto lo decide `huboAjustes`, no los cambios de cantidad: con la
+  // tienda abierta las cantidades cambian solas por cada venta, y tratar eso
+  // como fallo convertiria la herramienta en ruido. Un cambio de cantidad SIN
+  // ajuste nuevo es una venta; con ajuste nuevo, hay que mirar.
+  if (!huboAjustes && desaparecidas.length === 0) {
+    console.log(
+      `OK: cero ajustes de inventario nuevos sobre ${comparadas} plantillas comparadas.`
+    );
+    if (cambios.length > 0) {
+      console.log(
+        `   (${cambios.length} cantidades cambiaron por movimiento normal del negocio -- ventas o entradas, sin ajuste de por medio.)`
+      );
+    }
     return;
   }
 
+  if (huboAjustes) {
+    console.log(
+      `FALLO: aparecieron ${ajustes - previo.ajustes} ajustes de inventario nuevos.`
+    );
+    console.log(
+      "   OJO: este script no puede saber si los creo Utilia o alguien a mano en Odoo"
+    );
+    console.log(
+      "   (la API usa la misma cuenta que el POS). Revisa los ajustes del dia en Odoo."
+    );
+  }
   if (cambios.length > 0) {
-    console.log(`FALLO: ${cambios.length} plantillas cambiaron de cantidad:`);
+    console.log(`${cambios.length} plantillas cambiaron de cantidad:`);
     cambios
       .slice(0, 20)
       .forEach((p) => console.log(`   ${p.id} ${p.name}: ${previo.mapa[p.id]} -> ${p.qty_available}`));
-  }
-  if (movio) {
-    console.log(`FALLO: aparecieron ${movimientos - previo.movimientos} movimientos de stock nuevos.`);
   }
   if (desaparecidas.length > 0) {
     console.log(
