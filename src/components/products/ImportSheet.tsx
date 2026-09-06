@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Plus, Save } from "lucide-react";
 import { ImportSheetRow } from "./ImportSheetRow";
+import { ImportToolbar } from "./ImportToolbar";
 import { validateRow, rowIsCreatable } from "@/lib/products/import-schema";
 import { parseDelimited } from "@/lib/products/csv-import";
 import { saveBatch } from "@/app/(dashboard)/productos/cargar/actions";
@@ -137,6 +138,10 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
 
   return (
     <div className="space-y-3">
+      <ImportToolbar
+        options={options}
+        onRows={(nuevas) => setFilas(nuevas.length > 0 ? nuevas : [filaVacia(0)])}
+      />
       <div className="flex items-center gap-2 flex-wrap">
         <input
           value={nombre}
