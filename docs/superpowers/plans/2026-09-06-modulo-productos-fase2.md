@@ -1705,6 +1705,7 @@ export function ImageCell({
 ```tsx
 "use client";
 
+import { useId } from "react";
 import { Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ImageCell } from "./ImageCell";
@@ -1738,7 +1739,15 @@ export function ImportSheetRow({
   // El color solo no basta: quien navega con teclado o lector de pantalla no
   // ve un borde rojo, y `title` casi nunca se anuncia al enfocar. Cada celda
   // con problema se marca invalida y apunta a su mensaje.
-  const idError = (campo: keyof ImportRowInput) => `err-${row.clientId}-${String(campo)}`;
+  //
+  // El prefijo sale de `useId` y NO de `row.clientId`: ese viene de
+  // `crypto.randomUUID()`, que da un valor distinto en el servidor y en el
+  // cliente, y el `id` renderizado provocaria un aviso de hidratacion en cada
+  // carga (la fila vacia ya trae el error "El nombre es obligatorio", asi que
+  // el span se pinta desde el primer render). `useId` existe exactamente para
+  // esto: es estable entre servidor y cliente.
+  const uid = useId();
+  const idError = (campo: keyof ImportRowInput) => `${uid}-${String(campo)}`;
   const ariaCelda = (campo: keyof ImportRowInput) =>
     problema(campo) ? { "aria-invalid": true, "aria-describedby": idError(campo) } : {};
 
