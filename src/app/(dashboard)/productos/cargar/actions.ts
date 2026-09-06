@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import {
   MAX_IMAGE_BASE64_BYTES,
   MAX_ROWS_PER_BATCH,
@@ -69,7 +70,7 @@ export async function saveBatch(input: unknown): Promise<SaveResult> {
   const session = await requireSession();
   const parsed = saveSchema.safeParse(input);
   if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos invalidos" };
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos inválidos" };
   }
   const { batchId, name, rows } = parsed.data;
 
@@ -80,20 +81,51 @@ export async function saveBatch(input: unknown): Promise<SaveResult> {
           data: { name, createdBy: session.user?.id ?? null },
         });
 
-    await prisma.$transaction([
+    // Indices que ya produjeron un producto en Odoo. Son los unicos que
+    // `createMany` deberia saltarse legitimamente.
+    const yaCreadas = await prisma.productImportRow.findMany({
+      where: { batchId: lote.id, status: "OK" },
+      select: { rowIndex: true },
+    });
+    const indicesOk = new Set(yaCreadas.map((r) => r.rowIndex));
+
+    const insertadas = await prisma.$transaction(async (tx) => {
       // Las filas ya creadas en Odoo se conservan tal cual.
-      prisma.productImportRow.deleteMany({
+      await tx.productImportRow.deleteMany({
         where: { batchId: lote.id, status: { not: "OK" } },
-      }),
-      prisma.productImportRow.createMany({
+      });
+      const { count } = await tx.productImportRow.createMany({
         data: rows.map((r) => ({ ...r, batchId: lote.id })),
         skipDuplicates: true,
-      }),
-    ]);
+      });
+      return count;
+    });
+
+    // `skipDuplicates` calla los choques contra [batchId, rowIndex]: una fila
+    // que caiga sobre el indice de una ya creada en Odoo desaparecia sin el
+    // menor aviso, y `rowIndex` es justo lo que una hoja recalcula al insertar
+    // o borrar filas -- o sea que no seria raro, seria lo normal.
+    //
+    // La cuenta esperada es exacta: tras el deleteMany, lo unico que queda
+    // para chocar son las filas OK. Cualquier salto de mas es un choque real,
+    // o dos filas entrantes con el mismo indice. Ambos casos se avisan.
+    const saltosEsperados = rows.filter((r) => indicesOk.has(r.rowIndex)).length;
+    if (insertadas + saltosEsperados < rows.length) {
+      return {
+        ok: false,
+        error:
+          "Algunas filas chocan con productos que ya se crearon en Odoo. Cierra este lote y empieza uno nuevo con las que falten.",
+      };
+    }
 
     return { ok: true, batchId: lote.id };
   } catch (err) {
     console.error("[cargar] fallo al guardar el borrador:", err);
+    // P2025: el lote ya no existe. Reintentar con el mismo id fallaria igual,
+    // asi que no hay que decirle al usuario que lo intente de nuevo.
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
+      return { ok: false, error: "Ese lote ya no existe. Empieza uno nuevo." };
+    }
     return { ok: false, error: "No se pudo guardar el borrador. Intenta de nuevo." };
   }
 }
@@ -101,7 +133,7 @@ export async function saveBatch(input: unknown): Promise<SaveResult> {
 export async function loadBatch(batchId: unknown): Promise<LoadResult> {
   await requireSession();
   const id = z.string().min(1).safeParse(batchId);
-  if (!id.success) return { ok: false, error: "Lote invalido" };
+  if (!id.success) return { ok: false, error: "Lote inválido" };
 
   try {
     const lote = await prisma.productImportBatch.findUnique({
