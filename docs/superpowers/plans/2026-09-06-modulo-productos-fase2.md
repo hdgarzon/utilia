@@ -23,7 +23,7 @@
 - **Nunca `git add -A` ni `git add .`** — rutas explícitas.
 - **Nunca commitear `.env.local`, secretos ni datos de producción.**
 - La salida de `npm test` debe quedar limpia: ninguna línea que empiece por `(!)`. Hoy pasan 33 pruebas.
-- El repo **no usa carpeta de migraciones**: los cambios de esquema se aplican con `npm run db:push`.
+- El repo **no usa carpeta de migraciones**. `npm run db:push` está **roto** sobre esta base por tablas ajenas con llaves foráneas al esquema `auth` de Supabase; los cambios de esquema de este plan se aplican con SQL explícito (ver Task 1).
 
 ## Lo que Fase 1 ya dejó (no recrear)
 
@@ -166,12 +166,22 @@ enum ProductImportRowStatus {
 }
 ```
 
-- [ ] **Step 2: Aplicar el esquema y regenerar el cliente**
+- [ ] **Step 2: Aplicar las tablas y regenerar el cliente**
 
-Run: `npm run db:push && npm run db:generate`
-Expected: `db:push` reporta las dos tablas nuevas; `db:generate` termina sin errores.
+**No uses `npm run db:push`.** Falla con `P4002` sobre esta base y no por culpa de este cambio: la base de Utilia arrastra cinco tablas vacías de otra aplicación (`profiles`, `accreditation_requests`, `competitions`, `competition_entries`, `email_logs`) con llaves foráneas hacia el esquema `auth` de Supabase, que Prisma no puede introspeccionar sin `multiSchema`. Decisión del dueño: no tocar esas tablas y aplicar las nuevas con SQL explícito.
 
-Este repo no usa carpeta de migraciones — `db:push` es el camino, igual que con el modelo `Setting`.
+El controlador ya aplicó esta migración a producción antes de despacharte. Tu trabajo aquí es **verificar** que quedó bien, no volver a aplicarla:
+
+Run: `npx tsx --env-file=.env.local -e "import('./src/lib/prisma').then(async ({prisma}) => { console.log('lotes:', await prisma.productImportBatch.count()); console.log('filas:', await prisma.productImportRow.count()); await prisma.\$disconnect(); })"`
+
+Expected: `lotes: 0` y `filas: 0` — las tablas existen, están vacías y el cliente de Prisma las alcanza. Si falla con "table does not exist", para y reporta BLOCKED.
+
+Luego regenerar el cliente para que los tipos existan:
+
+Run: `npm run db:generate`
+Expected: termina sin errores.
+
+**Las dos tablas nuevas nacen con RLS activado.** Prisma se conecta con el rol dueño de las tablas, que salta RLS, así que la app funciona igual; lo que queda cerrado es el acceso con la clave anónima, que esta app nunca usa para estos datos. Siete tablas más viejas siguen sin RLS — es un pendiente aparte, anotado, que no toca esta tarea.
 
 - [ ] **Step 3: Crear los tipos compartidos**
 
