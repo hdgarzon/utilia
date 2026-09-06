@@ -1734,6 +1734,14 @@ export function ImportSheetRow({
   onPasteRows: (e: React.ClipboardEvent) => void;
 }) {
   const problema = (campo: keyof ImportRowInput) => errors.find((e) => e.field === campo);
+
+  // El color solo no basta: quien navega con teclado o lector de pantalla no
+  // ve un borde rojo, y `title` casi nunca se anuncia al enfocar. Cada celda
+  // con problema se marca invalida y apunta a su mensaje.
+  const idError = (campo: keyof ImportRowInput) => `err-${row.clientId}-${String(campo)}`;
+  const ariaCelda = (campo: keyof ImportRowInput) =>
+    problema(campo) ? { "aria-invalid": true, "aria-describedby": idError(campo) } : {};
+
   const claseCelda = (campo: keyof ImportRowInput) => {
     const p = problema(campo);
     return cn(
@@ -1755,6 +1763,7 @@ export function ImportSheetRow({
           onChange={(e) => onChange({ name: e.target.value })}
           title={problema("name")?.message}
           aria-label="Nombre del producto"
+          {...ariaCelda("name")}
           className={claseCelda("name")}
         />
       </td>
@@ -1774,6 +1783,7 @@ export function ImportSheetRow({
             });
           }}
           aria-label="Tipo de producto"
+          {...ariaCelda("productType")}
           className={claseCelda("productType")}
         >
           {TIPOS.map((t) => (
@@ -1789,6 +1799,7 @@ export function ImportSheetRow({
           onChange={(e) => onChange({ isStorable: e.target.checked })}
           title={problema("isStorable")?.message}
           aria-label="Rastreo de inventario"
+          {...ariaCelda("isStorable")}
           className="h-3.5 w-3.5 accent-primary disabled:opacity-40"
         />
       </td>
@@ -1800,6 +1811,7 @@ export function ImportSheetRow({
           onChange={(e) => onChange({ qtyOnHand: numero(e.target.value) })}
           title={problema("qtyOnHand")?.message}
           aria-label="Cantidad a la mano"
+          {...ariaCelda("qtyOnHand")}
           className={claseCelda("qtyOnHand")}
         />
       </td>
@@ -1810,6 +1822,7 @@ export function ImportSheetRow({
           onChange={(e) => onChange({ salePrice: numero(e.target.value) })}
           title={problema("salePrice")?.message}
           aria-label="Precio de venta"
+          {...ariaCelda("salePrice")}
           className={claseCelda("salePrice")}
         />
       </td>
@@ -1820,6 +1833,7 @@ export function ImportSheetRow({
           onChange={(e) => onChange({ cost: numero(e.target.value) })}
           title={problema("cost")?.message}
           aria-label="Costo"
+          {...ariaCelda("cost")}
           className={claseCelda("cost")}
         />
       </td>
@@ -1828,6 +1842,7 @@ export function ImportSheetRow({
           value={row.purchaseTaxIds[0] ?? ""}
           onChange={(e) => onChange({ purchaseTaxIds: e.target.value ? [Number(e.target.value)] : [] })}
           aria-label="Impuesto de compra"
+          {...ariaCelda("purchaseTaxIds")}
           className={claseCelda("purchaseTaxIds")}
         >
           <option value="">—</option>
@@ -1841,6 +1856,7 @@ export function ImportSheetRow({
           value={row.categoryId ?? ""}
           onChange={(e) => onChange({ categoryId: e.target.value ? Number(e.target.value) : null })}
           aria-label="Categoría interna"
+          {...ariaCelda("categoryId")}
           className={claseCelda("categoryId")}
         >
           <option value="">—</option>
@@ -1871,6 +1887,7 @@ export function ImportSheetRow({
           onChange={(e) => onChange({ publicCategoryIds: e.target.value ? [Number(e.target.value)] : [] })}
           title={problema("publicCategoryIds")?.message}
           aria-label="Categoría de la tienda"
+          {...ariaCelda("publicCategoryIds")}
           className={claseCelda("publicCategoryIds")}
         >
           <option value="">—</option>
@@ -1893,6 +1910,7 @@ export function ImportSheetRow({
           value={row.supplierPartnerId ?? ""}
           onChange={(e) => onChange({ supplierPartnerId: e.target.value ? Number(e.target.value) : null })}
           aria-label="Proveedor"
+          {...ariaCelda("supplierPartnerId")}
           className={claseCelda("supplierPartnerId")}
         >
           <option value="">—</option>
@@ -1905,6 +1923,14 @@ export function ImportSheetRow({
         <button onClick={onRemove} aria-label="Quitar la fila" className="text-muted-foreground hover:text-destructive">
           <Trash2 className="h-3.5 w-3.5" />
         </button>
+        {/* Los mensajes para lector de pantalla van juntos aqui, no bajo cada
+            celda: la tabla ya es densa y meterlos en linea la romperia. Cada
+            control los alcanza por aria-describedby. */}
+        {errors.map((e) => (
+          <span key={String(e.field)} id={idError(e.field)} className="sr-only">
+            {e.message}
+          </span>
+        ))}
       </td>
     </tr>
   );
@@ -1992,10 +2018,37 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
         if (i >= MAX_ROWS_PER_BATCH) return;
         if (!next[i]) next[i] = filaVacia(i);
         const num = (v: string | undefined) => (v && v.trim() !== "" ? Number(v) : null);
+        const txt = (v: string | undefined) =>
+          (v ?? "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+        // Tipo y rastreo llegan como texto libre desde la hoja de calculo.
+        // Si la celda viene vacia se conserva lo que ya tenia la fila.
+        const tipoPegado = txt(cols[1]);
+        const productType: ImportRowInput["productType"] =
+          tipoPegado === "servicio" || tipoPegado === "service"
+            ? "service"
+            : tipoPegado === "combo"
+              ? "combo"
+              : tipoPegado === "bienes" || tipoPegado === "consu"
+                ? "consu"
+                : next[i].productType;
+
+        // Odoo solo admite rastreo en bienes: un servicio pegado apaga el
+        // rastreo y la cantidad, igual que hace el selector de la fila.
+        const esBien = productType === "consu";
+        const rastreoPegado = txt(cols[2]);
+        const isStorable = !esBien
+          ? false
+          : rastreoPegado
+            ? ["si", "x", "true", "1", "yes", "verdadero"].includes(rastreoPegado)
+            : next[i].isStorable;
+
         next[i] = {
           ...next[i],
           name: cols[0] ?? next[i].name,
-          qtyOnHand: num(cols[3]) ?? next[i].qtyOnHand,
+          productType,
+          isStorable,
+          qtyOnHand: esBien ? (num(cols[3]) ?? next[i].qtyOnHand) : null,
           salePrice: num(cols[4]) ?? next[i].salePrice,
           cost: num(cols[5]) ?? next[i].cost,
         };
