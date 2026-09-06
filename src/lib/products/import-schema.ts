@@ -20,7 +20,7 @@ export function validateRow(row: ImportRowInput, options: CatalogOptions): CellE
   if (!row.name.trim()) error("name", "El nombre es obligatorio");
 
   if (!TIPOS_VALIDOS.has(row.productType)) {
-    error("productType", "Tipo invalido: usa Bienes, Servicio o Combo");
+    error("productType", "Tipo inválido: usa Bienes, Servicio o Combo");
   }
 
   // Odoo solo admite rastreo de inventario en bienes.
@@ -39,22 +39,22 @@ export function validateRow(row: ImportRowInput, options: CatalogOptions): CellE
   }
 
   if (row.categoryId !== null && !existe(options.categories, row.categoryId)) {
-    error("categoryId", "Esa categoria no existe en Odoo");
+    error("categoryId", "Esa categoría no existe en el catálogo de Odoo");
   }
   for (const id of row.purchaseTaxIds) {
     if (!existe(options.purchaseTaxes, id)) {
-      error("purchaseTaxIds", "Uno de los impuestos de compra no existe en Odoo");
+      error("purchaseTaxIds", "Uno de los impuestos de compra no existe en el catálogo de Odoo");
       break;
     }
   }
   for (const id of row.publicCategoryIds) {
     if (!existe(options.publicCategories, id)) {
-      error("publicCategoryIds", "Una de las categorias de la tienda no existe en Odoo");
+      error("publicCategoryIds", "Una de las categorías de la tienda no existe en el catálogo de Odoo");
       break;
     }
   }
   if (row.supplierPartnerId !== null && !existe(options.suppliers, row.supplierPartnerId)) {
-    error("supplierPartnerId", "Ese proveedor no existe en Odoo");
+    error("supplierPartnerId", "Ese proveedor no existe en el catálogo de Odoo");
   }
 
   if (row.imageUrl !== null && row.imageUrl.trim() && !esHttpUrl(row.imageUrl)) {
@@ -64,7 +64,7 @@ export function validateRow(row: ImportRowInput, options: CatalogOptions): CellE
   // Advertencia y no error: el producto se publica igual, solo que no
   // aparecera bajo ninguna categoria de la tienda.
   if (row.isPublished && row.publicCategoryIds.length === 0) {
-    aviso("publicCategoryIds", "Se publicara sin categoria en la tienda");
+    aviso("publicCategoryIds", "Se publicará sin categoría en la tienda");
   }
 
   return errores;
