@@ -60,6 +60,17 @@ describe("parseDelimited", () => {
     ]);
   });
 
+  it("una comilla sin cerrar falla en vez de tragarse el resto", () => {
+    // Sin esto, todo lo que sigue a la comilla huerfana se apilaba en UNA
+    // celda y las filas posteriores desaparecian sin aviso. Un nombre como
+    // 24" monitor escrito a mano basta para provocarlo.
+    expect(() => parseDelimited('a,b\n"sin cerrar,valor\nmas texto')).toThrow(/comilla sin cerrar/i);
+  });
+
+  it("una comilla correctamente cerrada no falla", () => {
+    expect(parseDelimited('a\n"cerrada"')).toEqual([["a"], ["cerrada"]]);
+  });
+
   it("ignora una linea final vacia", () => {
     expect(parseDelimited("a,b\n1,2\n")).toEqual([
       ["a", "b"],
@@ -74,8 +85,15 @@ describe("guessColumnMapping", () => {
     expect(guessColumnMapping(headers)).toEqual(COLUMNAS_PLANTILLA.map((c) => c.key));
   });
 
-  it("ignora mayusculas, tildes y espacios sobrantes", () => {
+  it("ignora mayusculas y espacios sobrantes", () => {
     expect(guessColumnMapping(["  NOMBRE  ", "Precio de Venta"])).toEqual(["name", "salePrice"]);
+  });
+
+  it("ignora las tildes", () => {
+    // Con tildes de verdad: sin este caso, borrar el paso que las quita
+    // dejaria pasar la prueba igual.
+    expect(guessColumnMapping(["Categoría"])).toEqual(["category"]);
+    expect(guessColumnMapping(["CATEGORÍA DE LA TIENDA"])).toEqual(["publicCategory"]);
   });
 
   it("deja en null lo que no reconoce", () => {

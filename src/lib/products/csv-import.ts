@@ -67,6 +67,17 @@ export function parseDelimited(text: string): string[][] {
     }
   }
 
+  // Una comilla que nunca cierra significa entrada malformada. Antes esto se
+  // tragaba en silencio todo lo que venia despues -- separadores y saltos de
+  // linea incluidos -- dentro de una sola celda, y las filas siguientes
+  // desaparecian sin que nadie se enterara. Mejor fallar fuerte: quien llama
+  // lo captura y avisa.
+  if (enComillas) {
+    throw new Error(
+      "El texto tiene una comilla sin cerrar. Revisa el archivo: una comilla suelta hace que se pierdan filas."
+    );
+  }
+
   // Ultima celda sin salto de linea al final.
   if (celda !== "" || fila.length > 0) {
     fila.push(celda);
