@@ -74,10 +74,37 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
         if (i >= MAX_ROWS_PER_BATCH) return;
         if (!next[i]) next[i] = filaVacia(i);
         const num = (v: string | undefined) => (v && v.trim() !== "" ? Number(v) : null);
+        const txt = (v: string | undefined) =>
+          (v ?? "").trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+
+        // Tipo y rastreo llegan como texto libre desde la hoja de calculo.
+        // Si la celda viene vacia se conserva lo que ya tenia la fila.
+        const tipoPegado = txt(cols[1]);
+        const productType: ImportRowInput["productType"] =
+          tipoPegado === "servicio" || tipoPegado === "service"
+            ? "service"
+            : tipoPegado === "combo"
+              ? "combo"
+              : tipoPegado === "bienes" || tipoPegado === "consu"
+                ? "consu"
+                : next[i].productType;
+
+        // Odoo solo admite rastreo en bienes: un servicio pegado apaga el
+        // rastreo y la cantidad, igual que hace el selector de la fila.
+        const esBien = productType === "consu";
+        const rastreoPegado = txt(cols[2]);
+        const isStorable = !esBien
+          ? false
+          : rastreoPegado
+            ? ["si", "x", "true", "1", "yes", "verdadero"].includes(rastreoPegado)
+            : next[i].isStorable;
+
         next[i] = {
           ...next[i],
           name: cols[0] ?? next[i].name,
-          qtyOnHand: num(cols[3]) ?? next[i].qtyOnHand,
+          productType,
+          isStorable,
+          qtyOnHand: esBien ? (num(cols[3]) ?? next[i].qtyOnHand) : null,
           salePrice: num(cols[4]) ?? next[i].salePrice,
           cost: num(cols[5]) ?? next[i].cost,
         };
