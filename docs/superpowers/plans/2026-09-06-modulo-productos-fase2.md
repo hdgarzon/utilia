@@ -652,6 +652,17 @@ describe("parseDelimited", () => {
     ]);
   });
 
+  it("una comilla sin cerrar falla en vez de tragarse el resto", () => {
+    // Sin esto, todo lo que sigue a la comilla huerfana se apilaba en UNA
+    // celda y las filas posteriores desaparecian sin aviso. Un nombre como
+    // 24" monitor escrito a mano basta para provocarlo.
+    expect(() => parseDelimited('a,b\n"sin cerrar,valor\nmas texto')).toThrow(/comilla sin cerrar/i);
+  });
+
+  it("una comilla correctamente cerrada no falla", () => {
+    expect(parseDelimited('a\n"cerrada"')).toEqual([["a"], ["cerrada"]]);
+  });
+
   it("ignora una linea final vacia", () => {
     expect(parseDelimited("a,b\n1,2\n")).toEqual([
       ["a", "b"],
@@ -666,8 +677,15 @@ describe("guessColumnMapping", () => {
     expect(guessColumnMapping(headers)).toEqual(COLUMNAS_PLANTILLA.map((c) => c.key));
   });
 
-  it("ignora mayusculas, tildes y espacios sobrantes", () => {
+  it("ignora mayusculas y espacios sobrantes", () => {
     expect(guessColumnMapping(["  NOMBRE  ", "Precio de Venta"])).toEqual(["name", "salePrice"]);
+  });
+
+  it("ignora las tildes", () => {
+    // Con tildes de verdad: sin este caso, borrar el paso que las quita
+    // dejaria pasar la prueba igual.
+    expect(guessColumnMapping(["Categoría"])).toEqual(["category"]);
+    expect(guessColumnMapping(["CATEGORÍA DE LA TIENDA"])).toEqual(["publicCategory"]);
   });
 
   it("deja en null lo que no reconoce", () => {
@@ -757,6 +775,17 @@ export function parseDelimited(text: string): string[][] {
     } else {
       celda += c;
     }
+  }
+
+  // Una comilla que nunca cierra significa entrada malformada. Antes esto se
+  // tragaba en silencio todo lo que venia despues -- separadores y saltos de
+  // linea incluidos -- dentro de una sola celda, y las filas siguientes
+  // desaparecian sin que nadie se enterara. Mejor fallar fuerte: quien llama
+  // lo captura y avisa.
+  if (enComillas) {
+    throw new Error(
+      "El texto tiene una comilla sin cerrar. Revisa el archivo: una comilla suelta hace que se pierdan filas."
+    );
   }
 
   // Ultima celda sin salto de linea al final.
@@ -1883,9 +1912,17 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
   function pegar(e: React.ClipboardEvent, desdeFila: number) {
     const texto = e.clipboardData.getData("text/plain");
     if (!texto.includes("\t") && !texto.includes("\n")) return; // una sola celda: comportamiento normal
-    e.preventDefault();
 
-    const matriz = parseDelimited(texto);
+    let matriz: string[][];
+    try {
+      matriz = parseDelimited(texto);
+    } catch {
+      // Comilla sin cerrar: no es un pegado multi-celda valido. Se deja que
+      // el navegador pegue el texto tal cual en la celda, que es lo que el
+      // usuario espera si lo que copio no era una tabla.
+      return;
+    }
+    e.preventDefault();
     setFilas((prev) => {
       const next = [...prev];
       matriz.forEach((cols, k) => {
@@ -2150,7 +2187,13 @@ export function ImportToolbar({
   async function importar(file: File | undefined) {
     if (!file) return;
     const texto = await file.text();
-    const matriz = parseDelimited(texto);
+    let matriz: string[][];
+    try {
+      matriz = parseDelimited(texto);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "No se pudo leer el archivo");
+      return;
+    }
     if (matriz.length < 2) {
       toast.error("El archivo no trae filas debajo del encabezado");
       return;
