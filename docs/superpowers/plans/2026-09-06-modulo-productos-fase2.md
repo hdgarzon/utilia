@@ -1388,14 +1388,6 @@ export async function saveBatch(input: unknown): Promise<SaveResult> {
           data: { name, createdBy: session.user?.id ?? null },
         });
 
-    // Indices que ya produjeron un producto en Odoo. Son los unicos que
-    // `createMany` deberia saltarse legitimamente.
-    const yaCreadas = await prisma.productImportRow.findMany({
-      where: { batchId: lote.id, status: "OK" },
-      select: { rowIndex: true },
-    });
-    const indicesOk = new Set(yaCreadas.map((r) => r.rowIndex));
-
     const insertadas = await prisma.$transaction(async (tx) => {
       // Las filas ya creadas en Odoo se conservan tal cual.
       await tx.productImportRow.deleteMany({
@@ -1408,16 +1400,15 @@ export async function saveBatch(input: unknown): Promise<SaveResult> {
       return count;
     });
 
-    // `skipDuplicates` calla los choques contra [batchId, rowIndex]: una fila
-    // que caiga sobre el indice de una ya creada en Odoo desaparecia sin el
-    // menor aviso, y `rowIndex` es justo lo que una hoja recalcula al insertar
-    // o borrar filas -- o sea que no seria raro, seria lo normal.
+    // Cualquier fila entrante que caiga sobre el indice de una ya creada en
+    // Odoo es un choque, sin excepcion: `saveBatch` solo se llama mientras el
+    // lote esta en borrador, y en borrador no existen filas OK. Si llega una,
+    // es un bug de la UI, y hay que gritarlo -- no tragarselo.
     //
-    // La cuenta esperada es exacta: tras el deleteMany, lo unico que queda
-    // para chocar son las filas OK. Cualquier salto de mas es un choque real,
-    // o dos filas entrantes con el mismo indice. Ambos casos se avisan.
-    const saltosEsperados = rows.filter((r) => indicesOk.has(r.rowIndex)).length;
-    if (insertadas + saltosEsperados < rows.length) {
+    // Contar y comparar NO sirve aqui: una fila distinta sentada en un indice
+    // OK se salta igual que la fila OK reenviada, la aritmetica se equilibra
+    // y el choque pasa desapercibido. Verificado empiricamente.
+    if (insertadas < rows.length) {
       return {
         ok: false,
         error:
@@ -2749,6 +2740,43 @@ import type { ImportRowDraft } from "@/lib/products/import-types";
       setCreando(false);
     }
   }
+
+  /**
+   * Reintenta las filas que fallaron. NO vuelve a guardar el borrador.
+   *
+   * Volver a llamar a `saveBatch` aqui seria un error: el lote ya tiene filas
+   * en OK, y reenviar la hoja completa haria que una fila cualquiera cayera
+   * sobre el indice de un producto ya creado. `saveBatch` solo se llama
+   * mientras el lote esta en borrador; despues de crear, el lote persistido
+   * ES la verdad y solo hay que seguir procesandolo.
+   */
+  async function reintentar() {
+    if (!batchId) return;
+    setCreando(true);
+    try {
+      const maxVueltas = Math.ceil(MAX_ROWS_PER_BATCH / 20) + 5;
+      for (let vuelta = 0; vuelta < maxVueltas; vuelta++) {
+        const res = await createBatchSlice(batchId);
+        if (!res.ok || !res.progress) {
+          toast.error(res.error ?? "Falló el reintento");
+          return;
+        }
+        setProgreso({
+          ok: res.progress.okCount,
+          error: res.progress.errorCount,
+          faltan: res.progress.remaining,
+        });
+        if (res.progress.done) break;
+      }
+      const leido = await loadBatch(batchId);
+      if (leido.ok && leido.batch) setResultado(leido.batch.rows);
+    } catch (err) {
+      console.error("[cargar] el reintento no llego al servidor:", err);
+      toast.error("No se pudo contactar al servidor. Revisa la conexión.");
+    } finally {
+      setCreando(false);
+    }
+  }
 ```
 
 4. Agregar el botón junto a "Guardar borrador":
@@ -2775,7 +2803,7 @@ import type { ImportRowDraft } from "@/lib/products/import-types";
       <ImportResult
         rows={resultado}
         retrying={creando}
-        onRetry={crearEnOdoo}
+        onRetry={reintentar}
         onClose={() => {
           setResultado(null);
           setProgreso(null);
