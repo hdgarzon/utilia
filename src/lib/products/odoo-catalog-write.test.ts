@@ -91,9 +91,9 @@ describe("updateTemplates", () => {
 
   it("la barrera esta cableada: un campo prohibido traducido no llega a Odoo", async () => {
     // toOdooValues nunca produce un campo prohibido, asi que la unica forma de
-    // comprobar que assertWritable esta REALMENTE en el camino es interceptar
-    // la traduccion. Sin esta prueba, borrar la llamada a assertWritable no
-    // rompe ningun test.
+    // comprobar que assertWritableOnUpdate esta REALMENTE en el camino es
+    // interceptar la traduccion. Sin esta prueba, borrar la llamada a
+    // assertWritableOnUpdate no rompe ningun test.
     executeKw.mockResolvedValue(true);
     const guard = await import("./write-guard");
     const spy = vi.spyOn(guard, "toOdooValues").mockReturnValue({ qty_available: 5 });

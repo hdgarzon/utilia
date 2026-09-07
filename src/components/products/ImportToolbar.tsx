@@ -8,6 +8,7 @@ import {
   parseDelimited,
   guessColumnMapping,
   normalizar,
+  leerNumero,
   COLUMNAS_PLANTILLA,
 } from "@/lib/products/csv-import";
 import { filaVacia, MAX_ROWS_PER_BATCH, type ImportRowInput } from "@/lib/products/import-types";
@@ -66,13 +67,25 @@ export function ImportToolbar({
     }
 
     const cuerpo = matriz.slice(1, MAX_ROWS_PER_BATCH + 1);
-    const filas = cuerpo.map((cols, i) => aFila(cols, mapeo, i, options));
+    // Cuenta las celdas numericas que no se pudieron leer (p. ej. "$ 2.500"
+    // mal escrito, o texto donde iba un numero). Antes esto devolvia `null`,
+    // indistinguible de una celda vacia, y una columna de precio con formato
+    // raro creaba productos a precio 0 sin que nadie lo notara.
+    const invalidos = { count: 0 };
+    const filas = cuerpo.map((cols, i) => aFila(cols, mapeo, i, options, invalidos));
     onRows(filas);
 
     const ignoradas = matriz.length - 1 - cuerpo.length;
+    const avisoInvalidos =
+      invalidos.count === 1
+        ? ". 1 celda numérica no se pudo leer y quedó vacía"
+        : invalidos.count > 1
+          ? `. ${invalidos.count} celdas numéricas no se pudieron leer y quedaron vacías`
+          : "";
     toast.success(
       `${filas.length} filas importadas${reconocidas < mapeo.length ? `, ${mapeo.length - reconocidas} columnas sin reconocer` : ""}` +
-        (ignoradas > 0 ? `. Se ignoraron ${ignoradas} por el tope de ${MAX_ROWS_PER_BATCH}.` : "")
+        (ignoradas > 0 ? `. Se ignoraron ${ignoradas} por el tope de ${MAX_ROWS_PER_BATCH}.` : "") +
+        avisoInvalidos
     );
   }
 
@@ -105,12 +118,20 @@ export function ImportToolbar({
   );
 }
 
-/** Convierte una fila cruda del archivo en una fila de la hoja. */
+/**
+ * Convierte una fila cruda del archivo en una fila de la hoja.
+ *
+ * @param invalidos Contador compartido entre todas las filas del archivo: se
+ * incrementa una vez por cada celda numerica que no se pudo leer, para que
+ * `importar` avise cuantas quedaron vacias en vez de crear productos a precio
+ * 0 en silencio.
+ */
 function aFila(
   cols: string[],
   mapeo: Array<string | null>,
   rowIndex: number,
-  options: CatalogOptions
+  options: CatalogOptions,
+  invalidos: { count: number }
 ): ImportRowInput {
   const fila = filaVacia(rowIndex);
   const valor = (key: string): string => {
@@ -118,11 +139,12 @@ function aFila(
     return i === -1 ? "" : (cols[i] ?? "").trim();
   };
   const numero = (key: string): number | null => {
-    const v = valor(key);
-    if (!v) return null;
-    // Los miles con punto y los decimales con coma son lo normal en Colombia.
-    const n = Number(v.replace(/\./g, "").replace(",", "."));
-    return Number.isFinite(n) ? n : null;
+    const leido = leerNumero(valor(key));
+    if (leido === "invalido") {
+      invalidos.count++;
+      return null;
+    }
+    return leido;
   };
   const booleano = (key: string): boolean => TOKENS_VERDADERO.has(normalizar(valor(key)));
   const porNombre = (lista: Array<{ id: number; name: string }>, key: string): number | null => {

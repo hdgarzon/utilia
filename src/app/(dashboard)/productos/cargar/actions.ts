@@ -195,6 +195,12 @@ const IMAGE_FETCH_TIMEOUT_MS = 15_000;
  * reintento lo crearia otra vez. No se puede cerrar sin una transaccion que
  * abarque los dos sistemas; lo que si se hace es no marcar ERROR una fila cuyo
  * producto ya se creo, que es el caso que SI estaba en nuestras manos.
+ *
+ * Un caso especial de esa ventana SI esta en nuestras manos: si el update que
+ * registra el `odooTemplateId` falla dos veces seguidas (el completo y el
+ * minimo de rescate), la fila se congela -- no PENDING, no ERROR -- y la
+ * funcion corta y devuelve error para que el cliente deje de pedir tandas.
+ * Ver el `break` mas abajo.
  */
 export async function createBatchSlice(batchId: unknown): Promise<CreateResult> {
   await requireSession();
@@ -220,7 +226,16 @@ export async function createBatchSlice(batchId: unknown): Promise<CreateResult> 
       take: CREATE_SLICE_SIZE,
     });
 
+    // Fila que se creo en Odoo pero que ni el update completo ni el minimo
+    // pudieron registrar en Postgres (ver mas abajo). Se excluye de esta
+    // tanda -- y de cualquier vuelta posterior en esta MISMA invocacion -- y
+    // corta el ciclo: dejarla PENDING para que la proxima tanda la vuelva a
+    // tomar recrearia el producto en Odoo.
+    const bloqueadas = new Set<string>();
+    let filaBloqueada: number | null = null;
+
     for (const fila of pendientes) {
+      if (bloqueadas.has(fila.id)) continue;
       let warning: string | null = null;
       let imagen: string | null = fila.imageData;
 
@@ -279,11 +294,41 @@ export async function createBatchSlice(batchId: unknown): Promise<CreateResult> 
           `[cargar] el producto ${odooTemplateId} SI se creo en Odoo pero no se pudo registrar la fila ${fila.rowIndex}:`,
           err
         );
-        // Segundo intento minimo: lo unico que importa es que no se recree.
-        await prisma.productImportRow
-          .update({ where: { id: fila.id }, data: { status: "OK", odooTemplateId } })
-          .catch(() => {});
+        try {
+          // Segundo intento minimo: lo unico que importa es que no se recree.
+          // Se repiten warning e imageData: null -- sin ellos, una fila
+          // rescatada por este camino se queda con el aviso de imagen viejo
+          // y con el base64 completo pegado en Postgres para siempre.
+          await prisma.productImportRow.update({
+            where: { id: fila.id },
+            data: { status: "OK", odooTemplateId, warning, imageData: null },
+          });
+        } catch (err2) {
+          // Doble fallo: el producto YA EXISTE en Odoo (el id es real) pero
+          // ni el update completo ni el minimo se pudieron guardar aqui.
+          // Dejar la fila PENDING la volveria a ofrecer a la proxima tanda y
+          // recrearia el producto; marcarla ERROR haria lo mismo en cuanto
+          // alguien le de "Reintentar". No hay salida automatica segura:
+          // se congela esta tanda, se avisa fuerte con el id de Odoo, y el
+          // dueño reconcilia a mano antes de que nadie vuelva a intentarlo.
+          console.error(
+            `[cargar] DOBLE FALLO registrando la fila ${fila.rowIndex} del lote ${id.data}: ` +
+              `el producto ${odooTemplateId} se creo en Odoo pero ni el update completo ni el minimo ` +
+              `se pudieron guardar en Postgres. Requiere reconciliacion manual en Odoo y en la base de datos.`,
+            err2
+          );
+          bloqueadas.add(fila.id);
+          filaBloqueada = odooTemplateId;
+          break;
+        }
       }
+    }
+
+    if (filaBloqueada !== null) {
+      return {
+        ok: false,
+        error: `Se creó el producto en Odoo pero no se pudo registrar aquí. Revisa el producto ${filaBloqueada} en Odoo antes de reintentar.`,
+      };
     }
 
     const [okCount, errorCount, remaining] = await Promise.all([
@@ -340,6 +385,15 @@ export async function retryFailedRows(
 
 /** Baja una imagen por link y la devuelve en base64 sin prefijo `data:`. */
 async function descargarImagen(url: string): Promise<string> {
+  // `esHttpUrl` en import-schema.ts solo corre en el navegador al validar la
+  // hoja. Sin repetir el chequeo aqui, en el servidor, un link guardado por
+  // otra via (o un borrador viejo de antes de esa validacion) llegaria
+  // intacto hasta este fetch con cualquier esquema -- file:, ftp:, etc.
+  const esquema = new URL(url).protocol;
+  if (esquema !== "http:" && esquema !== "https:") {
+    throw new Error(`Esquema no permitido: ${esquema}`);
+  }
+
   const res = await fetch(url, { signal: AbortSignal.timeout(IMAGE_FETCH_TIMEOUT_MS) });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const tipo = res.headers.get("content-type") ?? "";

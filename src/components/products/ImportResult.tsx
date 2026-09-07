@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle, XCircle, AlertTriangle, Download } from "lucide-react";
+import { CheckCircle, XCircle, AlertTriangle, Download, Clock } from "lucide-react";
 import { buildCsv, downloadCsv } from "@/lib/csv";
 import type { ImportRowDraft } from "@/lib/products/import-types";
 
@@ -17,6 +17,11 @@ export function ImportResult({
 }) {
   const ok = rows.filter((r) => r.status === "OK");
   const fallidas = rows.filter((r) => r.status === "ERROR");
+  // Una tanda puede fallar o cortarse antes de tocar todas las filas (tope de
+  // vueltas agotado, una fila que se congelo por un doble fallo de registro).
+  // Sin este tercer conteo, OK + fallidas no sumaba el total de filas y no
+  // habia forma de saber, desde aqui, que parte del lote nunca se intento.
+  const sinIntentar = rows.filter((r) => r.status === "PENDING");
   const avisos = ok.filter((r) => r.warning);
   const pendientesCantidad = ok.filter((r) => r.qtyOnHand !== null && r.qtyOnHand > 0);
 
@@ -31,7 +36,7 @@ export function ImportResult({
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         <div className="rounded-xl border border-primary/40 bg-primary/5 p-4 text-center">
           <CheckCircle className="h-5 w-5 text-primary mx-auto mb-1" />
           <p className="text-2xl font-bold text-primary">{ok.length}</p>
@@ -41,6 +46,11 @@ export function ImportResult({
           <XCircle className="h-5 w-5 text-destructive mx-auto mb-1" />
           <p className="text-2xl font-bold text-destructive">{fallidas.length}</p>
           <p className="text-xs text-muted-foreground">fallaron</p>
+        </div>
+        <div className="rounded-xl border border-border bg-secondary/40 p-4 text-center">
+          <Clock className="h-5 w-5 text-muted-foreground mx-auto mb-1" />
+          <p className="text-2xl font-bold text-foreground">{sinIntentar.length}</p>
+          <p className="text-xs text-muted-foreground">sin intentar todavía</p>
         </div>
       </div>
 

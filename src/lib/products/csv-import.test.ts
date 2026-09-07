@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseDelimited, guessColumnMapping, COLUMNAS_PLANTILLA } from "./csv-import";
+import { parseDelimited, guessColumnMapping, leerNumero, COLUMNAS_PLANTILLA } from "./csv-import";
 
 describe("parseDelimited", () => {
   it("texto vacio no da filas", () => {
@@ -76,6 +76,58 @@ describe("parseDelimited", () => {
       ["a", "b"],
       ["1", "2"],
     ]);
+  });
+
+  it("un separador explicito ignora la deteccion automatica", () => {
+    // Pegar desde una hoja de calculo con una sola columna de nombres es
+    // siempre TSV. Sin el separador explicito, detectarSeparador cuenta mas
+    // comas que tabs en "Cuaderno, 100 hojas" y parte el nombre en dos celdas.
+    expect(parseDelimited("Cuaderno, 100 hojas", "\t")).toEqual([["Cuaderno, 100 hojas"]]);
+
+    // La misma entrada con separador explicito "," en vez de tabs demuestra
+    // que el parametro de verdad gana sobre lo que la deteccion automatica
+    // habria elegido (aqui elegiria tab, por tener menos comas que tabs).
+    expect(parseDelimited("a\tb,c,d", ",")).toEqual([["a\tb", "c", "d"]]);
+  });
+});
+
+describe("leerNumero", () => {
+  it("celda vacia o ausente da null", () => {
+    expect(leerNumero("")).toBeNull();
+    expect(leerNumero(undefined)).toBeNull();
+    expect(leerNumero("   ")).toBeNull();
+  });
+
+  it("miles con punto", () => {
+    expect(leerNumero("2.500")).toBe(2500);
+    expect(leerNumero("12.000")).toBe(12000);
+  });
+
+  it("decimales con coma", () => {
+    expect(leerNumero("1.500,50")).toBe(1500.5);
+  });
+
+  it("simbolo de moneda y espacios se ignoran", () => {
+    expect(leerNumero("$ 2.500")).toBe(2500);
+  });
+
+  it("un numero simple sin separadores", () => {
+    expect(leerNumero("12")).toBe(12);
+  });
+
+  it("cero es un numero valido, no una celda vacia", () => {
+    expect(leerNumero("0")).toBe(0);
+  });
+
+  it("texto que no es un numero es invalido, no vacio", () => {
+    // La distincion importa: antes esto devolvia null, indistinguible de una
+    // celda vacia, y una columna de precio con texto colado creaba productos
+    // a precio 0 sin que nadie lo notara.
+    expect(leerNumero("abc")).toBe("invalido");
+  });
+
+  it("numeros negativos", () => {
+    expect(leerNumero("-3")).toBe(-3);
   });
 });
 

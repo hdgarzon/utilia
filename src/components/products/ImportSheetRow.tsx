@@ -166,6 +166,8 @@ export function ImportSheetRow({
         <ImageCell
           imageUrl={row.imageUrl}
           imageData={row.imageData}
+          error={problema("imageUrl")}
+          ariaProps={ariaCelda("imageUrl")}
           onChange={(cambio) => onChange(cambio)}
         />
       </td>

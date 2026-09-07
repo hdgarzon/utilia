@@ -22,11 +22,18 @@ export const COLUMNAS_PLANTILLA: ReadonlyArray<{ key: string; label: string }> =
   { key: "supplier", label: "Proveedor" },
 ];
 
-export function parseDelimited(text: string): string[][] {
+/**
+ * @param separador Si se pasa, se usa tal cual y no se intenta adivinar.
+ * Pegar desde una hoja de calculo SIEMPRE es TSV, incluso si el usuario solo
+ * copio una columna de nombres con una coma adentro (p. ej.
+ * "Cuaderno, 100 hojas"): sin este parametro, `detectarSeparador` cuenta esa
+ * coma, la confunde con el separador, y parte el nombre en dos celdas.
+ */
+export function parseDelimited(text: string, separador?: string): string[][] {
   const limpio = text.replace(/^﻿/, "");
   if (!limpio.trim()) return [];
 
-  const sep = detectarSeparador(limpio);
+  const sep = separador ?? detectarSeparador(limpio);
   const filas: string[][] = [];
   let celda = "";
   let fila: string[] = [];
@@ -90,7 +97,8 @@ export function parseDelimited(text: string): string[][] {
 /**
  * Empareja los encabezados del archivo con las columnas de la plantilla.
  * Devuelve una entrada por columna del archivo: la clave que le corresponde,
- * o null si no se reconocio. El usuario puede corregir el mapeo en la UI.
+ * o null si no se reconocio. Las columnas en null quedan sin importar: no hay
+ * pantalla para corregir el mapeo a mano.
  */
 export function guessColumnMapping(headers: string[]): Array<string | null> {
   const usadas = new Set<string>();
@@ -127,4 +135,26 @@ export function normalizar(s: string): string {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/\s+/g, " ");
+}
+
+/**
+ * Lee un numero escrito como lo escribe la gente aqui: miles con punto y
+ * decimales con coma ("2.500", "1.500,50"). Devuelve `null` para una celda
+ * vacia y `"invalido"` para algo que no es un numero -- son casos distintos y
+ * confundirlos fue como una columna con formato de moneda creaba productos a
+ * precio 0 sin que nadie lo notara.
+ *
+ * Compartido por el pegado de la hoja y la importacion de CSV: antes cada uno
+ * traia su propio parseo y "2.500" salia 2.5 en uno y 2500 en el otro.
+ */
+export type NumeroLeido = number | null | "invalido";
+
+export function leerNumero(v: string | undefined): NumeroLeido {
+  const s = (v ?? "").trim();
+  if (s === "") return null;
+  // Se quitan simbolos de moneda y espacios antes de decidir.
+  const limpio = s.replace(/[$\s]/g, "");
+  if (limpio === "") return null;
+  const n = Number(limpio.replace(/\./g, "").replace(",", "."));
+  return Number.isFinite(n) ? n : "invalido";
 }

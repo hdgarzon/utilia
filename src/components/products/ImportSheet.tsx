@@ -7,7 +7,7 @@ import { ImportSheetRow } from "./ImportSheetRow";
 import { ImportToolbar, TOKENS_VERDADERO } from "./ImportToolbar";
 import { ImportResult } from "./ImportResult";
 import { validateRow, rowIsCreatable } from "@/lib/products/import-schema";
-import { parseDelimited, normalizar } from "@/lib/products/csv-import";
+import { parseDelimited, normalizar, leerNumero } from "@/lib/products/csv-import";
 import { saveBatch, createBatchSlice, loadBatch, retryFailedRows } from "@/app/(dashboard)/productos/cargar/actions";
 import {
   filaVacia,
@@ -70,7 +70,11 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
 
     let matriz: string[][];
     try {
-      matriz = parseDelimited(texto);
+      // Separador explicito: un pegado desde una hoja de calculo es SIEMPRE
+      // TSV, incluso cuando el usuario solo copio una columna de nombres con
+      // una coma adentro (p. ej. "Cuaderno, 100 hojas"). Dejar que
+      // parseDelimited adivine partiria ese nombre en dos celdas.
+      matriz = parseDelimited(texto, "\t");
     } catch {
       // Comilla sin cerrar: no es un pegado multi-celda valido. Se deja que
       // el navegador pegue el texto tal cual en la celda, que es lo que el
@@ -84,7 +88,14 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
         const i = desdeFila + k;
         if (i >= MAX_ROWS_PER_BATCH) return;
         if (!next[i]) next[i] = filaVacia(i);
-        const num = (v: string | undefined) => (v && v.trim() !== "" ? Number(v) : null);
+        // Una celda vacia o ilegible conserva el valor que ya traia la fila
+        // en vez de borrarlo o -- como pasaba antes con un `Number(v)` a
+        // secas -- escribirle un NaN que Zod rechazaba con un mensaje en
+        // ingles sin decir cual fila.
+        const num = (v: string | undefined, actual: number | null): number | null => {
+          const leido = leerNumero(v);
+          return typeof leido === "number" ? leido : actual;
+        };
         const txt = (v: string | undefined) => normalizar(v ?? "");
 
         // Tipo y rastreo llegan como texto libre desde la hoja de calculo.
@@ -114,9 +125,9 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
           name: cols[0] ?? next[i].name,
           productType,
           isStorable,
-          qtyOnHand: esBien ? (num(cols[3]) ?? next[i].qtyOnHand) : null,
-          salePrice: num(cols[4]) ?? next[i].salePrice,
-          cost: num(cols[5]) ?? next[i].cost,
+          qtyOnHand: esBien ? num(cols[3], next[i].qtyOnHand) : null,
+          salePrice: num(cols[4], next[i].salePrice),
+          cost: num(cols[5], next[i].cost),
         };
       });
       return next.map((f, j) => ({ ...f, rowIndex: j }));
@@ -146,6 +157,30 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
   }
 
   /**
+   * Carga el lote otra vez y lo muestra en la pantalla de resultado.
+   *
+   * Se llama desde TODAS las salidas de crearEnOdoo y reintentar -- exito,
+   * una tanda que devuelve error, el tope de vueltas agotado y el catch --
+   * para que el usuario siempre vea en que quedo el lote. Antes, cualquier
+   * salida que no fuera el camino feliz se saltaba esto: la hoja se quedaba
+   * varada sin mostrar que filas ya se habian creado, y la unica accion a la
+   * vista era volver a apretar "Crear en Odoo", que chocaba contra las filas
+   * ya OK en vez de dejar reintentar solo las que faltaban.
+   *
+   * Se traga su propio error: si el lote tampoco se puede releer (misma caida
+   * de red que probablemente disparo el catch que la llamo), no debe tapar
+   * el toast que ya se mostro ni escapar como un rechazo sin capturar.
+   */
+  async function mostrarResultado(id: string) {
+    try {
+      const leido = await loadBatch(id);
+      if (leido.ok && leido.batch) setResultado(leido.batch.rows);
+    } catch (err) {
+      console.error("[cargar] no se pudo releer el lote para mostrar el resultado:", err);
+    }
+  }
+
+  /**
    * Guarda y luego crea por tandas hasta terminar. El bucle vive en el
    * cliente a proposito: cada tanda es su propia server action, asi que
    * ninguna se acerca al limite de tiempo de la funcion.
@@ -161,13 +196,18 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
     }
 
     setCreando(true);
+    // Variable propia y no el estado `batchId`: dentro de esta misma llamada,
+    // el `batchId` del closure no cambia aunque se llame a `setBatchId` -- ese
+    // setState solo se ve en el PROXIMO render. El catch necesita el id que
+    // se acaba de guardar, no el que habia al empezar.
+    let id: string | null = batchId;
     try {
       const guardado = await saveBatch({ batchId, name: nombre, rows: filas });
       if (!guardado.ok || !guardado.batchId) {
         toast.error(guardado.error ?? "No se pudo guardar antes de crear");
         return;
       }
-      const id = guardado.batchId;
+      id = guardado.batchId;
       setBatchId(id);
 
       // Tope de vueltas: filas / tanda, con margen. Sin el, un `done` que
@@ -178,6 +218,7 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
         const res = await createBatchSlice(id);
         if (!res.ok || !res.progress) {
           toast.error(res.error ?? "Falló la creación");
+          await mostrarResultado(id);
           return;
         }
         setProgreso({
@@ -193,11 +234,11 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
         toast.error("La creación no terminó: quedan filas sin intentar. Vuelve a darle a Crear en Odoo.");
       }
 
-      const leido = await loadBatch(id);
-      if (leido.ok && leido.batch) setResultado(leido.batch.rows);
+      await mostrarResultado(id);
     } catch (err) {
       console.error("[cargar] la creacion no llego al servidor:", err);
       toast.error("No se pudo contactar al servidor. Revisa la conexión.");
+      if (id) await mostrarResultado(id);
     } finally {
       setCreando(false);
     }
@@ -220,6 +261,7 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
       const reencolado = await retryFailedRows(batchId);
       if (!reencolado.ok) {
         toast.error(reencolado.error ?? "No se pudo preparar el reintento");
+        await mostrarResultado(batchId);
         return;
       }
 
@@ -229,6 +271,7 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
         const res = await createBatchSlice(batchId);
         if (!res.ok || !res.progress) {
           toast.error(res.error ?? "Falló el reintento");
+          await mostrarResultado(batchId);
           return;
         }
         setProgreso({
@@ -241,11 +284,11 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
       if (!termino) {
         toast.error("El reintento no terminó: quedan filas sin intentar. Vuelve a intentarlo.");
       }
-      const leido = await loadBatch(batchId);
-      if (leido.ok && leido.batch) setResultado(leido.batch.rows);
+      await mostrarResultado(batchId);
     } catch (err) {
       console.error("[cargar] el reintento no llego al servidor:", err);
       toast.error("No se pudo contactar al servidor. Revisa la conexión.");
+      await mostrarResultado(batchId);
     } finally {
       setCreando(false);
     }
