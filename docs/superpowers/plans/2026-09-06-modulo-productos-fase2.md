@@ -2697,7 +2697,7 @@ async function descargarImagen(url: string): Promise<string> {
 }
 ```
 
-Nota: `createBatchSlice` reintenta también las filas en `ERROR`, porque `status: { not: "OK" }` las incluye. Eso es deliberado — el botón "Reintentar los que fallaron" no necesita lógica aparte.
+Nota: `createBatchSlice` toma **solo** filas en `PENDING`. Las que fallaron vuelven a esa cola por `retryFailedRows`, y nunca de otra forma: así cada tanda avanza sobre filas nuevas y el bucle no puede girar indefinidamente sobre las mismas rotas.
 
 - [ ] **Step 2: La pantalla de resultado**
 
