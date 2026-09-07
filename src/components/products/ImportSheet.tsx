@@ -8,10 +8,11 @@ import { ImportToolbar, TOKENS_VERDADERO } from "./ImportToolbar";
 import { ImportResult } from "./ImportResult";
 import { validateRow, rowIsCreatable } from "@/lib/products/import-schema";
 import { parseDelimited, normalizar } from "@/lib/products/csv-import";
-import { saveBatch, createBatchSlice, loadBatch } from "@/app/(dashboard)/productos/cargar/actions";
+import { saveBatch, createBatchSlice, loadBatch, retryFailedRows } from "@/app/(dashboard)/productos/cargar/actions";
 import {
   filaVacia,
   MAX_ROWS_PER_BATCH,
+  CREATE_SLICE_SIZE,
   type ImportRowInput,
   type ImportRowDraft,
 } from "@/lib/products/import-types";
@@ -171,8 +172,9 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
 
       // Tope de vueltas: filas / tanda, con margen. Sin el, un `done` que
       // nunca llegue por un bug giraria para siempre.
-      const maxVueltas = Math.ceil(MAX_ROWS_PER_BATCH / 20) + 5;
-      for (let vuelta = 0; vuelta < maxVueltas; vuelta++) {
+      const maxVueltas = Math.ceil(MAX_ROWS_PER_BATCH / CREATE_SLICE_SIZE) + 5;
+      let termino = false;
+      for (let vuelta = 0; vuelta < maxVueltas && !termino; vuelta++) {
         const res = await createBatchSlice(id);
         if (!res.ok || !res.progress) {
           toast.error(res.error ?? "Falló la creación");
@@ -183,7 +185,12 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
           error: res.progress.errorCount,
           faltan: res.progress.remaining,
         });
-        if (res.progress.done) break;
+        termino = res.progress.done;
+      }
+      // Salir por agotar las vueltas no es terminar. Sin este aviso la
+      // pantalla de resultado diria "listo" con filas jamas intentadas.
+      if (!termino) {
+        toast.error("La creación no terminó: quedan filas sin intentar. Vuelve a darle a Crear en Odoo.");
       }
 
       const leido = await loadBatch(id);
@@ -209,8 +216,16 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
     if (!batchId) return;
     setCreando(true);
     try {
-      const maxVueltas = Math.ceil(MAX_ROWS_PER_BATCH / 20) + 5;
-      for (let vuelta = 0; vuelta < maxVueltas; vuelta++) {
+      // Primero se devuelven a PENDING; si no, createBatchSlice no las mira.
+      const reencolado = await retryFailedRows(batchId);
+      if (!reencolado.ok) {
+        toast.error(reencolado.error ?? "No se pudo preparar el reintento");
+        return;
+      }
+
+      const maxVueltas = Math.ceil(MAX_ROWS_PER_BATCH / CREATE_SLICE_SIZE) + 5;
+      let termino = false;
+      for (let vuelta = 0; vuelta < maxVueltas && !termino; vuelta++) {
         const res = await createBatchSlice(batchId);
         if (!res.ok || !res.progress) {
           toast.error(res.error ?? "Falló el reintento");
@@ -221,7 +236,10 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
           error: res.progress.errorCount,
           faltan: res.progress.remaining,
         });
-        if (res.progress.done) break;
+        termino = res.progress.done;
+      }
+      if (!termino) {
+        toast.error("El reintento no terminó: quedan filas sin intentar. Vuelve a intentarlo.");
       }
       const leido = await loadBatch(batchId);
       if (leido.ok && leido.batch) setResultado(leido.batch.rows);
