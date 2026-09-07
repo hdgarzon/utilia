@@ -823,8 +823,14 @@ function detectarSeparador(texto: string): string {
   return tabs > comas ? "\t" : ",";
 }
 
-/** Minusculas, sin tildes, sin espacios de sobra. */
-function normalizar(s: string): string {
+/**
+ * Minusculas, sin tildes, sin espacios de sobra.
+ *
+ * Se exporta a proposito: la hoja y la barra de importacion necesitan
+ * exactamente la misma normalizacion, y tenerla escrita tres veces fue como
+ * el rango de tildes acabo escrito de dos formas distintas.
+ */
+export function normalizar(s: string): string {
   return s
     .trim()
     .toLowerCase()
@@ -1958,7 +1964,7 @@ import { toast } from "sonner";
 import { Plus, Save } from "lucide-react";
 import { ImportSheetRow } from "./ImportSheetRow";
 import { validateRow, rowIsCreatable } from "@/lib/products/import-schema";
-import { parseDelimited } from "@/lib/products/csv-import";
+import { parseDelimited, normalizar } from "@/lib/products/csv-import";
 import { saveBatch } from "@/app/(dashboard)/productos/cargar/actions";
 import { filaVacia, MAX_ROWS_PER_BATCH, type ImportRowInput } from "@/lib/products/import-types";
 import type { CatalogOptions } from "@/lib/products/types";
@@ -2027,8 +2033,7 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
         if (i >= MAX_ROWS_PER_BATCH) return;
         if (!next[i]) next[i] = filaVacia(i);
         const num = (v: string | undefined) => (v && v.trim() !== "" ? Number(v) : null);
-        const txt = (v: string | undefined) =>
-          (v ?? "").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const txt = (v: string | undefined) => normalizar(v ?? "");
 
         // Tipo y rastreo llegan como texto libre desde la hoja de calculo.
         // Si la celda viene vacia se conserva lo que ya tenia la fila.
@@ -2049,7 +2054,7 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
         const isStorable = !esBien
           ? false
           : rastreoPegado
-            ? ["si", "x", "true", "1", "yes", "verdadero"].includes(rastreoPegado)
+            ? TOKENS_VERDADERO.has(rastreoPegado)
             : next[i].isStorable;
 
         next[i] = {
@@ -2287,9 +2292,27 @@ import { useRef } from "react";
 import { toast } from "sonner";
 import { Download, Upload } from "lucide-react";
 import { buildCsv, downloadCsv } from "@/lib/csv";
-import { parseDelimited, guessColumnMapping, COLUMNAS_PLANTILLA } from "@/lib/products/csv-import";
+import {
+  parseDelimited,
+  guessColumnMapping,
+  normalizar,
+  COLUMNAS_PLANTILLA,
+} from "@/lib/products/csv-import";
 import { filaVacia, MAX_ROWS_PER_BATCH, type ImportRowInput } from "@/lib/products/import-types";
 import type { CatalogOptions, ProductType } from "@/lib/products/types";
+
+/**
+ * Lo que cuenta como "si" en una celda de texto. Compartido con el pegado de
+ * la hoja: es el mismo campo y no puede leerse distinto segun por donde entre.
+ */
+export const TOKENS_VERDADERO: ReadonlySet<string> = new Set([
+  "si",
+  "x",
+  "true",
+  "1",
+  "yes",
+  "verdadero",
+]);
 
 export function ImportToolbar({
   options,
@@ -2389,10 +2412,7 @@ function aFila(
     const n = Number(v.replace(/\./g, "").replace(",", "."));
     return Number.isFinite(n) ? n : null;
   };
-  const booleano = (key: string): boolean => {
-    const v = normalizar(valor(key));
-    return v === "si" || v === "x" || v === "true" || v === "1";
-  };
+  const booleano = (key: string): boolean => TOKENS_VERDADERO.has(normalizar(valor(key)));
   const porNombre = (lista: Array<{ id: number; name: string }>, key: string): number | null => {
     const v = normalizar(valor(key));
     if (!v) return null;
@@ -2429,27 +2449,32 @@ function aFila(
   };
 }
 
-function normalizar(s: string): string {
-  return s
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\s+/g, " ");
-}
 ```
 
 - [ ] **Step 2: Conectarla a la hoja**
 
 En `src/components/products/ImportSheet.tsx`:
 
-1. Agregar el import: `import { ImportToolbar } from "./ImportToolbar";`
+1. Agregar el import: `import { ImportToolbar, TOKENS_VERDADERO } from "./ImportToolbar";`
 2. Justo encima del bloque `<div className="flex items-center gap-2 flex-wrap">` del nombre del lote, insertar:
 
 ```tsx
       <ImportToolbar
         options={options}
-        onRows={(nuevas) => setFilas(nuevas.length > 0 ? nuevas : [filaVacia(0)])}
+        onRows={(nuevas) => {
+          // Importar reemplaza la hoja entera. Si el usuario ya escribio algo
+          // y no lo ha guardado, se lo llevaria por delante sin aviso -- y el
+          // codigo no puede distinguir "reimporto el archivo corregido" de
+          // "acabo de teclear veinte filas".
+          const hayTrabajo = filas.some((f) => f.name.trim() !== "");
+          if (
+            hayTrabajo &&
+            !window.confirm("Importar reemplaza todas las filas de la hoja. ¿Continuar?")
+          ) {
+            return;
+          }
+          setFilas(nuevas.length > 0 ? nuevas : [filaVacia(0)]);
+        }}
       />
 ```
 
