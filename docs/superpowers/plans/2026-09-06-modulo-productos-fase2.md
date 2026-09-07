@@ -1966,7 +1966,12 @@ import { ImportSheetRow } from "./ImportSheetRow";
 import { validateRow, rowIsCreatable } from "@/lib/products/import-schema";
 import { parseDelimited, normalizar } from "@/lib/products/csv-import";
 import { saveBatch } from "@/app/(dashboard)/productos/cargar/actions";
-import { filaVacia, MAX_ROWS_PER_BATCH, type ImportRowInput } from "@/lib/products/import-types";
+import {
+  filaVacia,
+  CREATE_SLICE_SIZE,
+  MAX_ROWS_PER_BATCH,
+  type ImportRowInput,
+} from "@/lib/products/import-types";
 import type { CatalogOptions } from "@/lib/products/types";
 
 const ENCABEZADOS = [
@@ -2536,9 +2541,14 @@ const IMAGE_FETCH_TIMEOUT_MS = 15_000;
  * Crea UNA tanda de filas pendientes y devuelve el progreso. El cliente la
  * vuelve a llamar hasta que `done` sea true.
  *
- * Cada fila se marca OK o ERROR inmediatamente despues de su create, asi que
- * un corte a mitad no duplica productos: al reintentar solo se toman las que
- * no quedaron OK.
+ * Cada fila se marca OK inmediatamente despues de su create, asi que un corte
+ * a mitad casi nunca duplica: al reintentar solo se toman las PENDING.
+ *
+ * Queda una ventana irreducible: si el proceso muere entre que Odoo devuelve
+ * el id y que Postgres lo registra, el producto existe alla y aca no. Un
+ * reintento lo crearia otra vez. No se puede cerrar sin una transaccion que
+ * abarque los dos sistemas; lo que si se hace es no marcar ERROR una fila cuyo
+ * producto ya se creo, que es el caso que SI estaba en nuestras manos.
  */
 export async function createBatchSlice(batchId: unknown): Promise<CreateResult> {
   await requireSession();
@@ -2551,8 +2561,15 @@ export async function createBatchSlice(batchId: unknown): Promise<CreateResult> 
       data: { status: "CREATING" },
     });
 
+    // SOLO las que nunca se intentaron. Las que fallaron se vuelven a poner
+    // en PENDING desde `retryFailedRows`, y nunca antes.
+    //
+    // Con un `status: { not: "OK" }` ordenado por rowIndex, veinte filas rotas
+    // al principio de la hoja se re-seleccionan en cada tanda y las pendientes
+    // no se tocan JAMAS: el bucle agota sus vueltas, la pantalla dice
+    // "terminado" y 180 de 200 filas quedan sin intentar sin que nadie avise.
     const pendientes = await prisma.productImportRow.findMany({
-      where: { batchId: id.data, status: { not: "OK" } },
+      where: { batchId: id.data, status: "PENDING" },
       orderBy: { rowIndex: "asc" },
       take: CREATE_SLICE_SIZE,
     });
@@ -2571,8 +2588,9 @@ export async function createBatchSlice(batchId: unknown): Promise<CreateResult> 
         }
       }
 
+      let odooTemplateId: number;
       try {
-        const odooTemplateId = await createTemplate(
+        odooTemplateId = await createTemplate(
           {
             name: fila.name,
             productType: fila.productType as ProductType,
@@ -2591,18 +2609,34 @@ export async function createBatchSlice(batchId: unknown): Promise<CreateResult> 
           },
           imagen
         );
-
-        // Se marca OK y se suelta el base64 en el mismo update: un lote
-        // terminado no debe arrastrar imagenes en Postgres.
-        await prisma.productImportRow.update({
-          where: { id: fila.id },
-          data: { status: "OK", odooTemplateId, error: null, warning, imageData: null },
-        });
       } catch (err) {
         await prisma.productImportRow.update({
           where: { id: fila.id },
           data: { status: "ERROR", error: translateOdooError(err, "catalogo") },
         });
+        continue;
+      }
+
+      // A partir de aqui el producto YA EXISTE en Odoo. Si el registro local
+      // falla, marcar la fila ERROR seria mentir y garantizaria un duplicado
+      // al reintentar: hay que insistir en dejarla OK.
+      //
+      // Se suelta el base64 en el mismo update: un lote terminado no debe
+      // arrastrar imagenes en Postgres.
+      try {
+        await prisma.productImportRow.update({
+          where: { id: fila.id },
+          data: { status: "OK", odooTemplateId, error: null, warning, imageData: null },
+        });
+      } catch (err) {
+        console.error(
+          `[cargar] el producto ${odooTemplateId} SI se creo en Odoo pero no se pudo registrar la fila ${fila.rowIndex}:`,
+          err
+        );
+        // Segundo intento minimo: lo unico que importa es que no se recree.
+        await prisma.productImportRow
+          .update({ where: { id: fila.id }, data: { status: "OK", odooTemplateId } })
+          .catch(() => {});
       }
     }
 
@@ -2625,6 +2659,29 @@ export async function createBatchSlice(batchId: unknown): Promise<CreateResult> 
   } catch (err) {
     console.error("[cargar] fallo la tanda de creacion:", err);
     return { ok: false, error: "No se pudo crear la tanda. Revisa la conexión con Odoo." };
+  }
+}
+
+/**
+ * Devuelve las filas fallidas al estado PENDING para que `createBatchSlice`
+ * las vuelva a tomar. Es el unico camino por el que una fila en ERROR se
+ * reintenta: asi cada tanda siempre avanza sobre filas nuevas y el bucle no
+ * puede quedarse girando sobre las mismas veinte rotas.
+ */
+export async function retryFailedRows(batchId: unknown): Promise<{ ok: boolean; error?: string; reintentadas?: number }> {
+  await requireSession();
+  const id = z.string().min(1).safeParse(batchId);
+  if (!id.success) return { ok: false, error: "Lote inválido" };
+
+  try {
+    const { count } = await prisma.productImportRow.updateMany({
+      where: { batchId: id.data, status: "ERROR" },
+      data: { status: "PENDING", error: null },
+    });
+    return { ok: true, reintentadas: count };
+  } catch (err) {
+    console.error("[cargar] fallo al reencolar las filas con error:", err);
+    return { ok: false, error: "No se pudieron reencolar las filas que fallaron." };
   }
 }
 
@@ -2761,7 +2818,7 @@ En `src/components/products/ImportSheet.tsx`:
 
 ```tsx
 import { ImportResult } from "./ImportResult";
-import { createBatchSlice, loadBatch } from "@/app/(dashboard)/productos/cargar/actions";
+import { createBatchSlice, loadBatch, retryFailedRows } from "@/app/(dashboard)/productos/cargar/actions";
 import type { ImportRowDraft } from "@/lib/products/import-types";
 ```
 
@@ -2803,8 +2860,9 @@ import type { ImportRowDraft } from "@/lib/products/import-types";
 
       // Tope de vueltas: filas / tanda, con margen. Sin el, un `done` que
       // nunca llegue por un bug giraria para siempre.
-      const maxVueltas = Math.ceil(MAX_ROWS_PER_BATCH / 20) + 5;
-      for (let vuelta = 0; vuelta < maxVueltas; vuelta++) {
+      const maxVueltas = Math.ceil(MAX_ROWS_PER_BATCH / CREATE_SLICE_SIZE) + 5;
+      let termino = false;
+      for (let vuelta = 0; vuelta < maxVueltas && !termino; vuelta++) {
         const res = await createBatchSlice(id);
         if (!res.ok || !res.progress) {
           toast.error(res.error ?? "Falló la creación");
@@ -2815,7 +2873,12 @@ import type { ImportRowDraft } from "@/lib/products/import-types";
           error: res.progress.errorCount,
           faltan: res.progress.remaining,
         });
-        if (res.progress.done) break;
+        termino = res.progress.done;
+      }
+      // Salir por agotar las vueltas no es terminar. Sin este aviso la
+      // pantalla de resultado diria "listo" con filas jamas intentadas.
+      if (!termino) {
+        toast.error("La creación no terminó: quedan filas sin intentar. Vuelve a darle a Crear en Odoo.");
       }
 
       const leido = await loadBatch(id);
@@ -2841,8 +2904,16 @@ import type { ImportRowDraft } from "@/lib/products/import-types";
     if (!batchId) return;
     setCreando(true);
     try {
-      const maxVueltas = Math.ceil(MAX_ROWS_PER_BATCH / 20) + 5;
-      for (let vuelta = 0; vuelta < maxVueltas; vuelta++) {
+      // Primero se devuelven a PENDING; si no, createBatchSlice no las mira.
+      const reencolado = await retryFailedRows(batchId);
+      if (!reencolado.ok) {
+        toast.error(reencolado.error ?? "No se pudo preparar el reintento");
+        return;
+      }
+
+      const maxVueltas = Math.ceil(MAX_ROWS_PER_BATCH / CREATE_SLICE_SIZE) + 5;
+      let termino = false;
+      for (let vuelta = 0; vuelta < maxVueltas && !termino; vuelta++) {
         const res = await createBatchSlice(batchId);
         if (!res.ok || !res.progress) {
           toast.error(res.error ?? "Falló el reintento");
@@ -2853,7 +2924,10 @@ import type { ImportRowDraft } from "@/lib/products/import-types";
           error: res.progress.errorCount,
           faltan: res.progress.remaining,
         });
-        if (res.progress.done) break;
+        termino = res.progress.done;
+      }
+      if (!termino) {
+        toast.error("El reintento no terminó: quedan filas sin intentar. Vuelve a intentarlo.");
       }
       const leido = await loadBatch(batchId);
       if (leido.ok && leido.batch) setResultado(leido.batch.rows);
