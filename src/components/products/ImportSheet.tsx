@@ -5,10 +5,16 @@ import { toast } from "sonner";
 import { Plus, Save } from "lucide-react";
 import { ImportSheetRow } from "./ImportSheetRow";
 import { ImportToolbar, TOKENS_VERDADERO } from "./ImportToolbar";
+import { ImportResult } from "./ImportResult";
 import { validateRow, rowIsCreatable } from "@/lib/products/import-schema";
 import { parseDelimited, normalizar } from "@/lib/products/csv-import";
-import { saveBatch } from "@/app/(dashboard)/productos/cargar/actions";
-import { filaVacia, MAX_ROWS_PER_BATCH, type ImportRowInput } from "@/lib/products/import-types";
+import { saveBatch, createBatchSlice, loadBatch } from "@/app/(dashboard)/productos/cargar/actions";
+import {
+  filaVacia,
+  MAX_ROWS_PER_BATCH,
+  type ImportRowInput,
+  type ImportRowDraft,
+} from "@/lib/products/import-types";
 import type { CatalogOptions } from "@/lib/products/types";
 
 const ENCABEZADOS = [
@@ -21,6 +27,9 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
   const [batchId, setBatchId] = useState<string | null>(null);
   const [filas, setFilas] = useState<ImportRowInput[]>([filaVacia(0)]);
   const [guardando, setGuardando] = useState(false);
+  const [creando, setCreando] = useState(false);
+  const [progreso, setProgreso] = useState<{ ok: number; error: number; faltan: number } | null>(null);
+  const [resultado, setResultado] = useState<ImportRowDraft[] | null>(null);
 
   const errores = useMemo(
     () => filas.map((f) => validateRow(f, options)),
@@ -135,6 +144,112 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
     }
   }
 
+  /**
+   * Guarda y luego crea por tandas hasta terminar. El bucle vive en el
+   * cliente a proposito: cada tanda es su propia server action, asi que
+   * ninguna se acerca al limite de tiempo de la funcion.
+   */
+  async function crearEnOdoo() {
+    if (conError > 0) {
+      toast.error(`Corrige las ${conError} filas en rojo antes de crear`);
+      return;
+    }
+    if (!nombre.trim()) {
+      toast.error("Ponle un nombre al lote");
+      return;
+    }
+
+    setCreando(true);
+    try {
+      const guardado = await saveBatch({ batchId, name: nombre, rows: filas });
+      if (!guardado.ok || !guardado.batchId) {
+        toast.error(guardado.error ?? "No se pudo guardar antes de crear");
+        return;
+      }
+      const id = guardado.batchId;
+      setBatchId(id);
+
+      // Tope de vueltas: filas / tanda, con margen. Sin el, un `done` que
+      // nunca llegue por un bug giraria para siempre.
+      const maxVueltas = Math.ceil(MAX_ROWS_PER_BATCH / 20) + 5;
+      for (let vuelta = 0; vuelta < maxVueltas; vuelta++) {
+        const res = await createBatchSlice(id);
+        if (!res.ok || !res.progress) {
+          toast.error(res.error ?? "Falló la creación");
+          return;
+        }
+        setProgreso({
+          ok: res.progress.okCount,
+          error: res.progress.errorCount,
+          faltan: res.progress.remaining,
+        });
+        if (res.progress.done) break;
+      }
+
+      const leido = await loadBatch(id);
+      if (leido.ok && leido.batch) setResultado(leido.batch.rows);
+    } catch (err) {
+      console.error("[cargar] la creacion no llego al servidor:", err);
+      toast.error("No se pudo contactar al servidor. Revisa la conexión.");
+    } finally {
+      setCreando(false);
+    }
+  }
+
+  /**
+   * Reintenta las filas que fallaron. NO vuelve a guardar el borrador.
+   *
+   * Volver a llamar a `saveBatch` aqui seria un error: el lote ya tiene filas
+   * en OK, y reenviar la hoja completa haria que una fila cualquiera cayera
+   * sobre el indice de un producto ya creado. `saveBatch` solo se llama
+   * mientras el lote esta en borrador; despues de crear, el lote persistido
+   * ES la verdad y solo hay que seguir procesandolo.
+   */
+  async function reintentar() {
+    if (!batchId) return;
+    setCreando(true);
+    try {
+      const maxVueltas = Math.ceil(MAX_ROWS_PER_BATCH / 20) + 5;
+      for (let vuelta = 0; vuelta < maxVueltas; vuelta++) {
+        const res = await createBatchSlice(batchId);
+        if (!res.ok || !res.progress) {
+          toast.error(res.error ?? "Falló el reintento");
+          return;
+        }
+        setProgreso({
+          ok: res.progress.okCount,
+          error: res.progress.errorCount,
+          faltan: res.progress.remaining,
+        });
+        if (res.progress.done) break;
+      }
+      const leido = await loadBatch(batchId);
+      if (leido.ok && leido.batch) setResultado(leido.batch.rows);
+    } catch (err) {
+      console.error("[cargar] el reintento no llego al servidor:", err);
+      toast.error("No se pudo contactar al servidor. Revisa la conexión.");
+    } finally {
+      setCreando(false);
+    }
+  }
+
+  if (resultado) {
+    return (
+      <ImportResult
+        rows={resultado}
+        retrying={creando}
+        onRetry={reintentar}
+        onClose={() => {
+          setResultado(null);
+          setProgreso(null);
+          setBatchId(null);
+          setNombre("");
+          setFilas([filaVacia(0)]);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="space-y-3">
       <ImportToolbar
@@ -168,6 +283,17 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
           className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-secondary disabled:opacity-50"
         >
           <Save className="h-3.5 w-3.5" /> {guardando ? "Guardando…" : "Guardar borrador"}
+        </button>
+        <button
+          onClick={crearEnOdoo}
+          disabled={creando || guardando || filas.length === 0}
+          className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground disabled:opacity-50"
+        >
+          {creando
+            ? progreso
+              ? `Creando… ${progreso.ok} listos, faltan ${progreso.faltan}`
+              : "Creando…"
+            : "Crear en Odoo"}
         </button>
         <span className="text-xs text-muted-foreground">
           {filas.length} fila{filas.length !== 1 ? "s" : ""}

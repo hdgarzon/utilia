@@ -1,0 +1,104 @@
+"use client";
+
+import { CheckCircle, XCircle, AlertTriangle, Download } from "lucide-react";
+import { buildCsv, downloadCsv } from "@/lib/csv";
+import type { ImportRowDraft } from "@/lib/products/import-types";
+
+export function ImportResult({
+  rows,
+  onRetry,
+  onClose,
+  retrying,
+}: {
+  rows: ImportRowDraft[];
+  onRetry: () => void;
+  onClose: () => void;
+  retrying: boolean;
+}) {
+  const ok = rows.filter((r) => r.status === "OK");
+  const fallidas = rows.filter((r) => r.status === "ERROR");
+  const avisos = ok.filter((r) => r.warning);
+  const pendientesCantidad = ok.filter((r) => r.qtyOnHand !== null && r.qtyOnHand > 0);
+
+  function descargarPendientes() {
+    const csv = buildCsv(pendientesCantidad, [
+      { header: "ID Odoo", value: (r) => r.odooTemplateId ?? "" },
+      { header: "Producto", value: (r) => r.name },
+      { header: "Cantidad a cargar", value: (r) => r.qtyOnHand ?? 0 },
+    ]);
+    downloadCsv("cantidades-pendientes.csv", csv);
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3">
+        <div className="rounded-xl border border-primary/40 bg-primary/5 p-4 text-center">
+          <CheckCircle className="h-5 w-5 text-primary mx-auto mb-1" />
+          <p className="text-2xl font-bold text-primary">{ok.length}</p>
+          <p className="text-xs text-muted-foreground">creados en Odoo</p>
+        </div>
+        <div className="rounded-xl border border-destructive/40 bg-destructive/5 p-4 text-center">
+          <XCircle className="h-5 w-5 text-destructive mx-auto mb-1" />
+          <p className="text-2xl font-bold text-destructive">{fallidas.length}</p>
+          <p className="text-xs text-muted-foreground">fallaron</p>
+        </div>
+      </div>
+
+      {pendientesCantidad.length > 0 ? (
+        <div className="rounded-xl border border-warning/40 bg-warning/5 p-4 space-y-3">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              <span className="font-semibold text-foreground">
+                {pendientesCantidad.length} producto{pendientesCantidad.length !== 1 ? "s" : ""} nacieron en cero.
+              </span>{" "}
+              Utilia no mueve inventario, así que las cantidades que anotaste quedan pendientes de cargar en Odoo.
+            </p>
+          </div>
+          <button
+            onClick={descargarPendientes}
+            className="inline-flex items-center gap-1 rounded-lg border border-border bg-card px-3 py-1.5 text-xs hover:bg-secondary"
+          >
+            <Download className="h-3.5 w-3.5" /> Descargar cantidades pendientes
+          </button>
+        </div>
+      ) : null}
+
+      {avisos.length > 0 ? (
+        <div className="rounded-xl border border-border bg-card p-4 space-y-1">
+          <p className="text-xs font-semibold">Creados con advertencia</p>
+          {avisos.slice(0, 10).map((r) => (
+            <p key={r.id} className="text-xs text-muted-foreground">
+              {r.name}: {r.warning}
+            </p>
+          ))}
+        </div>
+      ) : null}
+
+      {fallidas.length > 0 ? (
+        <div className="rounded-xl border border-border bg-card p-4 space-y-2">
+          <p className="text-xs font-semibold">Filas que fallaron</p>
+          {fallidas.slice(0, 20).map((r) => (
+            <p key={r.id} className="text-xs text-muted-foreground">
+              <span className="text-foreground">{r.name || `Fila ${r.rowIndex + 1}`}</span>: {r.error}
+            </p>
+          ))}
+          <button
+            onClick={onRetry}
+            disabled={retrying}
+            className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground disabled:opacity-50"
+          >
+            {retrying ? "Reintentando…" : `Reintentar ${fallidas.length}`}
+          </button>
+        </div>
+      ) : null}
+
+      <button
+        onClick={onClose}
+        className="rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-secondary"
+      >
+        Cerrar y empezar otro lote
+      </button>
+    </div>
+  );
+}

@@ -389,6 +389,30 @@ la da este script sino la lista blanca de `write-guard.ts`, que no puede
 emitir un campo de inventario, y su prueba unitaria — verificada borrando la
 llamada a `assertWritable` y comprobando que la prueba falla.
 
+## Verificación de la barrera al crear (Fase 2)
+
+Crear un producto **no puede** mover inventario: nace en cero, y `qtyOnHand`
+nunca sale de Postgres. La garantía dura está en el código —
+`assertWritableOnCreate` no admite `qty_available`, `inventory_quantity` ni
+`free_qty`, y hay una prueba que falla si alguien los agrega — pero conviene
+confirmarlo una vez contra producción.
+
+**Decisión del dueño:** no se crean productos de prueba. La verificación se
+hace con la primera carga real, que de todos modos iba a ocurrir:
+
+1. Antes de darle "Crear en Odoo": `npm run verify:inventario antes`
+2. Cargar el lote normalmente.
+3. Después: `npm run verify:inventario despues`
+
+**Resultado esperado:** `OK: cero ajustes de inventario nuevos sobre N
+plantillas comparadas.` Las plantillas nuevas aparecerán como "nuevas desde la
+foto" — eso es correcto, son los productos que acabas de crear. Lo que no debe
+aparecer es un solo ajuste de inventario.
+
+Si aparecen ajustes, hay que mirarlos en Odoo antes de concluir nada: el
+script no puede distinguir un ajuste hecho por la app de uno hecho a mano,
+porque la API usa la misma cuenta que el POS (ver § Limitación conocida).
+
 ## Pendientes conocidos (no bloquean el merge)
 
 La revisión final de rama los clasificó como no bloqueantes. Ninguno toca la

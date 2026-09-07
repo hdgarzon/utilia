@@ -7,9 +7,13 @@ import { Prisma } from "@prisma/client";
 import {
   MAX_IMAGE_BASE64_BYTES,
   MAX_ROWS_PER_BATCH,
+  CREATE_SLICE_SIZE,
   type ImportRowDraft,
+  type ImportProgress,
 } from "@/lib/products/import-types";
 import type { ProductType } from "@/lib/products/types";
+import { createTemplate } from "@/lib/products/odoo-catalog-write";
+import { translateOdooError } from "@/lib/odoo-write";
 
 // Un archivo "use server" solo puede exportar funciones async; los tipos
 // quedan internos.
@@ -171,4 +175,122 @@ export async function loadBatch(batchId: unknown): Promise<LoadResult> {
     console.error("[cargar] fallo al leer el borrador:", err);
     return { ok: false, error: "No se pudo leer el borrador." };
   }
+}
+
+type CreateResult = { ok: boolean; error?: string; progress?: ImportProgress };
+
+/** Tope para bajar una imagen por link. Corto a proposito: una imagen lenta
+ *  no debe consumir el presupuesto de toda la tanda. */
+const IMAGE_FETCH_TIMEOUT_MS = 15_000;
+
+/**
+ * Crea UNA tanda de filas pendientes y devuelve el progreso. El cliente la
+ * vuelve a llamar hasta que `done` sea true.
+ *
+ * Cada fila se marca OK o ERROR inmediatamente despues de su create, asi que
+ * un corte a mitad no duplica productos: al reintentar solo se toman las que
+ * no quedaron OK.
+ */
+export async function createBatchSlice(batchId: unknown): Promise<CreateResult> {
+  await requireSession();
+  const id = z.string().min(1).safeParse(batchId);
+  if (!id.success) return { ok: false, error: "Lote inválido" };
+
+  try {
+    await prisma.productImportBatch.update({
+      where: { id: id.data },
+      data: { status: "CREATING" },
+    });
+
+    const pendientes = await prisma.productImportRow.findMany({
+      where: { batchId: id.data, status: { not: "OK" } },
+      orderBy: { rowIndex: "asc" },
+      take: CREATE_SLICE_SIZE,
+    });
+
+    for (const fila of pendientes) {
+      let warning: string | null = null;
+      let imagen: string | null = fila.imageData;
+
+      if (!imagen && fila.imageUrl) {
+        try {
+          imagen = await descargarImagen(fila.imageUrl);
+        } catch (err) {
+          // Una imagen rota no debe costar el producto.
+          console.error(`[cargar] no se pudo bajar la imagen de la fila ${fila.rowIndex}:`, err);
+          warning = "El producto se creó sin imagen: el link no se pudo descargar";
+        }
+      }
+
+      try {
+        const odooTemplateId = await createTemplate(
+          {
+            name: fila.name,
+            productType: fila.productType as ProductType,
+            isStorable: fila.isStorable,
+            qtyOnHand: fila.qtyOnHand,
+            salePrice: fila.salePrice,
+            cost: fila.cost,
+            purchaseTaxIds: fila.purchaseTaxIds,
+            categoryId: fila.categoryId,
+            imageUrl: fila.imageUrl,
+            imageData: fila.imageData,
+            isPublished: fila.isPublished,
+            publicCategoryIds: fila.publicCategoryIds,
+            showAvailability: fila.showAvailability,
+            supplierPartnerId: fila.supplierPartnerId,
+          },
+          imagen
+        );
+
+        // Se marca OK y se suelta el base64 en el mismo update: un lote
+        // terminado no debe arrastrar imagenes en Postgres.
+        await prisma.productImportRow.update({
+          where: { id: fila.id },
+          data: { status: "OK", odooTemplateId, error: null, warning, imageData: null },
+        });
+      } catch (err) {
+        await prisma.productImportRow.update({
+          where: { id: fila.id },
+          data: { status: "ERROR", error: translateOdooError(err, "catalogo") },
+        });
+      }
+    }
+
+    const [okCount, errorCount, remaining] = await Promise.all([
+      prisma.productImportRow.count({ where: { batchId: id.data, status: "OK" } }),
+      prisma.productImportRow.count({ where: { batchId: id.data, status: "ERROR" } }),
+      prisma.productImportRow.count({ where: { batchId: id.data, status: "PENDING" } }),
+    ]);
+    const done = remaining === 0;
+
+    await prisma.productImportBatch.update({
+      where: { id: id.data },
+      data: { status: done ? (errorCount > 0 ? "PARTIAL" : "DONE") : "CREATING" },
+    });
+
+    return {
+      ok: true,
+      progress: { processed: pendientes.length, okCount, errorCount, remaining, done },
+    };
+  } catch (err) {
+    console.error("[cargar] fallo la tanda de creacion:", err);
+    // P2025: el lote ya no existe. Reintentar con el mismo id fallaria igual,
+    // asi que no hay que decirle al usuario que lo intente de nuevo.
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2025") {
+      return { ok: false, error: "Ese lote ya no existe. Empieza uno nuevo." };
+    }
+    return { ok: false, error: "No se pudo crear la tanda. Revisa la conexión con Odoo." };
+  }
+}
+
+/** Baja una imagen por link y la devuelve en base64 sin prefijo `data:`. */
+async function descargarImagen(url: string): Promise<string> {
+  const res = await fetch(url, { signal: AbortSignal.timeout(IMAGE_FETCH_TIMEOUT_MS) });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const tipo = res.headers.get("content-type") ?? "";
+  if (!tipo.startsWith("image/")) throw new Error(`No es una imagen: ${tipo}`);
+  const buf = await res.arrayBuffer();
+  if (buf.byteLength > 5_000_000) throw new Error("La imagen pesa más de 5 MB");
+  return Buffer.from(buf).toString("base64");
 }
