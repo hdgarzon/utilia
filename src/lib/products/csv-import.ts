@@ -151,10 +151,20 @@ export type NumeroLeido = number | null | "invalido";
 
 export function leerNumero(v: string | undefined): NumeroLeido {
   const s = (v ?? "").trim();
+  // Celda vacia: no es un error, es que no dijeron nada.
   if (s === "") return null;
   // Se quitan simbolos de moneda y espacios antes de decidir.
   const limpio = s.replace(/[$\s]/g, "");
-  if (limpio === "") return null;
+
+  // Escribieron algo que no lleva ni un digito. Hay que exigirlo ANTES de
+  // convertir, porque los dos caminos de abajo mienten:
+  //   - devolver null (lo que hacia un "$" solo) lo hace pasar por celda
+  //     vacia y el precio se va en blanco sin que nadie avise;
+  //   - la conversion borra los puntos de los miles, asi que ".." queda en
+  //     "" y Number("") es 0 -- un precio real de cero puesto en Odoo en
+  //     silencio, que es justo lo que este parseo existe para evitar.
+  if (!/\d/.test(limpio)) return "invalido";
+
   const n = Number(limpio.replace(/\./g, "").replace(",", "."));
   return Number.isFinite(n) ? n : "invalido";
 }

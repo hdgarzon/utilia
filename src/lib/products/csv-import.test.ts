@@ -129,6 +129,20 @@ describe("leerNumero", () => {
   it("numeros negativos", () => {
     expect(leerNumero("-3")).toBe(-3);
   });
+
+  it("una celda sin ningun digito es invalida, no vacia ni cero", () => {
+    // Los dos casos que se colaban, cada uno por un camino distinto:
+    //
+    // "$" a secas quedaba en "" al quitar el simbolo y salia como null, o
+    // sea como celda vacia: el precio se iba en blanco sin avisar.
+    expect(leerNumero("$")).toBe("invalido");
+    // ".." o "." pierden los puntos al normalizar los miles, quedan en "",
+    // y Number("") es 0: un precio real de cero puesto en Odoo en silencio.
+    expect(leerNumero("..")).toBe("invalido");
+    expect(leerNumero(".")).toBe("invalido");
+    expect(leerNumero(",")).toBe("invalido");
+    expect(leerNumero("-")).toBe("invalido");
+  });
 });
 
 describe("guessColumnMapping", () => {

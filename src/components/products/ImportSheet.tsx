@@ -11,6 +11,7 @@ import { parseDelimited, normalizar, leerNumero } from "@/lib/products/csv-impor
 import { saveBatch, createBatchSlice, loadBatch, retryFailedRows } from "@/app/(dashboard)/productos/cargar/actions";
 import {
   filaVacia,
+  revisarPesoImagenes,
   MAX_ROWS_PER_BATCH,
   CREATE_SLICE_SIZE,
   type ImportRowInput,
@@ -82,6 +83,21 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
       return;
     }
     e.preventDefault();
+
+    // Se cuentan ANTES de tocar el estado, en su propia pasada: el updater de
+    // `setFilas` puede correr dos veces (StrictMode) y un contador mutado ahi
+    // adentro contaria doble.
+    //
+    // Y hay que contarlas: una celda ilegible deja el numero como estaba --
+    // casi siempre vacio -- y un precio vacio NO es un error de validacion,
+    // asi que la fila no se pinta de rojo y el producto se crearia sin precio
+    // sin que nadie se entere. Es el mismo aviso que ya da "Importar CSV".
+    const ilegibles = matriz.reduce(
+      (total, cols) =>
+        total + [cols[3], cols[4], cols[5]].filter((c) => leerNumero(c) === "invalido").length,
+      0
+    );
+
     setFilas((prev) => {
       const next = [...prev];
       matriz.forEach((cols, k) => {
@@ -132,11 +148,26 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
       });
       return next.map((f, j) => ({ ...f, rowIndex: j }));
     });
+
+    if (ilegibles > 0) {
+      toast.warning(
+        ilegibles === 1
+          ? "1 celda numérica no se pudo leer y quedó vacía. Revísala antes de crear."
+          : `${ilegibles} celdas numéricas no se pudieron leer y quedaron vacías. Revísalas antes de crear.`
+      );
+    }
   }
 
   async function guardar() {
     if (!nombre.trim()) {
       toast.error("Ponle un nombre al lote para poder guardarlo");
+      return;
+    }
+    // Antes de enviar, no despues: un body pasado de tamaño lo corta la
+    // plataforma y del otro lado solo se ve un fallo de red.
+    const pesan = revisarPesoImagenes(filas);
+    if (pesan) {
+      toast.error(pesan);
       return;
     }
     setGuardando(true);
@@ -192,6 +223,12 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
     }
     if (!nombre.trim()) {
       toast.error("Ponle un nombre al lote");
+      return;
+    }
+    // `crearEnOdoo` empieza guardando, asi que le corre el mismo tope.
+    const pesan = revisarPesoImagenes(filas);
+    if (pesan) {
+      toast.error(pesan);
       return;
     }
 

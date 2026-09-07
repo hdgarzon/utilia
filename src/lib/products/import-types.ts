@@ -127,3 +127,59 @@ export const MAX_ROWS_PER_BATCH = 200;
 export const MAX_IMAGE_BASE64_BYTES = 500_000;
 /** Filas que crea cada invocacion, para no pasarse del limite serverless. */
 export const CREATE_SLICE_SIZE = 20;
+
+/**
+ * Fotos adjuntas al tope que se garantiza que caben en un lote. Ocho es un
+ * numero realista: las fotos solo entran por carga manual desde el
+ * computador -- el CSV trae un link, que se descarga en el servidor y nunca
+ * pasa por el body -- asi que aunque la hoja tenga 200 filas de texto es raro
+ * que mas de un puñado traiga foto pegada a mano.
+ */
+export const MAX_IMAGENES_ADJUNTAS = 8;
+
+/** Lo que pueden pesar las fotos de un lote. */
+export const MAX_IMAGE_PAYLOAD_BYTES = MAX_IMAGENES_ADJUNTAS * MAX_IMAGE_BASE64_BYTES;
+
+/** Espacio para las filas de texto y el JSON que las envuelve. */
+const MARGEN_TEXTO_BYTES = 400_000;
+
+/**
+ * Tope del body de una server action. Lo lee next.config.ts: el numero vive
+ * aqui, junto a los otros topes, para que no haya dos verdades.
+ *
+ * Se deriva de los dos de arriba en vez de escribirse a mano. Escrito a mano
+ * eran 4.000.000, que es exactamente ocho fotos al tope y NADA para el texto:
+ * el comentario decia que dejaba margen para las 200 filas y no dejaba
+ * ninguno. Sumando el margen explicito la cuenta no puede volver a mentir.
+ *
+ * Queda bajo el techo duro de 4,5 MB que Vercel impone a nivel de plataforma
+ * para funciones serverless -- ese no se puede subir desde configuracion.
+ */
+export const MAX_ACTION_BODY_BYTES = MAX_IMAGE_PAYLOAD_BYTES + MARGEN_TEXTO_BYTES;
+
+/**
+ * Revisa que las fotos adjuntas quepan en una llamada a `saveBatch`.
+ * Devuelve el mensaje a mostrar, o null si caben.
+ *
+ * Tiene que correr en el navegador, ANTES de enviar. Cuando el body se pasa,
+ * la llamada la corta la plataforma antes de llegar al servidor: la accion
+ * nunca se ejecuta, asi que no hay donde validarlo alla, y lo unico que ve el
+ * navegador es un fallo de red. El usuario leia "revisa tu conexion" y no
+ * tenia como saber que el problema eran las fotos.
+ *
+ * `bodySizeLimit` estaba calculado suponiendo ocho fotos por lote. Era una
+ * estimacion de uso, no un tope: nada impedia adjuntarle foto a las 200
+ * filas, y ahi el envio se va a 100 MB.
+ */
+export function revisarPesoImagenes(rows: Array<{ imageData: string | null }>): string | null {
+  const conFoto = rows.filter((r) => r.imageData);
+  const peso = conFoto.reduce((total, r) => total + (r.imageData?.length ?? 0), 0);
+  if (peso <= MAX_IMAGE_PAYLOAD_BYTES) return null;
+
+  const caben = Math.floor(MAX_IMAGE_PAYLOAD_BYTES / MAX_IMAGE_BASE64_BYTES);
+  return (
+    `Las ${conFoto.length} fotos adjuntas pesan ${Math.round(peso / 1000)} KB y el máximo por lote ` +
+    `es ${Math.round(MAX_IMAGE_PAYLOAD_BYTES / 1000)} KB. Quita algunas o divide la lista en tandas ` +
+    `de ~${caben} productos con foto. Las imágenes por link no cuentan: esas se descargan en el servidor.`
+  );
+}
