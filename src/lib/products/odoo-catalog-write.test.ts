@@ -91,14 +91,85 @@ describe("updateTemplates", () => {
 
   it("la barrera esta cableada: un campo prohibido traducido no llega a Odoo", async () => {
     // toOdooValues nunca produce un campo prohibido, asi que la unica forma de
-    // comprobar que assertWritable esta REALMENTE en el camino es interceptar
-    // la traduccion. Sin esta prueba, borrar la llamada a assertWritable no
-    // rompe ningun test.
+    // comprobar que assertWritableOnUpdate esta REALMENTE en el camino es
+    // interceptar la traduccion. Sin esta prueba, borrar la llamada a
+    // assertWritableOnUpdate no rompe ningun test.
     executeKw.mockResolvedValue(true);
     const guard = await import("./write-guard");
     const spy = vi.spyOn(guard, "toOdooValues").mockReturnValue({ qty_available: 5 });
     try {
       await expect(updateTemplates([1], { isPublished: true })).rejects.toThrow(/no permitido/i);
+      expect(executeKw).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
+describe("createTemplate", () => {
+  it("crea y devuelve el id de Odoo", async () => {
+    executeKw.mockResolvedValue(4242);
+    const { createTemplate } = await import("./odoo-catalog-write");
+    const id = await createTemplate(
+      {
+        name: "CUADERNO DEMO",
+        productType: "consu",
+        isStorable: true,
+        qtyOnHand: 25,
+        salePrice: 1000,
+        cost: 600,
+        purchaseTaxIds: [],
+        categoryId: null,
+        imageUrl: null,
+        imageData: null,
+        isPublished: false,
+        publicCategoryIds: [],
+        showAvailability: false,
+        supplierPartnerId: null,
+      },
+      null
+    );
+    expect(id).toBe(4242);
+    const [modelo, metodo, args] = executeKw.mock.calls[0];
+    expect(modelo).toBe("product.template");
+    expect(metodo).toBe("create");
+    // La cantidad a la mano NO viaja a Odoo, aunque la fila la traiga.
+    expect(JSON.stringify(args)).not.toContain("qty_available");
+    expect(JSON.stringify(args)).not.toContain("25");
+  });
+
+  it("la barrera esta cableada: un campo prohibido traducido no llega a Odoo", async () => {
+    // Mismo motivo que la prueba equivalente de updateTemplates: toOdooCreateValues
+    // nunca produce un campo prohibido, asi que la unica forma de comprobar que
+    // assertWritableOnCreate esta REALMENTE en el camino de createTemplate es
+    // interceptar la traduccion. Sin esta prueba, borrar la llamada a
+    // assertWritableOnCreate no rompe ningun test (verificado a mano).
+    executeKw.mockResolvedValue(4242);
+    const { createTemplate } = await import("./odoo-catalog-write");
+    const guard = await import("./write-guard");
+    const spy = vi.spyOn(guard, "toOdooCreateValues").mockReturnValue({ qty_available: 5 });
+    try {
+      await expect(
+        createTemplate(
+          {
+            name: "CUADERNO DEMO",
+            productType: "consu",
+            isStorable: true,
+            qtyOnHand: null,
+            salePrice: null,
+            cost: null,
+            purchaseTaxIds: [],
+            categoryId: null,
+            imageUrl: null,
+            imageData: null,
+            isPublished: false,
+            publicCategoryIds: [],
+            showAvailability: false,
+            supplierPartnerId: null,
+          },
+          null
+        )
+      ).rejects.toThrow(/no permitido/i);
       expect(executeKw).not.toHaveBeenCalled();
     } finally {
       spy.mockRestore();

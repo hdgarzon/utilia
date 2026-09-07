@@ -208,7 +208,8 @@ model ProductImportRow {
 }
 
 enum ProductImportRowStatus {
-  PENDING
+  PENDING   // nunca se intento
+  CREATING  // reclamada: se llamo a Odoo y no se confirmo aqui. Nadie la retoma.
   OK
   ERROR
 }
@@ -270,17 +271,25 @@ Los componentes de la hoja se mantienen chicos a propósito: `ImportSheetRow` y 
 ### 8. Flujo de creación
 
 1. El usuario da "Crear en Odoo". La server action marca el lote `CREATING`.
-2. Por cada fila `PENDING` o `ERROR`, en serie:
+2. Por cada fila `PENDING` (**solo** `PENDING`; las que fallaron vuelven a esa cola únicamente por `retryFailedRows`), en serie y en **dos fases**:
+   - **Fase 1 — reclamar.** `PENDING → CREATING` en Postgres, *antes* de tocar Odoo, con `status: PENDING` en el `where`. Si esto falla, nunca se llamó a Odoo: la fila sigue `PENDING`, intacta. El `where` hace además de candado: dos pestañas creando el mismo lote no pueden llevarse la misma fila.
    - Resuelve la imagen: `imageData` si existe, si no descarga `imageUrl` (timeout 15 s) y la convierte a base64. Si falla, sigue sin imagen y anota la advertencia.
-   - `createTemplate(...)` → `odooTemplateId`.
+   - **Fase 2 — crear.** `createTemplate(...)` → `odooTemplateId`.
    - Marca la fila `OK`, guarda el id, y **borra `imageData`**.
-   - Si Odoo rechaza, marca `ERROR` con el mensaje traducido y **continúa con la siguiente**.
-3. Al terminar: `DONE` si todas OK, `PARTIAL` si alguna falló.
-4. La pantalla de resultado muestra el resumen, un botón de reintentar solo las fallidas, y la tabla de **cantidades pendientes de cargar** (las filas con `qtyOnHand` no nulo) con su CSV descargable.
+   - Si Odoo rechaza, marca `ERROR` con el mensaje traducido y **continúa con la siguiente**. Ahí no hay producto, así que devolverla al circuito es seguro.
+   - Si el registro del éxito no se puede guardar (ni completo ni mínimo), la fila **se queda en `CREATING`** y la tanda corta.
+3. Al terminar: `DONE` si todas OK, `PARTIAL` si alguna falló **o quedó sin confirmar**.
+4. La pantalla de resultado muestra el resumen, un botón de reintentar solo las fallidas, y la tabla de **cantidades pendientes de cargar** (las filas con `qtyOnHand` no nulo) con su CSV descargable. Si quedó alguna fila en `CREATING`, encabeza la pantalla un aviso en rojo que la nombra y dice explícitamente que "Reintentar" no la toca: es el único lugar donde el dueño se entera de que tiene que buscarla en Odoo.
 
 **Serie y no paralelo** a propósito: 200 creaciones concurrentes contra un Odoo de producción es una forma fácil de degradarlo, y el orden de la hoja se conserva en los resultados.
 
-**Reanudación:** si el proceso muere a mitad (timeout serverless, cierre de pestaña), el lote queda en `CREATING` con las filas ya creadas marcadas `OK`. Volver a entrar y darle "Crear en Odoo" retoma solo las que faltan. Como cada fila se marca `OK` inmediatamente después de su `create`, **no se puede crear el mismo producto dos veces** salvo que el proceso muera entre el `create` y el `update` — ventana de milisegundos, y el peor caso es un duplicado visible en Odoo, no un movimiento de inventario.
+**Reanudación:** si el proceso muere a mitad (timeout serverless, cierre de pestaña), el lote queda en `CREATING` con las filas ya creadas marcadas `OK` y la que estaba en curso en `CREATING`. Volver a entrar y darle "Crear en Odoo" retoma solo las `PENDING`.
+
+Que las dos fases estén separadas es lo único que impide el duplicado. `CREATING` no lo selecciona **ninguna** consulta: ni la tanda (toma `PENDING`), ni "Reintentar" (toma `ERROR`), ni `saveBatch` (borra `PENDING` y `ERROR`). Así, morirse entre el `create` de Odoo y el `update` local deja una fila que hay que revisar a mano, no un producto duplicado.
+
+Con la fila marcada `OK` inmediatamente después del `create` y nada más —como estaba antes— esa fila se quedaba en `PENDING`, indistinguible de una que nunca se intentó, y bastaba que **otra** fila fallara para que apareciera "Reintentar": ese clic corriente la volvía a mandar a `createTemplate` y creaba el producto por segunda vez en producción. Sin carrera y sin proceso muerto.
+
+Queda una ventana irreducible, la de siempre: si Odoo crea el producto pero la respuesta se pierde, `createTemplate` lanza y la fila se marca `ERROR` como cualquier otro fallo. No se puede distinguir sin una transacción que abarque los dos sistemas; el peor caso sigue siendo un duplicado visible en Odoo, nunca un movimiento de inventario.
 
 ## Manejo de errores
 
@@ -388,6 +397,30 @@ nuevos, hay que mirarlos en Odoo antes de concluir nada. La garantía dura no
 la da este script sino la lista blanca de `write-guard.ts`, que no puede
 emitir un campo de inventario, y su prueba unitaria — verificada borrando la
 llamada a `assertWritable` y comprobando que la prueba falla.
+
+## Verificación de la barrera al crear (Fase 2)
+
+Crear un producto **no puede** mover inventario: nace en cero, y `qtyOnHand`
+nunca sale de Postgres. La garantía dura está en el código —
+`assertWritableOnCreate` no admite `qty_available`, `inventory_quantity` ni
+`free_qty`, y hay una prueba que falla si alguien los agrega — pero conviene
+confirmarlo una vez contra producción.
+
+**Decisión del dueño:** no se crean productos de prueba. La verificación se
+hace con la primera carga real, que de todos modos iba a ocurrir:
+
+1. Antes de darle "Crear en Odoo": `npm run verify:inventario antes`
+2. Cargar el lote normalmente.
+3. Después: `npm run verify:inventario despues`
+
+**Resultado esperado:** `OK: cero ajustes de inventario nuevos sobre N
+plantillas comparadas.` Las plantillas nuevas aparecerán como "nuevas desde la
+foto" — eso es correcto, son los productos que acabas de crear. Lo que no debe
+aparecer es un solo ajuste de inventario.
+
+Si aparecen ajustes, hay que mirarlos en Odoo antes de concluir nada: el
+script no puede distinguir un ajuste hecho por la app de uno hecho a mano,
+porque la API usa la misma cuenta que el POS (ver § Limitación conocida).
 
 ## Pendientes conocidos (no bloquean el merge)
 

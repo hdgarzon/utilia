@@ -1,7 +1,14 @@
 import { odooRpc } from "@/lib/odoo";
 import { translateOdooError } from "@/lib/odoo-write";
-import { assertModelAllowed, assertWritable, toOdooValues } from "./write-guard";
+import {
+  assertModelAllowed,
+  assertWritableOnUpdate,
+  assertWritableOnCreate,
+  toOdooValues,
+  toOdooCreateValues,
+} from "./write-guard";
 import type { BulkResult, TemplatePatch } from "./types";
+import type { ProductCreateInput } from "./import-types";
 
 /**
  * Escritura de catalogo hacia Odoo. Hermano de src/lib/odoo-write.ts y con el
@@ -32,7 +39,7 @@ export async function updateTemplates(ids: number[], patch: TemplatePatch): Prom
   if (Object.keys(values).length === 0) {
     throw new Error("El cambio masivo no trae ningun campo: patch sin cambios");
   }
-  assertWritable(values);
+  assertWritableOnUpdate(values);
 
   const result: BulkResult = { ok: [], failed: [] };
 
@@ -84,4 +91,24 @@ function esRechazoDeNegocio(err: unknown): boolean {
 
 function write(ids: number[], values: Record<string, unknown>): Promise<boolean> {
   return odooRpc.executeKw<boolean>(MODEL, "write", [ids, values], {}, ODOO_WRITE_TIMEOUT_MS);
+}
+
+/**
+ * Crea UNA plantilla de producto en Odoo y devuelve su id.
+ *
+ * Se llama en serie desde la creacion por tandas: Odoo.sh estrangula la
+ * concurrencia, y en serie los resultados se corresponden fila a fila.
+ *
+ * Crear un producto NO mueve inventario: nace en cero. La cantidad a la mano
+ * se captura en la hoja y se exporta como pendiente, nunca se escribe.
+ */
+export async function createTemplate(
+  row: ProductCreateInput,
+  imageBase64: string | null
+): Promise<number> {
+  assertModelAllowed(MODEL);
+  const values = toOdooCreateValues(row, imageBase64);
+  assertWritableOnCreate(values);
+
+  return odooRpc.executeKw<number>(MODEL, "create", [values], {}, ODOO_WRITE_TIMEOUT_MS);
 }

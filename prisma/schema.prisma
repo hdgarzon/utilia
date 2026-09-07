@@ -360,3 +360,75 @@ model ReplenishmentLine {
   @@index([orderId])
   @@index([odooProductId])
 }
+
+// ─── Carga masiva de productos ────────────────────────────────────────────────
+
+model ProductImportBatch {
+  id        String              @id @default(cuid())
+  name      String // "Lista Distribuidora X - sep"
+  status    ProductImportStatus @default(DRAFT)
+  createdBy String? // User.id de quien lo creo
+  rows      ProductImportRow[]
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+
+  @@index([status])
+}
+
+enum ProductImportStatus {
+  DRAFT // en edicion
+  CREATING // creacion en curso (una tanda corriendo)
+  DONE // todas las filas OK
+  PARTIAL // al menos una fila con error, reintentable
+}
+
+model ProductImportRow {
+  id       String             @id @default(cuid())
+  batch    ProductImportBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  batchId  String
+  rowIndex Int // orden en la hoja
+
+  // Campos del producto
+  name           String
+  productType    String  @default("consu") // "consu" | "service" | "combo"
+  isStorable     Boolean @default(true) // rastreo de inventario
+  // Capturado para exportarlo como pendiente. NUNCA se escribe en Odoo:
+  // ponerle cantidad a un producto exige un ajuste de inventario.
+  qtyOnHand      Float?
+  salePrice      Float?
+  cost           Float?
+  purchaseTaxIds Int[] // account.tax
+  categoryId     Int? // product.category
+  imageUrl       String? // link, se descarga al crear
+  imageData      String? @db.Text // base64 ya reducido en el navegador
+
+  // Tienda
+  isPublished       Boolean @default(false)
+  publicCategoryIds Int[] // product.public.category
+  showAvailability  Boolean @default(false)
+
+  // Proveedor
+  supplierPartnerId Int? // res.partner
+
+  // Resultado
+  status         ProductImportRowStatus @default(PENDING)
+  odooTemplateId Int?
+  error          String?
+  // Se creo bien pero algo secundario fallo (p. ej. la imagen no se pudo
+  // descargar). La fila queda OK: una imagen rota no debe costar el producto.
+  warning        String?
+
+  @@unique([batchId, rowIndex])
+  @@index([batchId])
+}
+
+enum ProductImportRowStatus {
+  PENDING // nunca se intento
+  // Se reclamo la fila y se llamo a Odoo, pero no se pudo confirmar el
+  // resultado aqui. El producto puede existir alla. NINGUNA consulta la
+  // vuelve a tomar: ni la tanda de creacion (solo PENDING) ni el reintento
+  // (solo ERROR). Se sale de aqui a mano, mirando Odoo.
+  CREATING
+  OK
+  ERROR
+}
