@@ -113,12 +113,18 @@ function detectarSeparador(texto: string): string {
   return tabs > comas ? "\t" : ",";
 }
 
-/** Minusculas, sin tildes, sin espacios de sobra. */
-function normalizar(s: string): string {
+/**
+ * Minusculas, sin tildes, sin espacios de sobra.
+ *
+ * Se exporta a proposito: la hoja y la barra de importacion necesitan
+ * exactamente la misma normalizacion, y tenerla escrita tres veces fue como
+ * el rango de tildes acabo escrito de dos formas distintas.
+ */
+export function normalizar(s: string): string {
   return s
     .trim()
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\u0300-\u036f]/g, "")
     .replace(/\s+/g, " ");
 }

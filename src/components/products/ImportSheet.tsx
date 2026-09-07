@@ -4,9 +4,9 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Plus, Save } from "lucide-react";
 import { ImportSheetRow } from "./ImportSheetRow";
-import { ImportToolbar } from "./ImportToolbar";
+import { ImportToolbar, TOKENS_VERDADERO } from "./ImportToolbar";
 import { validateRow, rowIsCreatable } from "@/lib/products/import-schema";
-import { parseDelimited } from "@/lib/products/csv-import";
+import { parseDelimited, normalizar } from "@/lib/products/csv-import";
 import { saveBatch } from "@/app/(dashboard)/productos/cargar/actions";
 import { filaVacia, MAX_ROWS_PER_BATCH, type ImportRowInput } from "@/lib/products/import-types";
 import type { CatalogOptions } from "@/lib/products/types";
@@ -75,8 +75,7 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
         if (i >= MAX_ROWS_PER_BATCH) return;
         if (!next[i]) next[i] = filaVacia(i);
         const num = (v: string | undefined) => (v && v.trim() !== "" ? Number(v) : null);
-        const txt = (v: string | undefined) =>
-          (v ?? "").trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+        const txt = (v: string | undefined) => normalizar(v ?? "");
 
         // Tipo y rastreo llegan como texto libre desde la hoja de calculo.
         // Si la celda viene vacia se conserva lo que ya tenia la fila.
@@ -97,7 +96,7 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
         const isStorable = !esBien
           ? false
           : rastreoPegado
-            ? ["si", "x", "true", "1", "yes", "verdadero"].includes(rastreoPegado)
+            ? TOKENS_VERDADERO.has(rastreoPegado)
             : next[i].isStorable;
 
         next[i] = {
@@ -140,7 +139,20 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
     <div className="space-y-3">
       <ImportToolbar
         options={options}
-        onRows={(nuevas) => setFilas(nuevas.length > 0 ? nuevas : [filaVacia(0)])}
+        onRows={(nuevas) => {
+          // Importar reemplaza la hoja entera. Si el usuario ya escribio algo
+          // y no lo ha guardado, se lo llevaria por delante sin aviso -- y el
+          // codigo no puede distinguir "reimporto el archivo corregido" de
+          // "acabo de teclear veinte filas".
+          const hayTrabajo = filas.some((f) => f.name.trim() !== "");
+          if (
+            hayTrabajo &&
+            !window.confirm("Importar reemplaza todas las filas de la hoja. ¿Continuar?")
+          ) {
+            return;
+          }
+          setFilas(nuevas.length > 0 ? nuevas : [filaVacia(0)]);
+        }}
       />
       <div className="flex items-center gap-2 flex-wrap">
         <input

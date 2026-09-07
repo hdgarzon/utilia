@@ -4,9 +4,27 @@ import { useRef } from "react";
 import { toast } from "sonner";
 import { Download, Upload } from "lucide-react";
 import { buildCsv, downloadCsv } from "@/lib/csv";
-import { parseDelimited, guessColumnMapping, COLUMNAS_PLANTILLA } from "@/lib/products/csv-import";
+import {
+  parseDelimited,
+  guessColumnMapping,
+  normalizar,
+  COLUMNAS_PLANTILLA,
+} from "@/lib/products/csv-import";
 import { filaVacia, MAX_ROWS_PER_BATCH, type ImportRowInput } from "@/lib/products/import-types";
 import type { CatalogOptions, ProductType } from "@/lib/products/types";
+
+/**
+ * Lo que cuenta como "si" en una celda de texto. Compartido con el pegado de
+ * la hoja: es el mismo campo y no puede leerse distinto segun por donde entre.
+ */
+export const TOKENS_VERDADERO: ReadonlySet<string> = new Set([
+  "si",
+  "x",
+  "true",
+  "1",
+  "yes",
+  "verdadero",
+]);
 
 export function ImportToolbar({
   options,
@@ -106,10 +124,7 @@ function aFila(
     const n = Number(v.replace(/\./g, "").replace(",", "."));
     return Number.isFinite(n) ? n : null;
   };
-  const booleano = (key: string): boolean => {
-    const v = normalizar(valor(key));
-    return v === "si" || v === "x" || v === "true" || v === "1";
-  };
+  const booleano = (key: string): boolean => TOKENS_VERDADERO.has(normalizar(valor(key)));
   const porNombre = (lista: Array<{ id: number; name: string }>, key: string): number | null => {
     const v = normalizar(valor(key));
     if (!v) return null;
@@ -144,13 +159,4 @@ function aFila(
     showAvailability: booleano("showAvailability"),
     supplierPartnerId: porNombre(options.suppliers, "supplier"),
   };
-}
-
-function normalizar(s: string): string {
-  return s
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/\s+/g, " ");
 }
