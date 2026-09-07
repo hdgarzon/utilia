@@ -1,0 +1,32 @@
+-- Borra la politica recursiva de `profiles`.
+--
+-- Aplicado A MANO contra Supabase el 2026-09-07, por la misma razon que los
+-- otros archivos de esta carpeta: `db:push` falla con P4002 en esta base.
+--
+-- QUE HACIA
+--
+--   USING (EXISTS (SELECT 1 FROM profiles p
+--                   WHERE p.user_id = auth.uid() AND p.role = 'admin'))
+--
+-- Una politica sobre `profiles` que consulta `profiles`: evaluarla exige
+-- evaluarla. Postgres lo detecta y corta con 42P17, asi que la politica nunca
+-- concedio nada -- solo rompia toda consulta a la tabla.
+--
+-- Y no solo a esa tabla: competitions, competition_entries,
+-- accreditation_requests y email_logs repiten ese EXISTS en su politica de
+-- admin, asi que cualquier lectura suya tocaba `profiles`, disparaba la
+-- recursion y moria igual. Desde fuera eso salia como HTTP 500 en vez de 401.
+--
+-- POR QUE SE BORRA Y NO SE ARREGLA
+--
+-- Se arregla con una funcion SECURITY DEFINER que lea el rol sin pasar por
+-- RLS, pero eso seria revivir las politicas de una aplicacion muerta. Estas
+-- cinco tablas ya no tienen permisos para anon ni authenticated (ver
+-- 2026-09-07-revoke-tablas-heredadas.sql), asi que la politica no protegia ni
+-- concedia nada. Borrarla solo cambia el modo de fallo: 401 limpio en vez de
+-- 500, que ademas deja de anunciar que hay algo mal configurado.
+--
+-- Las otras tres politicas de `profiles` se quedan: no recursan y describen
+-- la intencion original por si algun dia hay que rescatar esa aplicacion.
+
+DROP POLICY IF EXISTS "Admins can manage all profiles" ON "profiles";
