@@ -22,6 +22,10 @@ export function ImportResult({
   // Sin este tercer conteo, OK + fallidas no sumaba el total de filas y no
   // habia forma de saber, desde aqui, que parte del lote nunca se intento.
   const sinIntentar = rows.filter((r) => r.status === "PENDING");
+  // Se llamo a Odoo y no se pudo confirmar el resultado aqui. El producto
+  // PUEDE existir alla. Nada las reintenta solas -- a proposito -- asi que
+  // esta pantalla es el unico lugar donde el dueño se entera.
+  const sinConfirmar = rows.filter((r) => r.status === "CREATING");
   const avisos = ok.filter((r) => r.warning);
   const pendientesCantidad = ok.filter((r) => r.qtyOnHand !== null && r.qtyOnHand > 0);
 
@@ -36,6 +40,34 @@ export function ImportResult({
 
   return (
     <div className="space-y-4">
+      {sinConfirmar.length > 0 ? (
+        <div className="rounded-xl border-2 border-destructive bg-destructive/10 p-4 space-y-2">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <p className="text-xs font-semibold text-destructive">
+                {sinConfirmar.length} fila{sinConfirmar.length !== 1 ? "s" : ""} sin confirmar — revísala
+                {sinConfirmar.length !== 1 ? "s" : ""} en Odoo
+              </p>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Se pidió crear{sinConfirmar.length !== 1 ? "los" : "lo"} en Odoo pero la respuesta no se pudo
+                registrar aquí. Puede que exista{sinConfirmar.length !== 1 ? "n" : ""} allá y puede que no. Búscal
+                {sinConfirmar.length !== 1 ? "os" : "o"} por nombre antes de volver a cargar
+                {sinConfirmar.length !== 1 ? "los" : "lo"}:{" "}
+                <span className="font-medium text-foreground">Reintentar no l{sinConfirmar.length !== 1 ? "as" : "a"} toca</span>,
+                justamente para no duplicar el producto.
+              </p>
+            </div>
+          </div>
+          {sinConfirmar.slice(0, 20).map((r) => (
+            <p key={r.id} className="text-xs text-muted-foreground pl-6">
+              <span className="text-foreground">{r.name || `Fila ${r.rowIndex + 1}`}</span>
+              {r.odooTemplateId ? ` — producto ${r.odooTemplateId} en Odoo` : ""}
+            </p>
+          ))}
+        </div>
+      ) : null}
+
       <div className="grid grid-cols-3 gap-3">
         <div className="rounded-xl border border-primary/40 bg-primary/5 p-4 text-center">
           <CheckCircle className="h-5 w-5 text-primary mx-auto mb-1" />

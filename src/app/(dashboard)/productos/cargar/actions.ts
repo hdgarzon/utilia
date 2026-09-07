@@ -8,6 +8,9 @@ import {
   MAX_IMAGE_BASE64_BYTES,
   MAX_ROWS_PER_BATCH,
   CREATE_SLICE_SIZE,
+  ESTADO_POR_INTENTAR,
+  ESTADOS_REENCOLABLES,
+  ESTADOS_BORRABLES,
   type ImportRowDraft,
   type ImportProgress,
 } from "@/lib/products/import-types";
@@ -86,9 +89,11 @@ export async function saveBatch(input: unknown): Promise<SaveResult> {
         });
 
     const insertadas = await prisma.$transaction(async (tx) => {
-      // Las filas ya creadas en Odoo se conservan tal cual.
+      // Se borra por lista blanca, NO con `not: "OK"`. Una fila en CREATING
+      // tambien puede tener un producto vivo en Odoo, y con `not: "OK"` se
+      // borraba y volvia a entrar como PENDING -- es decir, se recreaba.
       await tx.productImportRow.deleteMany({
-        where: { batchId: lote.id, status: { not: "OK" } },
+        where: { batchId: lote.id, status: { in: [...ESTADOS_BORRABLES] } },
       });
       const { count } = await tx.productImportRow.createMany({
         data: rows.map((r) => ({ ...r, batchId: lote.id })),
@@ -187,20 +192,37 @@ const IMAGE_FETCH_TIMEOUT_MS = 15_000;
  * Crea UNA tanda de filas pendientes y devuelve el progreso. El cliente la
  * vuelve a llamar hasta que `done` sea true.
  *
- * Cada fila se marca OK inmediatamente despues de su create, asi que un corte
- * a mitad casi nunca duplica: al reintentar solo se toman las PENDING.
+ * Cada fila se crea en DOS FASES, y ese es el unico motivo por el que un
+ * reintento no puede duplicar un producto:
  *
- * Queda una ventana irreducible: si el proceso muere entre que Odoo devuelve
- * el id y que Postgres lo registra, el producto existe alla y aca no. Un
- * reintento lo crearia otra vez. No se puede cerrar sin una transaccion que
- * abarque los dos sistemas; lo que si se hace es no marcar ERROR una fila cuyo
- * producto ya se creo, que es el caso que SI estaba en nuestras manos.
+ *   1. Se RECLAMA la fila en Postgres (PENDING -> CREATING) ANTES de llamar a
+ *      Odoo. Si este update falla, nunca se llamo a Odoo: no hay nada creado
+ *      y la fila se queda PENDING, intacta y reintentable.
+ *   2. Se llama a Odoo, y solo cuando el id vuelve y se registra la fila pasa
+ *      a OK.
  *
- * Un caso especial de esa ventana SI esta en nuestras manos: si el update que
- * registra el `odooTemplateId` falla dos veces seguidas (el completo y el
- * minimo de rescate), la fila se congela -- no PENDING, no ERROR -- y la
- * funcion corta y devuelve error para que el cliente deje de pedir tandas.
- * Ver el `break` mas abajo.
+ * Lo que quede en medio -- llamada hecha, resultado sin confirmar aqui -- se
+ * queda en CREATING, y a CREATING no lo toma NADIE: ni esta funcion (que
+ * selecciona PENDING), ni `retryFailedRows` (que selecciona ERROR), ni
+ * `saveBatch` (que borra PENDING y ERROR). Sale de ahi una persona, mirando
+ * Odoo.
+ *
+ * Esto cubre el corte a mitad y tambien la muerte del proceso. Antes, una
+ * fila cuyo producto YA existia en Odoo pero cuyo registro local no se pudo
+ * guardar se quedaba en PENDING -- indistinguible de una que nunca se intento
+ * -- y la siguiente tanda, o un "Reintentar" corriente sobre otra fila rota,
+ * la volvia a mandar a `createTemplate` y creaba el producto por segunda vez.
+ * Ahora ese caso degrada a una fila que hay que revisar, nunca a un duplicado.
+ *
+ * El reclamo es ademas un candado: `updateMany` con `status: PENDING` en el
+ * where se resuelve en un solo statement, asi que dos pestañas creando el
+ * mismo lote a la vez no pueden llevarse la misma fila -- la segunda cuenta 0
+ * y la salta.
+ *
+ * Queda UNA ventana irreducible, la de siempre: si Odoo crea el producto pero
+ * la respuesta se pierde, `createTemplate` lanza y la fila se marca ERROR
+ * como cualquier otro fallo. No se puede distinguir desde aqui sin una
+ * transaccion que abarque los dos sistemas.
  */
 export async function createBatchSlice(batchId: unknown): Promise<CreateResult> {
   await requireSession();
@@ -221,21 +243,34 @@ export async function createBatchSlice(batchId: unknown): Promise<CreateResult> 
     // no se tocan JAMAS: el bucle agota sus vueltas, la pantalla dice
     // "terminado" y 180 de 200 filas quedan sin intentar sin que nadie avise.
     const pendientes = await prisma.productImportRow.findMany({
-      where: { batchId: id.data, status: "PENDING" },
+      where: { batchId: id.data, status: ESTADO_POR_INTENTAR },
       orderBy: { rowIndex: "asc" },
       take: CREATE_SLICE_SIZE,
     });
 
-    // Fila que se creo en Odoo pero que ni el update completo ni el minimo
-    // pudieron registrar en Postgres (ver mas abajo). Se excluye de esta
-    // tanda -- y de cualquier vuelta posterior en esta MISMA invocacion -- y
-    // corta el ciclo: dejarla PENDING para que la proxima tanda la vuelva a
-    // tomar recrearia el producto en Odoo.
-    const bloqueadas = new Set<string>();
-    let filaBloqueada: number | null = null;
+    // Producto creado en Odoo cuya fila no se pudo confirmar aqui ni con el
+    // update completo ni con el minimo. Corta la tanda y viaja al cliente
+    // para que el dueño lo revise antes de que nadie vuelva a intentar.
+    let plantillaSinConfirmar: number | null = null;
 
     for (const fila of pendientes) {
-      if (bloqueadas.has(fila.id)) continue;
+      // FASE 1 -- reclamar la fila ANTES de tocar Odoo. El `status` en el
+      // where hace el update atomico: si otra invocacion ya se la llevo,
+      // `count` es 0 y esta la salta sin llamar a Odoo.
+      try {
+        const { count } = await prisma.productImportRow.updateMany({
+          where: { id: fila.id, status: ESTADO_POR_INTENTAR },
+          data: { status: "CREATING" },
+        });
+        if (count === 0) continue;
+      } catch (err) {
+        // No se pudo reclamar => no se llamo a Odoo => no hay nada creado y
+        // la fila sigue PENDING. Se corta: si Postgres no responde, seguir
+        // solo gasta llamadas a Odoo que tampoco se van a poder registrar.
+        console.error(`[cargar] no se pudo reclamar la fila ${fila.rowIndex}:`, err);
+        break;
+      }
+
       let warning: string | null = null;
       let imagen: string | null = fila.imageData;
 
@@ -249,6 +284,8 @@ export async function createBatchSlice(batchId: unknown): Promise<CreateResult> 
         }
       }
 
+      // FASE 2 -- crear en Odoo. La fila ya esta reclamada: si esto no llega
+      // a devolver, se queda en CREATING y nadie la vuelve a tomar.
       let odooTemplateId: number;
       try {
         odooTemplateId = await createTemplate(
@@ -271,10 +308,20 @@ export async function createBatchSlice(batchId: unknown): Promise<CreateResult> 
           imagen
         );
       } catch (err) {
-        await prisma.productImportRow.update({
-          where: { id: fila.id },
-          data: { status: "ERROR", error: translateOdooError(err, "catalogo") },
-        });
+        // `createTemplate` lanzo: no hay producto que duplicar, asi que
+        // devolver la fila al circuito como ERROR es seguro.
+        try {
+          await prisma.productImportRow.update({
+            where: { id: fila.id },
+            data: { status: "ERROR", error: translateOdooError(err, "catalogo") },
+          });
+        } catch (err2) {
+          // Postgres tampoco responde. La fila se queda en CREATING: es de
+          // mas -- no hay producto en Odoo -- pero prefiero una fila que hay
+          // que revisar a mano antes que una que se reintenta a ciegas.
+          console.error(`[cargar] no se pudo marcar ERROR la fila ${fila.rowIndex}:`, err2);
+          break;
+        }
         continue;
       }
 
@@ -306,46 +353,58 @@ export async function createBatchSlice(batchId: unknown): Promise<CreateResult> 
         } catch (err2) {
           // Doble fallo: el producto YA EXISTE en Odoo (el id es real) pero
           // ni el update completo ni el minimo se pudieron guardar aqui.
-          // Dejar la fila PENDING la volveria a ofrecer a la proxima tanda y
-          // recrearia el producto; marcarla ERROR haria lo mismo en cuanto
-          // alguien le de "Reintentar". No hay salida automatica segura:
-          // se congela esta tanda, se avisa fuerte con el id de Odoo, y el
-          // dueño reconcilia a mano antes de que nadie vuelva a intentarlo.
+          //
+          // No hay que hacer nada mas para que sea seguro: la fila ya quedo
+          // en CREATING al reclamarla, y ese estado no lo selecciona ninguna
+          // consulta. Se corta la tanda y se avisa fuerte con el id de Odoo
+          // para que el dueño reconcilie a mano.
           console.error(
             `[cargar] DOBLE FALLO registrando la fila ${fila.rowIndex} del lote ${id.data}: ` +
               `el producto ${odooTemplateId} se creo en Odoo pero ni el update completo ni el minimo ` +
-              `se pudieron guardar en Postgres. Requiere reconciliacion manual en Odoo y en la base de datos.`,
+              `se pudieron guardar en Postgres. La fila queda en CREATING y no se reintenta sola. ` +
+              `Requiere reconciliacion manual en Odoo y en la base de datos.`,
             err2
           );
-          bloqueadas.add(fila.id);
-          filaBloqueada = odooTemplateId;
+          plantillaSinConfirmar = odooTemplateId;
           break;
         }
       }
     }
 
-    if (filaBloqueada !== null) {
+    if (plantillaSinConfirmar !== null) {
       return {
         ok: false,
-        error: `Se creó el producto en Odoo pero no se pudo registrar aquí. Revisa el producto ${filaBloqueada} en Odoo antes de reintentar.`,
+        error: `Se creó el producto ${plantillaSinConfirmar} en Odoo pero no se pudo registrar aquí. Revísalo en Odoo: esa fila queda marcada como sin confirmar y no se va a reintentar sola.`,
       };
     }
 
-    const [okCount, errorCount, remaining] = await Promise.all([
+    const [okCount, errorCount, remaining, unconfirmedCount] = await Promise.all([
       prisma.productImportRow.count({ where: { batchId: id.data, status: "OK" } }),
       prisma.productImportRow.count({ where: { batchId: id.data, status: "ERROR" } }),
-      prisma.productImportRow.count({ where: { batchId: id.data, status: "PENDING" } }),
+      prisma.productImportRow.count({ where: { batchId: id.data, status: ESTADO_POR_INTENTAR } }),
+      prisma.productImportRow.count({ where: { batchId: id.data, status: "CREATING" } }),
     ]);
+
+    // `done` significa "no queda trabajo que este bucle pueda hacer", no "el
+    // lote salio perfecto". Una fila en CREATING no se reintenta sola, asi
+    // que NO cuenta como trabajo pendiente: si contara, el cliente giraria en
+    // vacio hasta agotar sus vueltas. Quien avisa de ella es `unconfirmedCount`.
     const done = remaining === 0;
 
     await prisma.productImportBatch.update({
       where: { id: id.data },
-      data: { status: done ? (errorCount > 0 ? "PARTIAL" : "DONE") : "CREATING" },
+      data: {
+        status: !done
+          ? "CREATING"
+          : errorCount > 0 || unconfirmedCount > 0
+            ? "PARTIAL"
+            : "DONE",
+      },
     });
 
     return {
       ok: true,
-      progress: { processed: pendientes.length, okCount, errorCount, remaining, done },
+      progress: { processed: pendientes.length, okCount, errorCount, remaining, unconfirmedCount, done },
     };
   } catch (err) {
     console.error("[cargar] fallo la tanda de creacion:", err);
@@ -363,6 +422,12 @@ export async function createBatchSlice(batchId: unknown): Promise<CreateResult> 
  * las vuelva a tomar. Es el unico camino por el que una fila en ERROR se
  * reintenta: asi cada tanda siempre avanza sobre filas nuevas y el bucle no
  * puede quedarse girando sobre las mismas veinte rotas.
+ *
+ * SOLO ERROR, por lista blanca. Una fila en CREATING salio de aqui con una
+ * llamada a Odoo hecha y sin confirmar: reencolarla crearia el producto por
+ * segunda vez. Es lo que hacia antes, cuando esa fila se quedaba en PENDING
+ * y bastaba un "Reintentar" corriente -- ni siquiera dirigido a ella -- para
+ * duplicarla.
  */
 export async function retryFailedRows(
   batchId: unknown
@@ -373,8 +438,8 @@ export async function retryFailedRows(
 
   try {
     const { count } = await prisma.productImportRow.updateMany({
-      where: { batchId: id.data, status: "ERROR" },
-      data: { status: "PENDING", error: null },
+      where: { batchId: id.data, status: { in: [...ESTADOS_REENCOLABLES] } },
+      data: { status: ESTADO_POR_INTENTAR, error: null },
     });
     return { ok: true, reintentadas: count };
   } catch (err) {

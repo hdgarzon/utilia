@@ -423,7 +423,12 @@ model ProductImportRow {
 }
 
 enum ProductImportRowStatus {
-  PENDING
+  PENDING // nunca se intento
+  // Se reclamo la fila y se llamo a Odoo, pero no se pudo confirmar el
+  // resultado aqui. El producto puede existir alla. NINGUNA consulta la
+  // vuelve a tomar: ni la tanda de creacion (solo PENDING) ni el reintento
+  // (solo ERROR). Se sale de aqui a mano, mirando Odoo.
+  CREATING
   OK
   ERROR
 }

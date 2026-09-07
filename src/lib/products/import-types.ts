@@ -33,11 +33,34 @@ export interface ImportRowInput {
  */
 export type ProductCreateInput = Omit<ImportRowInput, "clientId" | "rowIndex">;
 
+/**
+ * Estado de una fila. Espeja el enum `ProductImportRowStatus` de Prisma.
+ *
+ * `CREATING` significa "se llamo a Odoo y no se pudo confirmar el resultado
+ * aqui": el producto PUEDE existir alla. Es un estado terminal para el
+ * programa -- solo sale de el una persona, mirando Odoo.
+ */
+export type ImportRowStatus = "PENDING" | "CREATING" | "OK" | "ERROR";
+
+/**
+ * Estados que toca cada consulta del servidor. Viven juntos y con nombre
+ * porque el invariante que sostienen no se ve leyendo ninguna de ellas por
+ * separado: `CREATING` no puede aparecer en NINGUNO. Una fila en CREATING que
+ * se cuele en cualquiera de estas listas se vuelve a mandar a `createTemplate`
+ * y crea el producto por segunda vez en Odoo.
+ */
+/** Lo unico que toma una tanda de creacion. */
+export const ESTADO_POR_INTENTAR = "PENDING" as const;
+/** Lo unico que "Reintentar" devuelve a PENDING. */
+export const ESTADOS_REENCOLABLES = ["ERROR"] as const;
+/** Lo unico que `saveBatch` puede borrar al reemplazar el borrador. */
+export const ESTADOS_BORRABLES = ["PENDING", "ERROR"] as const;
+
 /** Una fila guardada, con su resultado. */
 export interface ImportRowDraft extends ImportRowInput {
   /** Id en Postgres. Distinto de `clientId`, que solo vive en el navegador. */
   id: string;
-  status: "PENDING" | "OK" | "ERROR";
+  status: ImportRowStatus;
   odooTemplateId: number | null;
   error: string | null;
   warning: string | null;
@@ -60,6 +83,12 @@ export interface ImportProgress {
   okCount: number;
   errorCount: number;
   remaining: number;
+  /**
+   * Filas en CREATING: se llamo a Odoo y no se pudo confirmar aqui. No se
+   * reintentan solas. Mientras haya una, el lote no esta terminado por mas
+   * que `remaining` sea 0 -- por eso viaja aparte y no sumada a los errores.
+   */
+  unconfirmedCount: number;
   done: boolean;
 }
 
