@@ -6,12 +6,14 @@ import { Plus, Save } from "lucide-react";
 import { ImportSheetRow } from "./ImportSheetRow";
 import { ImportToolbar, TOKENS_VERDADERO } from "./ImportToolbar";
 import { ImportResult } from "./ImportResult";
+import { ImportBulkBar } from "./ImportBulkBar";
 import { validateRow, rowIsCreatable } from "@/lib/products/import-schema";
 import { parseDelimited, normalizar, leerNumero } from "@/lib/products/csv-import";
 import { saveBatch, createBatchSlice, loadBatch, retryFailedRows } from "@/app/(dashboard)/productos/cargar/actions";
 import {
   filaVacia,
   defaultsDeFila,
+  aplicarCambio,
   revisarPesoImagenes,
   MAX_ROWS_PER_BATCH,
   CREATE_SLICE_SIZE,
@@ -38,6 +40,12 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
   const [creando, setCreando] = useState(false);
   const [progreso, setProgreso] = useState<{ ok: number; error: number; faltan: number } | null>(null);
   const [resultado, setResultado] = useState<ImportRowDraft[] | null>(null);
+  /**
+   * Seleccion para editar en masa, por `clientId` y NO por indice: borrar una
+   * fila del medio recorre los indices y la seleccion apuntaria a otras filas
+   * sin que nadie lo note.
+   */
+  const [seleccion, setSeleccion] = useState<Set<string>>(new Set());
 
   const errores = useMemo(
     () => filas.map((f) => validateRow(f, options)),
@@ -50,10 +58,43 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
   const nuevaFila = (i: number) => filaVacia(i, defaults);
 
   function cambiar(i: number, cambio: Partial<ImportRowInput>) {
-    setFilas((prev) => prev.map((f, j) => (j === i ? { ...f, ...cambio } : f)));
+    setFilas((prev) => prev.map((f, j) => (j === i ? aplicarCambio(f, cambio) : f)));
+  }
+
+  /** Aplica el mismo cambio a todas las filas marcadas. */
+  function cambiarSeleccionadas(cambio: Partial<ImportRowInput>) {
+    setFilas((prev) =>
+      prev.map((f) => (seleccion.has(f.clientId) ? aplicarCambio(f, cambio) : f))
+    );
+  }
+
+  function alternarSeleccion(clientId: string) {
+    setSeleccion((prev) => {
+      const s = new Set(prev);
+      if (s.has(clientId)) s.delete(clientId);
+      else s.add(clientId);
+      return s;
+    });
+  }
+
+  function alternarTodas() {
+    setSeleccion((prev) =>
+      prev.size === filas.length ? new Set() : new Set(filas.map((f) => f.clientId))
+    );
   }
 
   function quitar(i: number) {
+    // La seleccion se suelta con la fila: si no, un clientId huerfano se
+    // queda en el conjunto y la cuenta de "N seleccionadas" miente.
+    const fuera = filas[i]?.clientId;
+    if (fuera) {
+      setSeleccion((prev) => {
+        if (!prev.has(fuera)) return prev;
+        const s = new Set(prev);
+        s.delete(fuera);
+        return s;
+      });
+    }
     setFilas((prev) => prev.filter((_, j) => j !== i).map((f, j) => ({ ...f, rowIndex: j })));
   }
 
@@ -360,6 +401,7 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
           setProgreso(null);
           setBatchId(null);
           setNombre("");
+          setSeleccion(new Set());
           setFilas([nuevaFila(0)]);
         }}
       />
@@ -382,6 +424,9 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
           ) {
             return;
           }
+          // La hoja entera se reemplaza: los clientId son nuevos y la
+          // seleccion vieja apuntaria a filas que ya no existen.
+          setSeleccion(new Set());
           setFilas(nuevas.length > 0 ? nuevas : [nuevaFila(0)]);
         }}
       />
@@ -417,10 +462,33 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
         </span>
       </div>
 
+      {seleccion.size > 0 ? (
+        <ImportBulkBar
+          cuantas={seleccion.size}
+          options={options}
+          onAplicar={cambiarSeleccionadas}
+          onLimpiar={() => setSeleccion(new Set())}
+        />
+      ) : null}
+
       <div className="rounded-xl border border-border bg-card overflow-x-auto">
         <table className="w-full text-xs">
           <thead className="text-muted-foreground border-b border-border">
             <tr>
+              <th className="py-2 px-1 w-6">
+                <input
+                  type="checkbox"
+                  checked={filas.length > 0 && seleccion.size === filas.length}
+                  ref={(el) => {
+                    // Indeterminado cuando hay seleccion parcial: una casilla
+                    // vacia mentiria diciendo que no hay nada marcado.
+                    if (el) el.indeterminate = seleccion.size > 0 && seleccion.size < filas.length;
+                  }}
+                  onChange={alternarTodas}
+                  aria-label="Seleccionar todas las filas"
+                  className="h-3.5 w-3.5 accent-primary"
+                />
+              </th>
               {ENCABEZADOS.map((h, i) => (
                 <th key={i} className="py-2 px-1 text-left font-medium whitespace-nowrap">{h}</th>
               ))}
@@ -436,6 +504,8 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
                 onChange={(cambio) => cambiar(i, cambio)}
                 onRemove={() => quitar(i)}
                 onPasteRows={(e) => pegar(e, i)}
+                seleccionada={seleccion.has(f.clientId)}
+                onSeleccionar={() => alternarSeleccion(f.clientId)}
               />
             ))}
           </tbody>

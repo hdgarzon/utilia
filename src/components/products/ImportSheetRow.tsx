@@ -20,6 +20,8 @@ export function ImportSheetRow({
   onChange,
   onRemove,
   onPasteRows,
+  seleccionada,
+  onSeleccionar,
 }: {
   row: ImportRowInput;
   errors: CellError[];
@@ -28,6 +30,8 @@ export function ImportSheetRow({
   onRemove: () => void;
   /** Pegado multi-celda: la fila sabe cual es su indice, la hoja no. */
   onPasteRows: (e: React.ClipboardEvent) => void;
+  seleccionada: boolean;
+  onSeleccionar: () => void;
 }) {
   const uid = useId();
   const problema = (campo: keyof ImportRowInput) => errors.find((e) => e.field === campo);
@@ -53,7 +57,22 @@ export function ImportSheetRow({
   const numero = (v: string) => (v.trim() === "" ? null : Number(v));
 
   return (
-    <tr className="border-b border-border last:border-0 align-top" onPasteCapture={onPasteRows}>
+    <tr
+      className={cn(
+        "border-b border-border last:border-0 align-top",
+        seleccionada && "bg-primary/5"
+      )}
+      onPasteCapture={onPasteRows}
+    >
+      <td className="p-1 text-center">
+        <input
+          type="checkbox"
+          checked={seleccionada}
+          onChange={onSeleccionar}
+          aria-label={`Seleccionar la fila ${row.rowIndex + 1}`}
+          className="h-3.5 w-3.5 accent-primary"
+        />
+      </td>
       <td className="p-1">
         <input
           value={row.name}
@@ -67,18 +86,15 @@ export function ImportSheetRow({
       <td className="p-1">
         <select
           value={row.productType}
-          onChange={(e) => {
-            const productType = e.target.value as ImportRowInput["productType"];
-            // Odoo solo admite rastreo en bienes: al cambiar de tipo se apaga
-            // solo, para que el usuario no quede con una celda en rojo que no
-            // pidio.
-            const esBien = productType === "consu";
-            onChange({
-              productType,
-              isStorable: esBien ? row.isStorable : false,
-              qtyOnHand: esBien ? row.qtyOnHand : null,
-            });
-          }}
+          // Solo el tipo: apagar el rastreo, la cantidad y la regla de
+          // reabastecimiento lo hace `aplicarCambio`, que es por donde pasan
+          // TODOS los cambios -- los de aqui y los de la edicion en masa.
+          // Cuando esta logica vivia aqui duplicada, se le olvidaba el minimo
+          // y el maximo y la fila quedaba en rojo por celdas que el usuario
+          // nunca toco.
+          onChange={(e) =>
+            onChange({ productType: e.target.value as ImportRowInput["productType"] })
+          }
           aria-label="Tipo de producto"
           {...ariaCelda("productType")}
           className={claseCelda("productType")}

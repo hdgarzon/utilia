@@ -4,6 +4,7 @@ import {
   impuestoPorDefecto,
   defaultsDeFila,
   filaVacia,
+  aplicarCambio,
   type ImportRowInput,
   MAX_IMAGE_PAYLOAD_BYTES,
   MAX_IMAGE_BASE64_BYTES,
@@ -131,5 +132,58 @@ describe("revisarPesoImagenes", () => {
     // tope de aqui por encima de eso, la carga masiva deja de funcionar en
     // produccion y en local no se nota.
     expect(MAX_ACTION_BODY_BYTES).toBeLessThan(4_500_000);
+  });
+});
+
+describe("aplicarCambio", () => {
+  const bien = (): ImportRowInput => ({
+    ...filaVacia(0),
+    productType: "consu",
+    isStorable: true,
+    qtyOnHand: 5,
+    stockMin: 2,
+    stockMax: 10,
+  });
+
+  it("cambiar a servicio apaga rastreo, cantidad Y la regla de reabastecimiento", () => {
+    // El minimo y el maximo son la parte que se olvidaba cuando esta logica
+    // vivia duplicada en el componente: la fila quedaba en rojo por celdas
+    // que el usuario nunca toco.
+    const f = aplicarCambio(bien(), { productType: "service" });
+    expect(f.isStorable).toBe(false);
+    expect(f.qtyOnHand).toBeNull();
+    expect(f.stockMin).toBeNull();
+    expect(f.stockMax).toBeNull();
+  });
+
+  it("quitar el rastreo se lleva la regla, pero no el tipo ni la cantidad", () => {
+    const f = aplicarCambio(bien(), { isStorable: false });
+    expect(f.productType).toBe("consu");
+    expect(f.stockMin).toBeNull();
+    expect(f.stockMax).toBeNull();
+  });
+
+  it("un cambio inocente no toca nada mas", () => {
+    const f = aplicarCambio(bien(), { name: "Cuaderno" });
+    expect(f.name).toBe("Cuaderno");
+    expect(f.isStorable).toBe(true);
+    expect(f.qtyOnHand).toBe(5);
+    expect(f.stockMin).toBe(2);
+  });
+
+  it("poner minimos sobre una fila sin rastreo no los deja pegados", () => {
+    // La edicion en masa puede mandar minimo y maximo a una seleccion mixta.
+    // Las filas que no llevan rastreo tienen que salir limpias, no invalidas.
+    const servicio = { ...filaVacia(0), productType: "service" as const, isStorable: false };
+    const f = aplicarCambio(servicio, { stockMin: 2, stockMax: 10 });
+    expect(f.stockMin).toBeNull();
+    expect(f.stockMax).toBeNull();
+  });
+
+  it("no muta la fila original", () => {
+    const original = bien();
+    aplicarCambio(original, { productType: "service" });
+    expect(original.isStorable).toBe(true);
+    expect(original.stockMin).toBe(2);
   });
 });

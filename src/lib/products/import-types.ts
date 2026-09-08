@@ -142,6 +142,36 @@ export function defaultsDeFila(options: {
 }
 
 /**
+ * Aplica un cambio a una fila y arregla lo que quede contradictorio.
+ *
+ * Odoo solo admite rastreo de inventario en bienes, y una regla de
+ * reabastecimiento solo tiene sentido si hay rastreo: sin el, Odoo no lleva
+ * la cuenta de ese producto y la regla no vigilaria nada. Sin normalizar,
+ * cambiar el tipo de una fila la dejaba en rojo por celdas que el usuario
+ * nunca toco.
+ *
+ * Vive aqui y no en el componente porque la edicion en masa tiene que aplicar
+ * EXACTAMENTE las mismas reglas. Dos copias de esto se separan: la primera
+ * version limpiaba la cantidad al cambiar de tipo pero se olvidaba del minimo
+ * y el maximo, y la fila quedaba invalida igual.
+ */
+export function aplicarCambio(
+  row: ImportRowInput,
+  cambio: Partial<ImportRowInput>
+): ImportRowInput {
+  const f = { ...row, ...cambio };
+  if (f.productType !== "consu") {
+    f.isStorable = false;
+    f.qtyOnHand = null;
+  }
+  if (!f.isStorable) {
+    f.stockMin = null;
+    f.stockMax = null;
+  }
+  return f;
+}
+
+/**
  * Constructor de una fila en blanco.
  *
  * Vive aqui y no en `ImportSheet` porque `ImportToolbar` tambien la necesita:
