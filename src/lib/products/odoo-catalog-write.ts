@@ -4,8 +4,10 @@ import {
   assertModelAllowed,
   assertWritableOnUpdate,
   assertWritableOnCreate,
+  assertWritableOnOrderpoint,
   toOdooValues,
   toOdooCreateValues,
+  toOdooOrderpointValues,
 } from "./write-guard";
 import type { BulkResult, TemplatePatch } from "./types";
 import type { ProductCreateInput } from "./import-types";
@@ -111,4 +113,72 @@ export async function createTemplate(
   assertWritableOnCreate(values);
 
   return odooRpc.executeKw<number>(MODEL, "create", [values], {}, ODOO_WRITE_TIMEOUT_MS);
+}
+
+const MODELO_REGLA = "stock.warehouse.orderpoint";
+
+/**
+ * Almacen y su ubicacion de stock. Se lee una vez por proceso: la tienda
+ * tiene un solo almacen y no cambia entre filas de una tanda.
+ *
+ * La ubicacion sale de `lot_stock_id` del almacen y NO escrita a mano: da
+ * WH/Sabaneta, que es la que usan las 1.548 reglas que ya existen. Una
+ * ubicacion inventada crearia reglas que no vigilan nada.
+ */
+let almacenCache: { warehouseId: number; locationId: number } | null = null;
+
+export async function resolverAlmacen(): Promise<{ warehouseId: number; locationId: number }> {
+  if (almacenCache) return almacenCache;
+  const [w] = await odooRpc.searchRead<{ id: number; lot_stock_id: [number, string] | false }>(
+    "stock.warehouse",
+    [],
+    ["id", "lot_stock_id"],
+    { limit: 1 }
+  );
+  if (!w || !w.lot_stock_id) {
+    throw new Error("Odoo no devolvio un almacen con ubicacion de stock");
+  }
+  almacenCache = { warehouseId: w.id, locationId: w.lot_stock_id[0] };
+  return almacenCache;
+}
+
+/**
+ * Crea la regla de reabastecimiento de un producto recien dado de alta.
+ *
+ * Se llama DESPUES de `createTemplate` y su fallo NO puede costar el
+ * producto: la fila queda OK con una advertencia, igual que cuando no se
+ * puede bajar la imagen. Volver a intentar la fila entera recrearia el
+ * producto, que es peor que quedarse sin la regla.
+ *
+ * Odoo pide la VARIANTE (`product.product`), no la plantilla, asi que hay que
+ * leerla de vuelta. Un producto recien creado sin atributos tiene exactamente
+ * una.
+ */
+export async function createOrderpoint(
+  templateId: number,
+  min: number,
+  max: number
+): Promise<number> {
+  assertModelAllowed(MODELO_REGLA);
+  const { warehouseId, locationId } = await resolverAlmacen();
+
+  const [tpl] = await odooRpc.executeKw<Array<{ product_variant_id: [number, string] | false }>>(
+    MODEL,
+    "read",
+    [[templateId], ["product_variant_id"]]
+  );
+  if (!tpl || !tpl.product_variant_id) {
+    throw new Error(`La plantilla ${templateId} no tiene variante`);
+  }
+
+  const values = toOdooOrderpointValues({
+    productVariantId: tpl.product_variant_id[0],
+    warehouseId,
+    locationId,
+    min,
+    max,
+  });
+  assertWritableOnOrderpoint(values);
+
+  return odooRpc.executeKw<number>(MODELO_REGLA, "create", [values], {}, ODOO_WRITE_TIMEOUT_MS);
 }

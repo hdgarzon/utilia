@@ -87,6 +87,54 @@ export function assertModelAllowed(model: string): void {
 }
 
 /**
+ * Campos de una regla de reabastecimiento (`stock.warehouse.orderpoint`).
+ *
+ * Es el UNICO modelo del modulo `stock` en el que este codigo escribe, y hace
+ * falta decir por que se permite cuando `stock.quant` y `stock.move` estan
+ * prohibidos: una regla no mueve una sola unidad. Dice "cuando el stock baje
+ * de X, repon hasta Y", y `qty_available` no cambia al crearla.
+ *
+ * Lo que si puede hacer es generar una orden de compra, pero solo con
+ * `trigger: "auto"` y solo cuando corre el planificador de Odoo. Por eso las
+ * reglas se crean SIEMPRE en `manual`: quedan como sugerencia en la pantalla
+ * de reabastecimiento y no compran nada sin que alguien lo mire. Es ademas lo
+ * que ya hace la tienda -- 1.468 de sus reglas son manuales.
+ */
+export const ORDERPOINT_FIELDS: ReadonlySet<string> = new Set([
+  "product_id",
+  "product_min_qty",
+  "product_max_qty",
+  "warehouse_id",
+  "location_id",
+  "trigger",
+]);
+
+export function assertWritableOnOrderpoint(values: Record<string, unknown>): void {
+  assertEn(values, ORDERPOINT_FIELDS, "regla de reabastecimiento");
+}
+
+export interface OrderpointInput {
+  /** Variante (`product.product`), NO la plantilla. */
+  productVariantId: number;
+  warehouseId: number;
+  locationId: number;
+  min: number;
+  max: number;
+}
+
+export function toOdooOrderpointValues(input: OrderpointInput): Record<string, unknown> {
+  return {
+    product_id: input.productVariantId,
+    warehouse_id: input.warehouseId,
+    location_id: input.locationId,
+    product_min_qty: input.min,
+    product_max_qty: input.max,
+    // Nunca "auto": ver el comentario de ORDERPOINT_FIELDS.
+    trigger: "manual",
+  };
+}
+
+/**
  * Traduce la intencion de la app a valores de Odoo. Las claves ausentes en el
  * patch no aparecen en el resultado: un `undefined` enviado a Odoo borraria
  * el valor existente.

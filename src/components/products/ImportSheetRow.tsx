@@ -227,6 +227,33 @@ export function ImportSheetRow({
           ))}
         </select>
       </td>
+      {/* Minimo y maximo de la regla de reabastecimiento. Solo tienen sentido
+          con rastreo de inventario: sin el, Odoo no lleva la cuenta y la
+          regla no vigilaria nada. */}
+      <td className="p-1">
+        <input
+          type="number"
+          min={0}
+          value={row.stockMin ?? ""}
+          onChange={(e) => onChange({ stockMin: numero(e.target.value) })}
+          disabled={!row.isStorable}
+          aria-label="Cantidad mínima antes de reponer"
+          {...ariaCelda("stockMin")}
+          className={cn(claseCelda("stockMin"), "w-14 disabled:opacity-40")}
+        />
+      </td>
+      <td className="p-1">
+        <input
+          type="number"
+          min={0}
+          value={row.stockMax ?? ""}
+          onChange={(e) => onChange({ stockMax: numero(e.target.value) })}
+          disabled={!row.isStorable}
+          aria-label="Cantidad hasta la que se repone"
+          {...ariaCelda("stockMax")}
+          className={cn(claseCelda("stockMax"), "w-14 disabled:opacity-40")}
+        />
+      </td>
       <td className="p-1">
         <button onClick={onRemove} aria-label="Quitar la fila" className="text-muted-foreground hover:text-destructive">
           <Trash2 className="h-3.5 w-3.5" />

@@ -14,6 +14,13 @@ export interface ImportRowInput {
   isStorable: boolean;
   /** Se captura y se exporta como pendiente; nunca se escribe en Odoo. */
   qtyOnHand: number | null;
+  /**
+   * Regla de reabastecimiento. A diferencia de `qtyOnHand`, estas SI se
+   * escriben en Odoo: una regla dice cuando reponer, no cuanto hay, y no
+   * mueve inventario. Van juntas o ninguna.
+   */
+  stockMin: number | null;
+  stockMax: number | null;
   salePrice: number | null;
   cost: number | null;
   purchaseTaxIds: number[];
@@ -168,6 +175,8 @@ function filaEnBlanco(rowIndex: number): ImportRowInput {
     productType: "consu",
     isStorable: true,
     qtyOnHand: null,
+    stockMin: null,
+    stockMax: null,
     salePrice: null,
     cost: null,
     purchaseTaxIds: [],

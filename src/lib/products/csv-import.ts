@@ -21,6 +21,12 @@ export const COLUMNAS_PLANTILLA: ReadonlyArray<{ key: string; label: string }> =
   { key: "showAvailability", label: "Mostrar disponibilidad" },
   { key: "availableInPos", label: "Punto de venta" },
   { key: "supplier", label: "Proveedor" },
+  // Al FINAL a proposito. El pegado desde Excel es POSICIONAL en este orden,
+  // y la gente ya viene pegando hojas con las seis primeras columnas: meter
+  // dos columnas en medio le correria el precio y el costo dos puestos, en
+  // silencio y sobre productos reales.
+  { key: "stockMin", label: "Minimo" },
+  { key: "stockMax", label: "Maximo" },
 ];
 
 /**

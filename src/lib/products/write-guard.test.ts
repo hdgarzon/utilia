@@ -5,8 +5,11 @@ import {
   assertModelAllowed,
   toOdooValues,
   toOdooCreateValues,
+  toOdooOrderpointValues,
+  assertWritableOnOrderpoint,
   UPDATE_FIELDS,
   CREATE_FIELDS,
+  ORDERPOINT_FIELDS,
 } from "./write-guard";
 import type { ProductCreateInput } from "./import-types";
 
@@ -94,6 +97,8 @@ function fila(over: Partial<ProductCreateInput> = {}): ProductCreateInput {
     productType: "consu",
     isStorable: true,
     qtyOnHand: null,
+    stockMin: null,
+    stockMax: null,
     salePrice: 1000,
     cost: 600,
     purchaseTaxIds: [],
@@ -195,5 +200,46 @@ describe("toOdooValues", () => {
       supplierPartnerId: 4,
     });
     expect(() => assertWritableOnUpdate(valores)).not.toThrow();
+  });
+});
+
+describe("regla de reabastecimiento", () => {
+  it("es el unico modelo de stock permitido, y los que mueven cantidad siguen prohibidos", () => {
+    // Una regla dice "cuando baje de X, repon hasta Y": no mueve una unidad
+    // y no cambia qty_available. Los otros tres si.
+    expect(() => assertModelAllowed("stock.warehouse.orderpoint")).not.toThrow();
+    for (const m of ["stock.quant", "stock.move", "stock.inventory"]) {
+      expect(() => assertModelAllowed(m)).toThrow(/prohibido/i);
+    }
+  });
+
+  it("nunca crea la regla en automatico", () => {
+    // Con trigger "auto" el planificador de Odoo puede generar ordenes de
+    // compra sin que nadie las mire. En "manual" queda como sugerencia.
+    const v = toOdooOrderpointValues({
+      productVariantId: 7,
+      warehouseId: 1,
+      locationId: 8,
+      min: 2,
+      max: 10,
+    });
+    expect(v.trigger).toBe("manual");
+    expect(v).toEqual({
+      product_id: 7,
+      warehouse_id: 1,
+      location_id: 8,
+      product_min_qty: 2,
+      product_max_qty: 10,
+      trigger: "manual",
+    });
+  });
+
+  it("la lista de la regla no admite un campo de cantidad", () => {
+    for (const campo of CAMPOS_INVENTARIO) {
+      expect(ORDERPOINT_FIELDS.has(campo)).toBe(false);
+      expect(() => assertWritableOnOrderpoint({ [campo]: 10 })).toThrow(/no permitido/i);
+    }
+    // Y tampoco campos de la plantilla: son modelos distintos.
+    expect(() => assertWritableOnOrderpoint({ list_price: 1000 })).toThrow(/list_price/);
   });
 });

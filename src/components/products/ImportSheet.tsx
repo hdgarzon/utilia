@@ -22,7 +22,8 @@ import type { CatalogOptions } from "@/lib/products/types";
 
 const ENCABEZADOS = [
   "Nombre", "Tipo", "Rastreo", "Cantidad", "Precio", "Costo", "Impuesto",
-  "Categoría", "Imagen", "Publicado", "Cat. tienda", "Disponibilidad", "PDV", "Proveedor", "",
+  "Categoría", "Imagen", "Publicado", "Cat. tienda", "Disponibilidad", "PDV", "Proveedor",
+  "Mín.", "Máx.", "",
 ];
 
 export function ImportSheet({ options }: { options: CatalogOptions }) {
@@ -101,9 +102,14 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
     // casi siempre vacio -- y un precio vacio NO es un error de validacion,
     // asi que la fila no se pinta de rojo y el producto se crearia sin precio
     // sin que nadie se entere. Es el mismo aviso que ya da "Importar CSV".
+    // Posiciones numericas de la plantilla: cantidad(3), precio(4), costo(5)
+    // y, al final, minimo(14) y maximo(15).
     const ilegibles = matriz.reduce(
       (total, cols) =>
-        total + [cols[3], cols[4], cols[5]].filter((c) => leerNumero(c) === "invalido").length,
+        total +
+        [cols[3], cols[4], cols[5], cols[14], cols[15]].filter(
+          (c) => leerNumero(c) === "invalido"
+        ).length,
       0
     );
 
@@ -153,6 +159,9 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
           qtyOnHand: esBien ? num(cols[3], next[i].qtyOnHand) : null,
           salePrice: num(cols[4], next[i].salePrice),
           cost: num(cols[5], next[i].cost),
+          // Al final de la plantilla, para no correr las columnas de siempre.
+          stockMin: esBien ? num(cols[14], next[i].stockMin) : null,
+          stockMax: esBien ? num(cols[15], next[i].stockMax) : null,
         };
       });
       return next.map((f, j) => ({ ...f, rowIndex: j }));

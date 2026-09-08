@@ -395,6 +395,10 @@ model ProductImportRow {
   // Capturado para exportarlo como pendiente. NUNCA se escribe en Odoo:
   // ponerle cantidad a un producto exige un ajuste de inventario.
   qtyOnHand      Float?
+  // Regla de reabastecimiento. A diferencia de qtyOnHand, estas SI se
+  // escriben en Odoo: dicen cuando reponer, no cuanto hay.
+  stockMin       Float?
+  stockMax       Float?
   salePrice      Float?
   cost           Float?
   purchaseTaxIds Int[] // account.tax

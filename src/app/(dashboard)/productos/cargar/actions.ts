@@ -15,8 +15,16 @@ import {
   type ImportProgress,
 } from "@/lib/products/import-types";
 import type { ProductType } from "@/lib/products/types";
-import { createTemplate } from "@/lib/products/odoo-catalog-write";
+import { createTemplate, createOrderpoint } from "@/lib/products/odoo-catalog-write";
 import { translateOdooError } from "@/lib/odoo-write";
+
+/**
+ * Una fila puede juntar mas de una advertencia (imagen rota Y regla fallida).
+ * Sin esto la segunda pisaba a la primera y el dueño solo veia una.
+ */
+function juntarAvisos(previo: string | null, nuevo: string): string {
+  return previo ? `${previo}. ${nuevo}` : nuevo;
+}
 
 // Un archivo "use server" solo puede exportar funciones async; los tipos
 // quedan internos.
@@ -39,6 +47,8 @@ const filaSchema = z.object({
   productType: z.enum(["consu", "service", "combo"]),
   isStorable: z.boolean(),
   qtyOnHand: z.number().nonnegative().nullable(),
+  stockMin: z.number().nonnegative().nullable(),
+  stockMax: z.number().nonnegative().nullable(),
   salePrice: z.number().nonnegative().nullable(),
   cost: z.number().nonnegative().nullable(),
   purchaseTaxIds: z.array(z.number().int().positive()).max(20),
@@ -159,6 +169,8 @@ export async function loadBatch(batchId: unknown): Promise<LoadResult> {
             productType: r.productType as ProductType,
             isStorable: r.isStorable,
             qtyOnHand: r.qtyOnHand,
+            stockMin: r.stockMin,
+            stockMax: r.stockMax,
             salePrice: r.salePrice,
             cost: r.cost,
             purchaseTaxIds: r.purchaseTaxIds,
@@ -296,6 +308,8 @@ export async function createBatchSlice(batchId: unknown): Promise<CreateResult> 
             productType: fila.productType as ProductType,
             isStorable: fila.isStorable,
             qtyOnHand: fila.qtyOnHand,
+            stockMin: fila.stockMin,
+            stockMax: fila.stockMax,
             salePrice: fila.salePrice,
             cost: fila.cost,
             purchaseTaxIds: fila.purchaseTaxIds,
@@ -326,6 +340,26 @@ export async function createBatchSlice(batchId: unknown): Promise<CreateResult> 
           break;
         }
         continue;
+      }
+
+      // La regla de reabastecimiento va DESPUES del producto y su fallo no
+      // puede costarlo: se anota como advertencia y la fila sigue OK. Marcar
+      // ERROR aqui mandaria la fila al reintento y crearia el producto por
+      // segunda vez -- quedarse sin la regla es mucho menos grave.
+      if (fila.stockMin !== null && fila.stockMax !== null) {
+        try {
+          await createOrderpoint(odooTemplateId, fila.stockMin, fila.stockMax);
+        } catch (err) {
+          console.error(
+            `[cargar] no se pudo crear la regla de reabastecimiento de la fila ${fila.rowIndex} ` +
+              `(producto ${odooTemplateId}):`,
+            err
+          );
+          warning = juntarAvisos(
+            warning,
+            "El producto se creó sin mínimos y máximos: la regla de reabastecimiento falló"
+          );
+        }
       }
 
       // A partir de aqui el producto YA EXISTE en Odoo. Si el registro local

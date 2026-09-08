@@ -16,6 +16,8 @@ function fila(over: Partial<ImportRowInput> = {}): ImportRowInput {
     productType: "consu",
     isStorable: true,
     qtyOnHand: null,
+    stockMin: null,
+    stockMax: null,
     salePrice: 1000,
     cost: 600,
     purchaseTaxIds: [],

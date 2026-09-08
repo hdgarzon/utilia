@@ -38,6 +38,27 @@ export function validateRow(row: ImportRowInput, options: CatalogOptions): CellE
     error("qtyOnHand", "La cantidad no puede ser negativa");
   }
 
+  // Regla de reabastecimiento. Odoo exige minimo Y maximo -- los dos son
+  // obligatorios en stock.warehouse.orderpoint -- asi que media regla no se
+  // puede crear. Mejor decirlo aqui que dejar que Odoo la rechace fila por
+  // fila cuando ya se creo el producto.
+  const tieneMin = row.stockMin !== null;
+  const tieneMax = row.stockMax !== null;
+  if (tieneMin !== tieneMax) {
+    const falta: "stockMin" | "stockMax" = tieneMin ? "stockMax" : "stockMin";
+    error(falta, "El mínimo y el máximo van juntos: pon los dos o ninguno");
+  }
+  if (tieneMin && row.stockMin! < 0) error("stockMin", "El mínimo no puede ser negativo");
+  if (tieneMax && row.stockMax! < 0) error("stockMax", "El máximo no puede ser negativo");
+  if (tieneMin && tieneMax && row.stockMax! < row.stockMin!) {
+    error("stockMax", "El máximo no puede ser menor que el mínimo");
+  }
+  // Una regla sobre algo sin rastreo de inventario no se puede cumplir: Odoo
+  // no lleva la cuenta de ese producto.
+  if ((tieneMin || tieneMax) && !row.isStorable) {
+    error("stockMin", "Solo un producto con rastreo de inventario puede tener mínimos y máximos");
+  }
+
   if (row.categoryId !== null && !existe(options.categories, row.categoryId)) {
     error("categoryId", "Esa categoría no existe en el catálogo de Odoo");
   }

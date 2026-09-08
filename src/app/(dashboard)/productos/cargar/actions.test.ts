@@ -28,6 +28,8 @@ type Fila = {
   productType: string;
   isStorable: boolean;
   qtyOnHand: number | null;
+  stockMin: number | null;
+  stockMax: number | null;
   salePrice: number | null;
   cost: number | null;
   purchaseTaxIds: number[];
@@ -125,7 +127,7 @@ const h = vi.hoisted(() => {
     },
   };
 
-  return { estado, coincide, filaTabla, createTemplate: vi.fn() };
+  return { estado, coincide, filaTabla, createTemplate: vi.fn(), createOrderpoint: vi.fn() };
 });
 
 function filaBase(rowIndex: number, batchId = "lote1"): Fila {
@@ -141,6 +143,8 @@ function filaBase(rowIndex: number, batchId = "lote1"): Fila {
     productType: "consu",
     isStorable: true,
     qtyOnHand: null,
+    stockMin: null,
+    stockMax: null,
     salePrice: 1000,
     cost: 500,
     purchaseTaxIds: [],
@@ -157,7 +161,10 @@ function filaBase(rowIndex: number, batchId = "lote1"): Fila {
 
 vi.mock("@/lib/auth", () => ({ auth: async () => ({ user: { id: "u1" } }) }));
 vi.mock("@/lib/odoo-write", () => ({ translateOdooError: (e: unknown) => String(e) }));
-vi.mock("@/lib/products/odoo-catalog-write", () => ({ createTemplate: h.createTemplate }));
+vi.mock("@/lib/products/odoo-catalog-write", () => ({
+  createTemplate: h.createTemplate,
+  createOrderpoint: h.createOrderpoint,
+}));
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     productImportBatch: {
@@ -180,6 +187,7 @@ beforeEach(() => {
   h.estado.registroRompe = false;
   h.estado.traza = [];
   h.createTemplate.mockReset();
+  h.createOrderpoint.mockReset();
 });
 
 describe("createBatchSlice", () => {
@@ -295,6 +303,8 @@ describe("una fila sin confirmar no se vuelve a crear en Odoo", () => {
           productType: "consu" as const,
           isStorable: true,
           qtyOnHand: null,
+    stockMin: null,
+    stockMax: null,
           salePrice: 1000,
           cost: 500,
           purchaseTaxIds: [],
@@ -314,5 +324,51 @@ describe("una fila sin confirmar no se vuelve a crear en Odoo", () => {
     expect(r.error).toMatch(/ya se crearon en Odoo/i);
     expect(h.estado.filas).toHaveLength(1);
     expect(h.estado.filas[0].status).toBe("CREATING");
+  });
+});
+
+describe("regla de reabastecimiento", () => {
+  it("se crea despues del producto, con el id que devolvio Odoo", async () => {
+    sembrar(1);
+    h.estado.filas[0].stockMin = 2;
+    h.estado.filas[0].stockMax = 10;
+    h.createTemplate.mockResolvedValue(42);
+    h.createOrderpoint.mockResolvedValue(7);
+
+    await createBatchSlice("lote1");
+
+    expect(h.createOrderpoint).toHaveBeenCalledWith(42, 2, 10);
+    expect(h.estado.filas[0].status).toBe("OK");
+  });
+
+  it("sin minimo y maximo no se crea ninguna regla", async () => {
+    sembrar(1);
+    h.createTemplate.mockResolvedValue(42);
+
+    await createBatchSlice("lote1");
+
+    expect(h.createOrderpoint).not.toHaveBeenCalled();
+  });
+
+  it("si la regla falla, la fila queda OK con aviso -- NO se reintenta el producto", async () => {
+    // Es el punto entero de este orden. Marcar ERROR aqui mandaria la fila a
+    // "Reintentar" y crearia el producto por segunda vez en Odoo. Quedarse
+    // sin la regla es incomparablemente menos grave que duplicar el producto.
+    sembrar(1);
+    h.estado.filas[0].stockMin = 2;
+    h.estado.filas[0].stockMax = 10;
+    h.createTemplate.mockResolvedValue(42);
+    h.createOrderpoint.mockRejectedValue(new Error("odoo rechazo la regla"));
+
+    await createBatchSlice("lote1");
+
+    expect(h.estado.filas[0].status).toBe("OK");
+    expect(h.estado.filas[0].odooTemplateId).toBe(42);
+    expect(h.estado.filas[0].warning).toMatch(/mínimos y máximos/i);
+
+    // Y un reintento posterior no lo vuelve a crear.
+    await retryFailedRows("lote1");
+    await createBatchSlice("lote1");
+    expect(h.createTemplate).toHaveBeenCalledTimes(1);
   });
 });

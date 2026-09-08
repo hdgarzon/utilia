@@ -184,6 +184,11 @@ function aFila(
     productType,
     isStorable: esBien ? (valor("isStorable") ? booleano("isStorable") : true) : false,
     qtyOnHand: esBien ? numero("qtyOnHand") : null,
+    // Una regla sobre algo sin rastreo no se puede cumplir: se descarta en
+    // vez de dejar que la validacion pinte de rojo una fila que el archivo
+    // trajo asi.
+    stockMin: esBien ? numero("stockMin") : null,
+    stockMax: esBien ? numero("stockMax") : null,
     salePrice: numero("salePrice"),
     cost: numero("cost"),
     // Sin columna de impuesto, o con un nombre que no existe en Odoo, se
