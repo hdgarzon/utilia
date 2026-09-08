@@ -65,8 +65,9 @@ describe("listas fijadas", () => {
   });
 
   it("la lista de creacion son esos cinco mas los siete de alta", () => {
-    expect(CREATE_FIELDS.size).toBe(12);
+    expect(CREATE_FIELDS.size).toBe(13);
     expect([...CREATE_FIELDS].sort()).toEqual([
+      "available_in_pos",
       "categ_id",
       "image_1920",
       "is_published",
@@ -102,6 +103,7 @@ function fila(over: Partial<ProductCreateInput> = {}): ProductCreateInput {
     isPublished: false,
     publicCategoryIds: [],
     showAvailability: false,
+    availableInPos: false,
     supplierPartnerId: null,
     ...over,
   };
@@ -115,6 +117,7 @@ describe("toOdooCreateValues", () => {
       is_storable: true,
       is_published: false,
       show_availability: false,
+      available_in_pos: false,
     });
   });
 

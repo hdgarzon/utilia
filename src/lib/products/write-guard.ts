@@ -43,6 +43,9 @@ const CREATE_ONLY_FIELDS: ReadonlySet<string> = new Set([
   "standard_price",
   "image_1920",
   "show_availability",
+  // Si el producto sale en la caja del punto de venta. Es una bandera de
+  // catalogo: no crea stock ni movimiento, solo decide donde se ve.
+  "available_in_pos",
 ]);
 
 export const CREATE_FIELDS: ReadonlySet<string> = new Set([
@@ -125,6 +128,7 @@ export function toOdooCreateValues(
     is_storable: row.productType === "consu" ? row.isStorable : false,
     is_published: row.isPublished,
     show_availability: row.showAvailability,
+    available_in_pos: row.availableInPos,
   };
 
   if (row.salePrice !== null) v.list_price = row.salePrice;

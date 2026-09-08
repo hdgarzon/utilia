@@ -23,6 +23,8 @@ export interface ImportRowInput {
   isPublished: boolean;
   publicCategoryIds: number[];
   showAvailability: boolean;
+  /** `available_in_pos`: si el producto sale en la caja del punto de venta. */
+  availableInPos: boolean;
   supplierPartnerId: number | null;
 }
 
@@ -93,12 +95,70 @@ export interface ImportProgress {
 }
 
 /**
+ * Impuesto de compra que se marca solo en una fila nueva.
+ *
+ * Se busca POR NOMBRE y no por id: el id del IVA es distinto en cada
+ * instancia de Odoo, asi que un numero escrito aqui seria correcto en una
+ * base y silenciosamente incorrecto en cualquier otra. Si no aparece, la
+ * fila nace sin impuesto -- que es como nacia antes.
+ */
+export const IMPUESTO_POR_DEFECTO = "19% VAT";
+
+export function impuestoPorDefecto(
+  impuestos: ReadonlyArray<{ id: number; name: string }>
+): number[] {
+  const objetivo = IMPUESTO_POR_DEFECTO.trim().toLowerCase();
+  const encontrado = impuestos.find((t) => t.name.trim().toLowerCase() === objetivo);
+  return encontrado ? [encontrado.id] : [];
+}
+
+/**
+ * Con que valores nace una fila nueva de la hoja.
+ *
+ * Son atajos, no politica: todos se ven en la fila y se pueden desmarcar
+ * antes de crear nada. Vienen de como carga productos la tienda -- IVA del
+ * 19 %, a la venta en la caja, y visibles en la tienda en linea.
+ *
+ * OJO con `isPublished`: cada producto cargado sale publicado en la tienda
+ * desde el momento en que se crea. Es lo que se pidio; si algun dia se
+ * quiere revisar antes de publicar, se cambia aqui.
+ */
+export function defaultsDeFila(options: {
+  purchaseTaxes: ReadonlyArray<{ id: number; name: string }>;
+}): Partial<ImportRowInput> {
+  return {
+    purchaseTaxIds: impuestoPorDefecto(options.purchaseTaxes),
+    isPublished: true,
+    showAvailability: true,
+    availableInPos: true,
+  };
+}
+
+/**
  * Constructor de una fila en blanco.
  *
  * Vive aqui y no en `ImportSheet` porque `ImportToolbar` tambien la necesita:
  * si la exportara el componente, los dos se importarian mutuamente.
+ *
+ * `defaults` se aplica encima. Va como parametro y no incrustado aqui porque
+ * el impuesto por defecto depende del catalogo vivo de Odoo, y esta funcion
+ * tiene que seguir siendo pura para poder probarse sin red.
  */
-export function filaVacia(rowIndex: number): ImportRowInput {
+export function filaVacia(
+  rowIndex: number,
+  defaults?: Partial<ImportRowInput>
+): ImportRowInput {
+  return {
+    ...filaEnBlanco(rowIndex),
+    ...defaults,
+    // El indice y la identidad no se dejan sobrescribir: un `defaults` con
+    // rowIndex pegado desordenaria la hoja entera.
+    clientId: crypto.randomUUID(),
+    rowIndex,
+  };
+}
+
+function filaEnBlanco(rowIndex: number): ImportRowInput {
   return {
     // Identidad estable para la key de React. No viaja al servidor: el schema
     // de Zod de `saveBatch` no lo declara y Zod descarta lo que no conoce.
@@ -117,6 +177,7 @@ export function filaVacia(rowIndex: number): ImportRowInput {
     isPublished: false,
     publicCategoryIds: [],
     showAvailability: false,
+    availableInPos: false,
     supplierPartnerId: null,
   };
 }

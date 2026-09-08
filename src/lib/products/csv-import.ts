@@ -19,6 +19,7 @@ export const COLUMNAS_PLANTILLA: ReadonlyArray<{ key: string; label: string }> =
   { key: "isPublished", label: "Publicado" },
   { key: "publicCategory", label: "Categoria de la tienda" },
   { key: "showAvailability", label: "Mostrar disponibilidad" },
+  { key: "availableInPos", label: "Punto de venta" },
   { key: "supplier", label: "Proveedor" },
 ];
 

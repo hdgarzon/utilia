@@ -53,6 +53,7 @@ const filaSchema = z.object({
   isPublished: z.boolean(),
   publicCategoryIds: z.array(z.number().int().positive()).max(20),
   showAvailability: z.boolean(),
+  availableInPos: z.boolean(),
   supplierPartnerId: z.number().int().positive().nullable(),
 });
 
@@ -167,6 +168,7 @@ export async function loadBatch(batchId: unknown): Promise<LoadResult> {
             isPublished: r.isPublished,
             publicCategoryIds: r.publicCategoryIds,
             showAvailability: r.showAvailability,
+            availableInPos: r.availableInPos,
             supplierPartnerId: r.supplierPartnerId,
             status: r.status,
             odooTemplateId: r.odooTemplateId,
@@ -303,6 +305,7 @@ export async function createBatchSlice(batchId: unknown): Promise<CreateResult> 
             isPublished: fila.isPublished,
             publicCategoryIds: fila.publicCategoryIds,
             showAvailability: fila.showAvailability,
+            availableInPos: fila.availableInPos,
             supplierPartnerId: fila.supplierPartnerId,
           },
           imagen

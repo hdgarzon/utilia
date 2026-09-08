@@ -406,6 +406,10 @@ model ProductImportRow {
   isPublished       Boolean @default(false)
   publicCategoryIds Int[] // product.public.category
   showAvailability  Boolean @default(false)
+  // Punto de venta. El default de la BASE es false a proposito, aunque la
+  // hoja nazca con la casilla marcada: si alguna vez se inserta una fila sin
+  // este campo, que el producto NO entre a la caja por accidente.
+  availableInPos    Boolean @default(false)
 
   // Proveedor
   supplierPartnerId Int? // res.partner

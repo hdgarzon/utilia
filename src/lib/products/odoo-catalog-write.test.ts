@@ -125,6 +125,7 @@ describe("createTemplate", () => {
         isPublished: false,
         publicCategoryIds: [],
         showAvailability: false,
+    availableInPos: false,
         supplierPartnerId: null,
       },
       null
@@ -165,6 +166,7 @@ describe("createTemplate", () => {
             isPublished: false,
             publicCategoryIds: [],
             showAvailability: false,
+    availableInPos: false,
             supplierPartnerId: null,
           },
           null

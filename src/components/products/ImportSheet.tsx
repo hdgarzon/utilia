@@ -11,6 +11,7 @@ import { parseDelimited, normalizar, leerNumero } from "@/lib/products/csv-impor
 import { saveBatch, createBatchSlice, loadBatch, retryFailedRows } from "@/app/(dashboard)/productos/cargar/actions";
 import {
   filaVacia,
+  defaultsDeFila,
   revisarPesoImagenes,
   MAX_ROWS_PER_BATCH,
   CREATE_SLICE_SIZE,
@@ -21,13 +22,17 @@ import type { CatalogOptions } from "@/lib/products/types";
 
 const ENCABEZADOS = [
   "Nombre", "Tipo", "Rastreo", "Cantidad", "Precio", "Costo", "Impuesto",
-  "Categoría", "Imagen", "Publicado", "Cat. tienda", "Disponibilidad", "Proveedor", "",
+  "Categoría", "Imagen", "Publicado", "Cat. tienda", "Disponibilidad", "PDV", "Proveedor", "",
 ];
 
 export function ImportSheet({ options }: { options: CatalogOptions }) {
   const [nombre, setNombre] = useState("");
   const [batchId, setBatchId] = useState<string | null>(null);
-  const [filas, setFilas] = useState<ImportRowInput[]>([filaVacia(0)]);
+  // Inicializador perezoso: los defaults se calculan una vez al montar, no
+  // en cada render, y necesitan el catalogo vivo para resolver el IVA.
+  const [filas, setFilas] = useState<ImportRowInput[]>(() => [
+    filaVacia(0, defaultsDeFila(options)),
+  ]);
   const [guardando, setGuardando] = useState(false);
   const [creando, setCreando] = useState(false);
   const [progreso, setProgreso] = useState<{ ok: number; error: number; faltan: number } | null>(null);
@@ -38,6 +43,10 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
     [filas, options]
   );
   const conError = errores.filter((e) => !rowIsCreatable(e)).length;
+
+  const defaults = useMemo(() => defaultsDeFila(options), [options]);
+  /** Toda fila nueva de la hoja nace por aqui, para que ninguna se salte los defaults. */
+  const nuevaFila = (i: number) => filaVacia(i, defaults);
 
   function cambiar(i: number, cambio: Partial<ImportRowInput>) {
     setFilas((prev) => prev.map((f, j) => (j === i ? { ...f, ...cambio } : f)));
@@ -50,7 +59,7 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
 
   function agregar() {
     setFilas((prev) =>
-      prev.length >= MAX_ROWS_PER_BATCH ? prev : [...prev, filaVacia(prev.length)]
+      prev.length >= MAX_ROWS_PER_BATCH ? prev : [...prev, nuevaFila(prev.length)]
     );
   }
 
@@ -103,7 +112,7 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
       matriz.forEach((cols, k) => {
         const i = desdeFila + k;
         if (i >= MAX_ROWS_PER_BATCH) return;
-        if (!next[i]) next[i] = filaVacia(i);
+        if (!next[i]) next[i] = nuevaFila(i);
         // Una celda vacia o ilegible conserva el valor que ya traia la fila
         // en vez de borrarlo o -- como pasaba antes con un `Number(v)` a
         // secas -- escribirle un NaN que Zod rechazaba con un mensaje en
@@ -342,7 +351,7 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
           setProgreso(null);
           setBatchId(null);
           setNombre("");
-          setFilas([filaVacia(0)]);
+          setFilas([nuevaFila(0)]);
         }}
       />
     );
@@ -364,7 +373,7 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
           ) {
             return;
           }
-          setFilas(nuevas.length > 0 ? nuevas : [filaVacia(0)]);
+          setFilas(nuevas.length > 0 ? nuevas : [nuevaFila(0)]);
         }}
       />
       <div className="flex items-center gap-2 flex-wrap">

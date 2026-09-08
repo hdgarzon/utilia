@@ -11,7 +11,12 @@ import {
   leerNumero,
   COLUMNAS_PLANTILLA,
 } from "@/lib/products/csv-import";
-import { filaVacia, MAX_ROWS_PER_BATCH, type ImportRowInput } from "@/lib/products/import-types";
+import {
+  filaVacia,
+  defaultsDeFila,
+  MAX_ROWS_PER_BATCH,
+  type ImportRowInput,
+} from "@/lib/products/import-types";
 import type { CatalogOptions, ProductType } from "@/lib/products/types";
 
 /**
@@ -133,7 +138,7 @@ function aFila(
   options: CatalogOptions,
   invalidos: { count: number }
 ): ImportRowInput {
-  const fila = filaVacia(rowIndex);
+  const fila = filaVacia(rowIndex, defaultsDeFila(options));
   const valor = (key: string): string => {
     const i = mapeo.indexOf(key);
     return i === -1 ? "" : (cols[i] ?? "").trim();
@@ -147,6 +152,14 @@ function aFila(
     return leido;
   };
   const booleano = (key: string): boolean => TOKENS_VERDADERO.has(normalizar(valor(key)));
+  /**
+   * Una columna que el archivo NO trae conserva el valor por defecto de la
+   * fila. Sin esto, `booleano` devuelve false para una celda ausente y una
+   * lista sin la columna "Publicado" apagaria el default en silencio: el
+   * usuario marco los defaults y el CSV se los quitaria sin decir nada.
+   */
+  const booleanoODefecto = (key: string, porDefecto: boolean): boolean =>
+    valor(key) ? booleano(key) : porDefecto;
   const porNombre = (lista: Array<{ id: number; name: string }>, key: string): number | null => {
     const v = normalizar(valor(key));
     if (!v) return null;
@@ -173,12 +186,15 @@ function aFila(
     qtyOnHand: esBien ? numero("qtyOnHand") : null,
     salePrice: numero("salePrice"),
     cost: numero("cost"),
-    purchaseTaxIds: impuesto !== null ? [impuesto] : [],
+    // Sin columna de impuesto, o con un nombre que no existe en Odoo, se
+    // conserva el que trae la fila por defecto.
+    purchaseTaxIds: impuesto !== null ? [impuesto] : fila.purchaseTaxIds,
     categoryId: porNombre(options.categories, "category"),
     imageUrl: valor("imageUrl") || null,
-    isPublished: booleano("isPublished"),
+    isPublished: booleanoODefecto("isPublished", fila.isPublished),
     publicCategoryIds: catTienda !== null ? [catTienda] : [],
-    showAvailability: booleano("showAvailability"),
+    showAvailability: booleanoODefecto("showAvailability", fila.showAvailability),
+    availableInPos: booleanoODefecto("availableInPos", fila.availableInPos),
     supplierPartnerId: porNombre(options.suppliers, "supplier"),
   };
 }

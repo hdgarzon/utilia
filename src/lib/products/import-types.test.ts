@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
   revisarPesoImagenes,
+  impuestoPorDefecto,
+  defaultsDeFila,
+  filaVacia,
+  type ImportRowInput,
   MAX_IMAGE_PAYLOAD_BYTES,
   MAX_IMAGE_BASE64_BYTES,
   MAX_IMAGENES_ADJUNTAS,
@@ -12,6 +16,68 @@ import {
 function conFoto(bytes: number) {
   return { imageData: "x".repeat(bytes) };
 }
+
+// Nombres reales del catalogo de la tienda: hay varios que contienen "19" y
+// "VAT" sin ser el IVA de compra.
+const IMPUESTOS = [
+  { id: 1, name: "0% EXC VAT" },
+  { id: 2, name: "15% RteVAT 19%" },
+  { id: 3, name: "19% VAT" },
+  { id: 4, name: "5% VAT" },
+];
+
+describe("impuestoPorDefecto", () => {
+  it("encuentra el IVA del 19 % por nombre exacto", () => {
+    expect(impuestoPorDefecto(IMPUESTOS)).toEqual([3]);
+  });
+
+  it("no se deja confundir por otro impuesto que mencione 19 y VAT", () => {
+    // "15% RteVAT 19%" es retencion, no el IVA de compra. Un emparejamiento
+    // laxo (contiene "19" y "vat") lo escogeria y le pondria retencion a
+    // todos los productos cargados.
+    expect(impuestoPorDefecto(IMPUESTOS)).not.toContain(2);
+  });
+
+  it("sin IVA en el catalogo, la fila nace sin impuesto en vez de adivinar", () => {
+    expect(impuestoPorDefecto([{ id: 9, name: "0% EXEMPT" }])).toEqual([]);
+    expect(impuestoPorDefecto([])).toEqual([]);
+  });
+
+  it("el id se resuelve contra el catalogo, nunca se escribe fijo", () => {
+    // La misma tienda en otra instancia de Odoo tiene otro id para el IVA.
+    expect(impuestoPorDefecto([{ id: 77, name: "19% VAT" }])).toEqual([77]);
+  });
+});
+
+describe("defaultsDeFila y filaVacia", () => {
+  it("una fila nueva nace con IVA, publicada, con disponibilidad y en la caja", () => {
+    const f = filaVacia(0, defaultsDeFila({ purchaseTaxes: IMPUESTOS }));
+    expect(f.purchaseTaxIds).toEqual([3]);
+    expect(f.isPublished).toBe(true);
+    expect(f.showAvailability).toBe(true);
+    expect(f.availableInPos).toBe(true);
+  });
+
+  it("sin defaults sigue naciendo en blanco, como antes", () => {
+    const f = filaVacia(0);
+    expect(f.purchaseTaxIds).toEqual([]);
+    expect(f.isPublished).toBe(false);
+    expect(f.showAvailability).toBe(false);
+    expect(f.availableInPos).toBe(false);
+  });
+
+  it("los defaults no pueden pisar el indice ni la identidad de la fila", () => {
+    // Un `defaults` con rowIndex pegado desordenaria la hoja entera, y un
+    // clientId repetido rompe las keys de React: dos filas con la misma key
+    // comparten el estado interno de sus celdas.
+    const sucio = { rowIndex: 99, clientId: "fijo" } as Partial<ImportRowInput>;
+    const a = filaVacia(4, sucio);
+    const b = filaVacia(5, sucio);
+    expect(a.rowIndex).toBe(4);
+    expect(b.rowIndex).toBe(5);
+    expect(a.clientId).not.toBe(b.clientId);
+  });
+});
 
 describe("revisarPesoImagenes", () => {
   it("una hoja sin fotos siempre cabe", () => {

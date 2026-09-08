@@ -25,6 +25,7 @@ function fila(over: Partial<ImportRowInput> = {}): ImportRowInput {
     isPublished: false,
     publicCategoryIds: [],
     showAvailability: false,
+    availableInPos: false,
     supplierPartnerId: null,
     clientId: "test-client",
     rowIndex: 0,

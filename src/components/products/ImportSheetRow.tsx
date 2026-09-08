@@ -204,6 +204,15 @@ export function ImportSheetRow({
           className="h-3.5 w-3.5 accent-primary"
         />
       </td>
+      <td className="p-1 text-center">
+        <input
+          type="checkbox"
+          checked={row.availableInPos}
+          onChange={(e) => onChange({ availableInPos: e.target.checked })}
+          aria-label="Disponible en el punto de venta"
+          className="h-3.5 w-3.5 accent-primary"
+        />
+      </td>
       <td className="p-1">
         <select
           value={row.supplierPartnerId ?? ""}

@@ -37,6 +37,7 @@ type Fila = {
   isPublished: boolean;
   publicCategoryIds: number[];
   showAvailability: boolean;
+  availableInPos: boolean;
   supplierPartnerId: number | null;
 };
 
@@ -149,6 +150,7 @@ function filaBase(rowIndex: number, batchId = "lote1"): Fila {
     isPublished: false,
     publicCategoryIds: [],
     showAvailability: false,
+    availableInPos: false,
     supplierPartnerId: null,
   };
 }
@@ -302,6 +304,7 @@ describe("una fila sin confirmar no se vuelve a crear en Odoo", () => {
           isPublished: false,
           publicCategoryIds: [],
           showAvailability: false,
+    availableInPos: false,
           supplierPartnerId: null,
         },
       ],
