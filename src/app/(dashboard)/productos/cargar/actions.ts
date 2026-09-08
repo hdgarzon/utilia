@@ -13,6 +13,7 @@ import {
   ESTADOS_BORRABLES,
   type ImportRowDraft,
   type ImportProgress,
+  type BatchSummary,
 } from "@/lib/products/import-types";
 import type { ProductType } from "@/lib/products/types";
 import { createTemplate, createOrderpoint } from "@/lib/products/odoo-catalog-write";
@@ -138,6 +139,67 @@ export async function saveBatch(input: unknown): Promise<SaveResult> {
       return { ok: false, error: "Ese lote ya no existe. Empieza uno nuevo." };
     }
     return { ok: false, error: "No se pudo guardar el borrador. Intenta de nuevo." };
+  }
+}
+
+/**
+ * Los ultimos lotes con el reparto de sus filas por estado.
+ *
+ * Existe porque no habia forma de volver a un lote: se cerraba la pantalla y
+ * el borrador quedaba en la base sin puerta de entrada.
+ */
+export async function listBatches(): Promise<{ ok: boolean; error?: string; batches?: BatchSummary[] }> {
+  await requireSession();
+  try {
+    const lotes = await prisma.productImportBatch.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 30,
+      select: { id: true, name: true, status: true, createdAt: true },
+    });
+    if (lotes.length === 0) return { ok: true, batches: [] };
+
+    // Un solo groupBy en vez de una consulta por lote.
+    const conteos = await prisma.productImportRow.groupBy({
+      by: ["batchId", "status"],
+      where: { batchId: { in: lotes.map((l) => l.id) } },
+      _count: { _all: true },
+    });
+
+    const porLote = new Map<string, Record<string, number>>();
+    for (const c of conteos) {
+      const m = porLote.get(c.batchId) ?? {};
+      m[c.status] = c._count._all;
+      porLote.set(c.batchId, m);
+    }
+
+    return {
+      ok: true,
+      batches: lotes.map((l): BatchSummary => {
+        const m = porLote.get(l.id) ?? {};
+        const ok = m.OK ?? 0;
+        const error = m.ERROR ?? 0;
+        const pendientes = m.PENDING ?? 0;
+        const sinConfirmar = m.CREATING ?? 0;
+        const total = ok + error + pendientes + sinConfirmar;
+        return {
+          id: l.id,
+          name: l.name,
+          status: l.status,
+          createdAt: l.createdAt.toISOString(),
+          total,
+          ok,
+          error,
+          pendientes,
+          sinConfirmar,
+          // Nada creado ni en curso: se puede seguir editando sin riesgo de
+          // duplicar un producto.
+          editable: ok === 0 && sinConfirmar === 0,
+        };
+      }),
+    };
+  } catch (err) {
+    console.error("[cargar] fallo al listar los lotes:", err);
+    return { ok: false, error: "No se pudo leer el historial." };
   }
 }
 

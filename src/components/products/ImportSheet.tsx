@@ -2,11 +2,12 @@
 
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Plus, Save } from "lucide-react";
+import { Plus, Save, History } from "lucide-react";
 import { ImportSheetRow } from "./ImportSheetRow";
 import { ImportToolbar, TOKENS_VERDADERO } from "./ImportToolbar";
 import { ImportResult } from "./ImportResult";
 import { ImportBulkBar } from "./ImportBulkBar";
+import { ImportHistory } from "./ImportHistory";
 import { validateRow, rowIsCreatable } from "@/lib/products/import-schema";
 import { parseDelimited, normalizar, leerNumero } from "@/lib/products/csv-import";
 import { saveBatch, createBatchSlice, loadBatch, retryFailedRows } from "@/app/(dashboard)/productos/cargar/actions";
@@ -19,6 +20,7 @@ import {
   CREATE_SLICE_SIZE,
   type ImportRowInput,
   type ImportRowDraft,
+  type BatchSummary,
 } from "@/lib/products/import-types";
 import type { CatalogOptions } from "@/lib/products/types";
 
@@ -46,6 +48,9 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
    * sin que nadie lo note.
    */
   const [seleccion, setSeleccion] = useState<Set<string>>(new Set());
+  const [verHistorial, setVerHistorial] = useState(false);
+  /** Sube al terminar una carga, para que el historial se recargue. */
+  const [versionHistorial, setVersionHistorial] = useState(0);
 
   const errores = useMemo(
     () => filas.map((f) => validateRow(f, options)),
@@ -265,8 +270,53 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
     try {
       const leido = await loadBatch(id);
       if (leido.ok && leido.batch) setResultado(leido.batch.rows);
+      // El lote acaba de cambiar de estado: que el historial no muestre lo viejo.
+      setVersionHistorial((v) => v + 1);
     } catch (err) {
       console.error("[cargar] no se pudo releer el lote para mostrar el resultado:", err);
+    }
+  }
+
+  /**
+   * Abre un lote del historial.
+   *
+   * A donde va depende de sus FILAS, no de la etiqueta del lote: si ninguna
+   * se creo todavia se abre en la hoja para seguir editando; si alguna ya
+   * existe en Odoo se abre el resumen, que trae el reintento de las fallidas
+   * y el CSV de cantidades pendientes.
+   *
+   * Reabrir en la hoja un lote con productos ya creados y darle a "Crear en
+   * Odoo" es el camino directo a duplicarlos. `saveBatch` lo rechaza, pero
+   * mejor no ofrecer la puerta.
+   */
+  async function abrirLote(lote: BatchSummary) {
+    const hayTrabajo = filas.some((f) => f.name.trim() !== "");
+    if (
+      hayTrabajo &&
+      !window.confirm("Abrir un lote reemplaza lo que hay en la hoja. ¿Continuar?")
+    ) {
+      return;
+    }
+    try {
+      const leido = await loadBatch(lote.id);
+      if (!leido.ok || !leido.batch) {
+        toast.error(leido.error ?? "No se pudo abrir el lote");
+        return;
+      }
+      setBatchId(leido.batch.id);
+      setNombre(leido.batch.name);
+      setSeleccion(new Set());
+      setVerHistorial(false);
+
+      if (lote.editable) {
+        setResultado(null);
+        setFilas(leido.batch.rows.length > 0 ? leido.batch.rows : [nuevaFila(0)]);
+      } else {
+        setResultado(leido.batch.rows);
+      }
+    } catch (err) {
+      console.error("[cargar] no se pudo abrir el lote:", err);
+      toast.error("No se pudo contactar al servidor. Revisa la conexión.");
     }
   }
 
@@ -456,11 +506,22 @@ export function ImportSheet({ options }: { options: CatalogOptions }) {
               : "Creando…"
             : "Crear en Odoo"}
         </button>
+        <button
+          onClick={() => setVerHistorial((v) => !v)}
+          aria-expanded={verHistorial}
+          className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-secondary"
+        >
+          <History className="h-3.5 w-3.5" /> {verHistorial ? "Ocultar historial" : "Historial"}
+        </button>
         <span className="text-xs text-muted-foreground">
           {filas.length} fila{filas.length !== 1 ? "s" : ""}
           {conError > 0 ? ` · ${conError} con error` : ""}
         </span>
       </div>
+
+      {verHistorial ? (
+        <ImportHistory onAbrir={abrirLote} recargar={versionHistorial} />
+      ) : null}
 
       {seleccion.size > 0 ? (
         <ImportBulkBar

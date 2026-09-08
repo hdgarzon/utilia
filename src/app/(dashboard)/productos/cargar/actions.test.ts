@@ -46,6 +46,7 @@ type Fila = {
 const h = vi.hoisted(() => {
   const estado = {
     filas: [] as Fila[],
+    lotes: [] as Array<{ id: string; name: string; status: string; createdAt: Date }>,
     /**
      * Simula que falla la escritura que registra el EXITO (la que pone OK con
      * el `odooTemplateId`). Solo esa: es el caso que importa, porque es el
@@ -99,6 +100,18 @@ const h = vi.hoisted(() => {
 
     count: async ({ where }: { where: Record<string, unknown> }) =>
       estado.filas.filter((f) => coincide(f, where)).length,
+
+    groupBy: async () => {
+      const m = new Map<string, number>();
+      for (const f of estado.filas) {
+        const k = `${f.batchId}|${f.status}`;
+        m.set(k, (m.get(k) ?? 0) + 1);
+      }
+      return [...m.entries()].map(([k, n]) => {
+        const [batchId, status] = k.split("|");
+        return { batchId, status, _count: { _all: n } };
+      });
+    },
 
     deleteMany: async ({ where }: { where: Record<string, unknown> }) => {
       const quedan = estado.filas.filter((f) => !coincide(f, where));
@@ -170,13 +183,14 @@ vi.mock("@/lib/prisma", () => ({
     productImportBatch: {
       update: async () => ({ id: "lote1", name: "lote" }),
       create: async () => ({ id: "lote1", name: "lote" }),
+      findMany: async () => h.estado.lotes,
     },
     productImportRow: h.filaTabla,
     $transaction: async (fn: (tx: unknown) => unknown) => fn({ productImportRow: h.filaTabla }),
   },
 }));
 
-import { createBatchSlice, retryFailedRows, saveBatch } from "./actions";
+import { createBatchSlice, retryFailedRows, saveBatch, listBatches } from "./actions";
 
 function sembrar(cuantas: number) {
   h.estado.filas = Array.from({ length: cuantas }, (_, i) => filaBase(i));
@@ -184,6 +198,7 @@ function sembrar(cuantas: number) {
 
 beforeEach(() => {
   h.estado.filas = [];
+  h.estado.lotes = [];
   h.estado.registroRompe = false;
   h.estado.traza = [];
   h.createTemplate.mockReset();
@@ -370,5 +385,52 @@ describe("regla de reabastecimiento", () => {
     await retryFailedRows("lote1");
     await createBatchSlice("lote1");
     expect(h.createTemplate).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("listBatches", () => {
+  function lote(id = "lote1") {
+    h.estado.lotes = [{ id, name: "Lista de prueba", status: "DRAFT", createdAt: new Date() }];
+  }
+
+  it("un lote sin nada creado se puede editar", async () => {
+    lote();
+    sembrar(3); // las tres en PENDING
+    const r = await listBatches();
+    const b = r.batches![0];
+    expect(b.total).toBe(3);
+    expect(b.pendientes).toBe(3);
+    expect(b.editable).toBe(true);
+  });
+
+  it("una sola fila ya creada en Odoo cierra la edicion del lote entero", async () => {
+    // Es la propiedad de seguridad del historial: reabrir en la hoja un lote
+    // con productos vivos y darle a "Crear en Odoo" los duplicaria.
+    lote();
+    sembrar(3);
+    h.estado.filas[0].status = "OK";
+    const b = (await listBatches()).batches![0];
+    expect(b.ok).toBe(1);
+    expect(b.editable).toBe(false);
+  });
+
+  it("una fila sin confirmar tambien la cierra", async () => {
+    // CREATING = puede existir en Odoo. Mismo riesgo que OK.
+    lote();
+    sembrar(2);
+    h.estado.filas[1].status = "CREATING";
+    const b = (await listBatches()).batches![0];
+    expect(b.sinConfirmar).toBe(1);
+    expect(b.editable).toBe(false);
+  });
+
+  it("filas con error no impiden seguir editando", async () => {
+    // Un ERROR no creo nada en Odoo: se puede corregir y reintentar.
+    lote();
+    sembrar(2);
+    h.estado.filas[0].status = "ERROR";
+    const b = (await listBatches()).batches![0];
+    expect(b.error).toBe(1);
+    expect(b.editable).toBe(true);
   });
 });

@@ -283,3 +283,29 @@ export function revisarPesoImagenes(rows: Array<{ imageData: string | null }>): 
     `de ~${caben} productos con foto. Las imágenes por link no cuentan: esas se descargan en el servidor.`
   );
 }
+
+/**
+ * Resumen de un lote para el historial.
+ *
+ * Vive aqui y no en las server actions porque un archivo "use server" solo
+ * puede exportar funciones async.
+ */
+export interface BatchSummary {
+  id: string;
+  name: string;
+  status: string;
+  /** ISO. Se formatea en el navegador. */
+  createdAt: string;
+  total: number;
+  ok: number;
+  error: number;
+  pendientes: number;
+  sinConfirmar: number;
+  /**
+   * Si TODAS sus filas siguen sin intentarse. Es lo que decide si el lote se
+   * puede seguir editando, y se calcula de las filas y no del estado del
+   * lote: el estado es un resumen que se escribe aparte y podria ir por
+   * detras; las filas son la verdad.
+   */
+  editable: boolean;
+}

@@ -30,6 +30,23 @@ export function colombiaDayString(date: Date): string {
     .slice(0, 10);
 }
 
+/**
+ * Fecha y hora en Colombia, para mostrar: "2026-09-08 14:32".
+ *
+ * Existe para no dejar que un componente formatee la hora por su cuenta. Un
+ * `toLocaleString()` en el navegador usa la zona de QUIEN mira, no la de la
+ * tienda: el mismo lote saldria con una hora distinta segun el dispositivo, y
+ * despues de las 7pm Colombia hasta con otro dia.
+ */
+export function colombiaDateTimeString(date: Date): string {
+  const co = new Date(date.getTime() - COLOMBIA_OFFSET_MS);
+  const dosDigitos = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${colombiaDayString(date)} ` +
+    `${dosDigitos(co.getUTCHours())}:${dosDigitos(co.getUTCMinutes())}`
+  );
+}
+
 /** Año, mes (1-12) y día actuales en Colombia. */
 export function colombiaYearMonthDay(): { year: number; month: number; day: number } {
   const nowCO = new Date(Date.now() - COLOMBIA_OFFSET_MS);
