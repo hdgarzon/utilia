@@ -1,0 +1,24 @@
+# Paquetes autorizados a correr scripts de instalacion.
+#
+# pnpm 10+ los bloquea por defecto y falla el install con
+# ERR_PNPM_IGNORED_BUILDS. npm los corria sin preguntar, asi que al migrar
+# nadie lo noto hasta que el despliegue de Vercel murio a los 17 segundos.
+#
+# Los cinco son los que ya corrian bajo npm, ni uno mas:
+#
+#   prisma, @prisma/client, @prisma/engines
+#     Sin su postinstall no se genera el cliente ni se bajan los binarios del
+#     motor. La app no arranca: es la causa directa del build roto.
+#
+#   esbuild
+#     Baja su binario nativo. Lo usan tsx (los scripts de sync y los
+#     verificadores) y vitest.
+#
+#   unrs-resolver
+#     Binario nativo del resolvedor de imports de ESLint.
+allowBuilds:
+  '@prisma/client': true
+  '@prisma/engines': true
+  esbuild: true
+  prisma: true
+  unrs-resolver: true
