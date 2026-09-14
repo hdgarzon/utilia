@@ -37,23 +37,27 @@ Treat this repo as if it were public.
 
 ## Commands
 
+pnpm 12 (pinned via `packageManager`) on Node 22 (`.nvmrc`). Scripts that reach Odoo or the database load `.env.local` through `tsx --env-file`.
+
 ```bash
-npm run dev              # Next dev server (turbopack)
-npm run build            # prisma generate && next build
-npm run lint             # next lint
-npm run db:migrate       # prisma migrate dev
-npm run db:push          # push schema without a migration
-npm run db:studio        # Prisma Studio
-npm run db:seed          # seed via prisma/seed.ts
-npm run seed:demo        # demo dataset  (seed:demo:clear to wipe)
-npm run sync             # one-off Odoo sync (scripts/run-sync-once.ts)
+pnpm dev                 # Next dev server (turbopack)
+pnpm build               # prisma generate && next build
+pnpm lint                # eslint src
+pnpm test                # vitest run  (test:watch for watch mode)
+pnpm db:migrate          # prisma migrate dev
+pnpm db:push             # push schema without a migration
+pnpm db:studio           # Prisma Studio
+pnpm db:seed             # seed via prisma/seed.ts
+pnpm seed:demo           # demo dataset  (seed:demo:clear to wipe)
+pnpm sync                # one-off Odoo sync (scripts/run-sync-once.ts)
+pnpm backfill            # rebuild sales history from Odoo (scripts/backfill-history.ts)
 ```
 
 ## Architecture
 
-**Utilia** is a Next.js 15 App Router dashboard that syncs a business's Odoo instance into Postgres, then layers analytics, budgeting, and AI-generated marketing on top.
+**Utilia** is a Next.js 16 App Router dashboard that syncs a business's Odoo instance into Postgres, then layers analytics, budgeting, replenishment, and AI-generated marketing on top.
 
-- **Stack:** Next.js (App Router, `src/`), Prisma + Postgres, NextAuth, Tailwind + shadcn/radix, Vercel.
+- **Stack:** Next.js 16 (App Router, `src/`), Prisma 6 + Postgres (Supabase), NextAuth v5, Tailwind 4 + shadcn/radix, Vitest, Vercel.
 - **AI:** Vercel AI SDK + OpenAI (`src/lib/ai/`) — powers `AIRecommendation` and campaign/status copy generation.
 
 ### Layout
@@ -63,6 +67,11 @@ src/app/(auth)/         # login flow
 src/app/(dashboard)/    # authed app
 src/app/api/            # route handlers
 src/lib/odoo.ts         # Odoo client — the upstream source of truth
+src/lib/odoo-write.ts   # purchase-order drafts in Odoo, user-triggered only
+src/lib/products/       # bulk product import (writes catalog to Odoo)
+src/lib/suppliers.ts    # supplier directory, seeded from purchase history and Odoo
+src/lib/whatsapp.ts     # supplier order message + wa.me link (no network calls)
+src/lib/cron-auth.ts    # Vercel Cron secret check
 src/lib/sync.ts         # Odoo → Postgres sync orchestration
 src/lib/snapshots.ts    # FinancialSnapshot rollups
 src/lib/analytics/      # derived metrics
@@ -74,11 +83,11 @@ src/proxy.ts            # auth gate (antes middleware.ts)
 
 ### Data model (`prisma/schema.prisma`)
 
-`User` (+`Role`) · `SyncState` · `ProductInsight` · `FinancialSnapshot` · `ExpenseBudget` · `Campaign` (+`CampaignStatus`, `CampaignTrigger`) · `CampaignExecution` · `CustomerSegment` · `Setting` · `AIRecommendation` · `PurchaseOrder` / `PurchaseOrderLine` · `StatusPost`
+`User` (+`Role`) · `SyncState` · `ProductInsight` · `FinancialSnapshot` · `CategorySnapshot` · `ExpenseBudget` · `Campaign` (+`CampaignStatus`, `CampaignTrigger`) · `CampaignExecution` · `CustomerSegment` · `Setting` · `AIRecommendation` · `PurchaseOrder` / `PurchaseOrderLine` · `StatusPost` · `Supplier` (+`ProductSupplierOverride`) · `ReplenishmentOrder` / `ReplenishmentLine` (+`ReplenishmentStatus`) · `ProductImportBatch` / `ProductImportRow` (+`ProductImportStatus`, `ProductImportRowStatus`)
 
 ### Conventions
 
-- Odoo is upstream. Never write back to Odoo from a sync path.
+- Odoo is upstream. Never write back to Odoo from a sync path. Writes happen only from user-triggered actions, through `src/lib/odoo-write.ts` (purchase-order drafts) and `src/lib/products/odoo-catalog-write.ts` (catalog import).
 - Date/period math goes through `src/lib/period.ts` and `src/lib/timezone.ts` — do not inline `new Date()` arithmetic.
-- `node-cron` drives scheduled sync; `scripts/run-sync-once.ts` is the manual equivalent.
-- `npm run build` runs `prisma generate` first — a schema change requires a rebuild, not just a restart.
+- Scheduled sync runs on Vercel Cron (`vercel.json`, daily at 10:00 UTC), which calls `GET /api/sync` signed with `CRON_SECRET`; `pnpm sync` is the manual equivalent. `node-cron` is still listed in `package.json`, but nothing imports it.
+- `pnpm build` runs `prisma generate` first — a schema change requires a rebuild, not just a restart.

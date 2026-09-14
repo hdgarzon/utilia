@@ -12,7 +12,7 @@ import { getCashFlowAnalysis } from "@/lib/analytics/cash-flow";
 import { getRevenueWaterfall } from "@/lib/analytics/revenue-waterfall";
 import { computeMonthEndProjection, type MonthEndProjection } from "@/lib/analytics/month-projection";
 import { formatCurrency } from "@/lib/utils";
-import { TrendingUp, TrendingDown, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { TrendingDown, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { getSelectedPeriod } from "@/lib/period";
 
 const MONTHS = [
