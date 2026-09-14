@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { runFullSync } from "@/lib/sync";
 import { auth } from "@/lib/auth";
 import { generateRecommendations } from "@/lib/ai/recommendations";
+import { isCronRequest } from "@/lib/cron-auth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // 5 min — el sync inicial puede ser largo
@@ -13,14 +14,16 @@ export const maxDuration = 300; // 5 min — el sync inicial puede ser largo
  * antes de abrir; ver vercel.json).
  * Vercel firma la request con `Authorization: Bearer ${CRON_SECRET}`.
  *
- * También sirve como health check del estado de sync (sin secret).
+ * Sin secret pero con sesión iniciada, devuelve el estado de cada sync sin
+ * ejecutarlo. Sin secret ni sesión responde 401: un 200 ahí se confunde con un
+ * sync exitoso cuando no se sincronizó nada.
  */
 export async function GET(req: NextRequest) {
-  const authHeader = req.headers.get("authorization") ?? "";
-  const isCron = authHeader === `Bearer ${process.env.CRON_SECRET}`;
-
-  // Sin secret: devolver estado actual (no ejecuta sync)
-  if (!isCron) {
+  if (!isCronRequest(req)) {
+    const session = await auth();
+    if (!session) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
     const { prisma } = await import("@/lib/prisma");
     const states = await prisma.syncState.findMany();
     return NextResponse.json({ states, cron: false });
