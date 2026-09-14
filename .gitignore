@@ -38,3 +38,6 @@ next-env.d.ts
 # Documentos internos con cifras reales del negocio (ingresos, margenes,
 # valor de inventario). No deben salir del equipo — ver CLAUDE.md.
 docs/PLAN_CRECIMIENTO.md
+
+# datos de proveedor: facturas, precios de compra, fotos de catalogo
+joyeria/
