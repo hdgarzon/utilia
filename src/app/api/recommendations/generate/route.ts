@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { generateRecommendations } from "@/lib/ai/recommendations";
+import { isCronRequest } from "@/lib/cron-auth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120; // hasta 2 min — generaciones LLM pueden tardar
 
 async function authorize(req: NextRequest): Promise<{ ok: true } | { ok: false; reason: string }> {
-  const authHeader = req.headers.get("authorization") ?? "";
-  if (authHeader === `Bearer ${process.env.CRON_SECRET}`) return { ok: true };
+  if (isCronRequest(req)) return { ok: true };
   const session = await auth();
   if (session) return { ok: true };
   return { ok: false, reason: "unauthorized" };
