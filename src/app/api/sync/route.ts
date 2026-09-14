@@ -9,7 +9,8 @@ export const maxDuration = 300; // 5 min — el sync inicial puede ser largo
 /**
  * GET /api/sync
  *
- * Llamado por Vercel Cron (cada 5 min, configurado en vercel.json).
+ * Llamado por Vercel Cron una vez al dia (0 10 * * * UTC = 5:00 a.m. Colombia,
+ * antes de abrir; ver vercel.json).
  * Vercel firma la request con `Authorization: Bearer ${CRON_SECRET}`.
  *
  * También sirve como health check del estado de sync (sin secret).
