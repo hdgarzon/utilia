@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { Prisma } from "@prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import { createDraftPurchaseOrder, translateOdooError } from "@/lib/odoo-write";
 import { importSuppliersFromOdoo } from "@/lib/suppliers";
 import { setLeadTimeDays, recomputeStockLevels } from "@/lib/analytics/stock-levels";

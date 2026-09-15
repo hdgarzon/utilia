@@ -1,7 +1,5 @@
-import { PrismaClient } from "@prisma/client";
 import { hash } from "bcryptjs";
-
-const prisma = new PrismaClient();
+import { prisma } from "@/lib/prisma";
 
 async function main() {
   const password = await hash("utilia2026!", 12);

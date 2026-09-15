@@ -24,6 +24,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# Cliente de Prisma: lo genera `prisma generate` (postinstall y build)
+src/generated/
+
 # Misc
 .DS_Store
 *.pem
