@@ -57,7 +57,7 @@ pnpm backfill            # rebuild sales history from Odoo (scripts/backfill-his
 
 **Utilia** is a Next.js 16 App Router dashboard that syncs a business's Odoo instance into Postgres, then layers analytics, budgeting, replenishment, and AI-generated marketing on top.
 
-- **Stack:** Next.js 16 (App Router, `src/`), Prisma 6 + Postgres (Supabase), NextAuth v5, Tailwind 4 + shadcn/radix, Vitest, Vercel.
+- **Stack:** Next.js 16 (App Router, `src/`), Prisma 7 (driver adapter `pg`) + Postgres (Supabase), NextAuth v5, Tailwind 4 + shadcn/radix, Vitest, Vercel.
 - **AI:** Vercel AI SDK + OpenAI (`src/lib/ai/`) — powers `AIRecommendation` and campaign/status copy generation.
 
 ### Layout
@@ -91,3 +91,7 @@ src/proxy.ts            # auth gate (antes middleware.ts)
 - Date/period math goes through `src/lib/period.ts` and `src/lib/timezone.ts` — do not inline `new Date()` arithmetic.
 - Scheduled sync runs on Vercel Cron (`vercel.json`, daily at 10:00 UTC), which calls `GET /api/sync` signed with `CRON_SECRET`; `pnpm sync` is the manual equivalent.
 - `pnpm build` runs `prisma generate` first — a schema change requires a rebuild, not just a restart.
+- The Prisma client is generated into `src/generated/prisma/` (gitignored). Import models, enums and the `Prisma` namespace from `@/generated/prisma/client`, never from `@prisma/client`; take the client instance from `@/lib/prisma`.
+- Connection URLs are not in the schema: the CLI reads `DIRECT_URL` in `prisma.config.ts`, the app reads `DATABASE_URL` (pooler) in `src/lib/prisma.ts`, which also sets pool size, TLS and timeouts.
+- The database role `postgres` must keep `extra_float_digits = 3`. The `pg` driver reads results as text, and with Supabase's default (0) every Float arrives rounded to 15 digits — enough to push `Math.ceil` quantities up by one. The pooler ignores startup parameters, so the setting lives on the role (see `src/lib/prisma.ts`).
+- Raw SQL: pass dates as ISO strings with an explicit cast (`${d.toISOString()}::timestamptz`, `${key}::date`), not as `Date` objects. The adapter sends a `Date` without a time zone, and Postgres then casts it to the column's type — against a `date` column that shifts the day.

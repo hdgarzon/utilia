@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { Prisma } from "@prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import { odoo } from "@/lib/odoo";
 import { colombiaStartOfPreviousMonth, COLOMBIA_OFFSET_MS } from "@/lib/timezone";
 import { recomputeStockLevels } from "@/lib/analytics/stock-levels";

@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { Prisma } from "@prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import {
   MAX_IMAGE_BASE64_BYTES,
   MAX_ROWS_PER_BATCH,
