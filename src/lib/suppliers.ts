@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { odoo } from "@/lib/odoo";
-import { Prisma } from "@prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 
 /**
  * Crea proveedores a partir del historial de compras sincronizado. Idempotente:

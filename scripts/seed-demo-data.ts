@@ -16,10 +16,8 @@
  *   npm run seed:demo:clear # borrar todo lo sintético
  */
 
-import { PrismaClient } from "@prisma/client";
 import { subDays, startOfDay } from "date-fns";
-
-const prisma = new PrismaClient();
+import { prisma } from "@/lib/prisma";
 
 const SYNTHETIC_TAG = "__demo__";
 

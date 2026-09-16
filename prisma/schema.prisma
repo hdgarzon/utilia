@@ -1,11 +1,12 @@
 generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
 }
 
+// Las URLs ya no van aqui: la CLI usa DIRECT_URL desde prisma.config.ts y la
+// app usa DATABASE_URL (pooler) desde src/lib/prisma.ts.
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider = "postgresql"
 }
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────

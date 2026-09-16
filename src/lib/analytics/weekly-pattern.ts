@@ -48,7 +48,7 @@ export async function getWeeklyPattern(days = 60): Promise<WeeklyDayStat[]> {
         ELSE 0
       END                                    AS avg_margin
     FROM "FinancialSnapshot"
-    WHERE "date" >= ${since}
+    WHERE "date" >= ${since.toISOString()}::timestamptz
       AND "transactionCount" > 0
     GROUP BY EXTRACT(DOW FROM "date")
     ORDER BY dow ASC

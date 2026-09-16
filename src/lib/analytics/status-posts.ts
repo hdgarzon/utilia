@@ -14,7 +14,7 @@
 import { openai } from "@ai-sdk/openai";
 import { generateObject } from "ai";
 import { z } from "zod";
-import type { ProductInsight, StatusPost } from "@prisma/client";
+import type { ProductInsight, StatusPost } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { colombiaToday, colombiaDaysAgo } from "@/lib/timezone";
 
