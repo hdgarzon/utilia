@@ -1,5 +1,5 @@
 export interface MonthEndProjectionInput {
-  daysElapsed: number;          // días del mes con snapshot (incluye hoy si ya sincronizó)
+  daysElapsed: number;          // días calendario cerrados (incluye los días sin venta)
   daysInMonth: number;
   mtdRevenue: number;
   mtdCost: number;
@@ -26,14 +26,17 @@ export interface MonthEndProjection {
 const MIN_DAYS_FOR_CONFIDENCE = 7;
 
 /**
- * Proyecta el cierre de mes a partir del ritmo de ventas observado hasta hoy
- * (revenue promedio/día × días del mes) y el gasto fijo presupuestado del mes
- * completo (no solo el prorrateo de los días transcurridos).
+ * Proyecta el cierre de mes a partir del ritmo de ventas observado (ingreso
+ * promedio por día CALENDARIO × días del mes) y el gasto fijo presupuestado del
+ * mes completo.
  *
- * Por qué existe: mostrar la utilidad MTD cruda como "¿estamos ganando?" hace
- * que los primeros días de cada mes casi siempre se vean en pérdida (pocos
- * días de ingresos contra gastos fijos ya prorrateados) aunque el negocio esté
- * sano. La proyección responde la pregunta real: "a este ritmo, ¿cómo cierro?".
+ * El promedio es por día calendario, no por día con venta: si la tienda cierra
+ * los domingos, esos días cuentan como cero y la proyección asume la misma
+ * proporción de días cerrados para el resto del mes. Promediar solo los días
+ * con venta proyectaba ventas también para los domingos.
+ *
+ * Con el gasto fijo cobrado por día calendario, el margen proyectado es igual
+ * al margen real a la fecha; lo que cambia es el monto en pesos.
  *
  * Función pura (no consulta la BD): el caller reutiliza datos que ya trajo
  * para otro cálculo, evitando una consulta adicional en paralelo.

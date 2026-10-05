@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { odoo } from "@/lib/odoo";
 import { getWeeklyPattern } from "@/lib/analytics/weekly-pattern";
 import { colombiaToday, colombiaYearMonthDay } from "@/lib/timezone";
-import { getMonthComparison } from "@/lib/analytics/month-compare";
+import { getFinancialOverview, HEALTHY_NET_MARGIN_PCT } from "@/lib/analytics/financial-month";
 import { getOpenToBuyPlan } from "@/lib/analytics/open-to-buy";
 import { getOpportunities } from "@/lib/analytics/opportunities";
 import { getReplenishmentSummary } from "@/lib/analytics/replenishment";
@@ -136,7 +136,7 @@ export default async function DashboardPage() {
       weeklyPattern: [] as Awaited<ReturnType<typeof getWeeklyPattern>>,
       todaySold: [] as Awaited<ReturnType<typeof odoo.getTodaySoldProducts>>,
     })),
-    getMonthComparison(currentYear, currentMonth).catch(() => null),
+    getFinancialOverview(currentYear, currentMonth).catch(() => null),
     getOpenToBuyPlan().catch(() => null),
     getOpportunities().catch(() => null),
     getReplenishmentSummary().catch(() => null),
@@ -147,12 +147,8 @@ export default async function DashboardPage() {
   // Utilidad del día ESTIMADA sobre la venta en vivo: margen bruto reciente del
   // mes × ingresos de hoy − gasto fijo prorrateado del día. Mantiene coherencia
   // con los ingresos en vivo (no leer un netProfit de un snapshot viejo/ausente).
-  const grossMarginPct = monthCmp && monthCmp.current.totalRevenue > 0
-    ? monthCmp.current.grossProfit / monthCmp.current.totalRevenue
-    : 0;
-  const fixedPerDay = monthCmp && monthCmp.current.daysWithData > 0
-    ? monthCmp.current.totalFixedExpenses / monthCmp.current.daysWithData
-    : 0;
+  const grossMarginPct = monthCmp ? monthCmp.current.grossMarginPct / 100 : 0;
+  const fixedPerDay = monthCmp?.current.fixedDaily ?? 0;
   const todayNet = isLiveToday
     ? todayRevenue * grossMarginPct - fixedPerDay
     : (today?.netProfit ?? 0);
@@ -198,9 +194,11 @@ export default async function DashboardPage() {
   const compareLabel = hasTypical ? `vs ${typical.dayName} típico` : "vs ayer";
 
   // Centro de mando: la respuesta a las 4 preguntas clave + enlaces al detalle.
+  // Misma cifra y semáforo que el veredicto del Centro Financiero.
   const monthProfit = monthCmp?.current.netProfit ?? 0;
   const monthMargin = monthCmp?.current.netMarginPct ?? 0;
-  const monthTone: "success" | "warning" | "danger" = monthProfit <= 0 ? "danger" : monthMargin < 10 ? "warning" : "success";
+  const monthTone: "success" | "warning" | "danger" =
+    monthProfit <= 0 ? "danger" : monthMargin < HEALTHY_NET_MARGIN_PCT ? "warning" : "success";
   const otbInvest = otb?.totals.totalAdjustedInvestment ?? 0;
   const otbCovered = otb ? otb.totals.totalAdjustedInvestment <= otb.reinvestmentFund : true;
   const deadStock = opps?.deadStockTotal ?? 0;

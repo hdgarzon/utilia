@@ -1,228 +1,154 @@
 export const dynamic = 'force-dynamic';
 
-import { prisma } from "@/lib/prisma";
-import { SalesChart } from "@/components/dashboard/SalesChart";
-import { MonthCompare } from "@/components/dashboard/MonthCompare";
-import { BreakevenCard } from "@/components/dashboard/BreakevenCard";
-import { CashFlowCard } from "@/components/dashboard/CashFlowCard";
+import type { ReactNode } from "react";
+import Link from "next/link";
+import { AlertTriangle, CalendarClock } from "lucide-react";
+import { VerdictCard } from "@/components/dashboard/VerdictCard";
 import { WaterfallCard } from "@/components/dashboard/WaterfallCard";
-import { getMonthComparison } from "@/lib/analytics/month-compare";
+import { MonthCompare } from "@/components/dashboard/MonthCompare";
+import { FinancialDailyChart } from "@/components/dashboard/FinancialDailyChart";
+import { BreakevenCard } from "@/components/dashboard/BreakevenCard";
+import { FinancieroExport } from "@/components/dashboard/FinancieroExport";
+import {
+  buildSummaryRows,
+  getDataCutoff,
+  getFinancialOverview,
+  getTrailingActivity,
+  type FinancialOverview,
+} from "@/lib/analytics/financial-month";
 import { getBreakevenAnalysis } from "@/lib/analytics/breakeven";
-import { getCashFlowAnalysis } from "@/lib/analytics/cash-flow";
-import { getRevenueWaterfall } from "@/lib/analytics/revenue-waterfall";
-import { computeMonthEndProjection, type MonthEndProjection } from "@/lib/analytics/month-projection";
-import { formatCurrency } from "@/lib/utils";
-import { TrendingDown, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { getMonthFixedExpenses } from "@/lib/fixed-expenses";
+import { colombiaDaysAgo, daysInMonth } from "@/lib/timezone";
 import { getSelectedPeriod } from "@/lib/period";
+import { formatCurrency, formatMonthLabel } from "@/lib/utils";
 
-const MONTHS = [
-  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
-];
+/** Fecha DATE (medianoche UTC) como "4 oct". */
+const shortDay = (d: Date) =>
+  d.toLocaleDateString("es-CO", { day: "numeric", month: "short", timeZone: "UTC" });
 
-async function getFinancialData(year: number, month: number) {
-  const start = new Date(Date.UTC(year, month - 1, 1));
-  const end = new Date(Date.UTC(year, month, 1));
-  const [snapshots, budgets] = await Promise.all([
-    prisma.financialSnapshot.findMany({ where: { date: { gte: start, lt: end } }, orderBy: { date: "asc" } }),
-    prisma.expenseBudget.findMany({ where: { year, month } }),
-  ]);
+/**
+ * Punto de equilibrio: describe el negocio HOY (venta en vivo contra el gasto
+ * fijo mensual vigente), así que solo se muestra en el mes actual.
+ */
+async function getTodayBreakeven(year: number, month: number, cutoff: Date) {
+  const [trailing, fixed] = await Promise.all([getTrailingActivity(cutoff), getMonthFixedExpenses(year, month)]);
+  return getBreakevenAnalysis({ fixedExpensesMonthly: fixed.monthly, daysInMonth: daysInMonth(year, month), trailing });
+}
 
-  const totals = snapshots.reduce(
-    (acc, s) => ({
-      revenue: acc.revenue + s.totalRevenue,
-      cost: acc.cost + s.totalCost,
-      profit: acc.profit + s.netProfit,
-      expenses: acc.expenses + s.fixedExpenses,
-    }),
-    { revenue: 0, cost: 0, profit: 0, expenses: 0 }
-  );
-
-  // Margen agregado del mes (utilidad total / ingresos totales). NO el promedio
-  // de los % diarios: promediar porcentajes sobreponderaría los días flojos y
-  // daba cifras engañosas (ej. −9% cuando en total sí hubo utilidad).
-  const netMarginPct = totals.revenue > 0 ? (totals.profit / totals.revenue) * 100 : 0;
-
-  const chartData = snapshots.map((s) => ({
-    // date es DATE puro (medianoche UTC): formatear en UTC o el día se corre hacia atrás en servidores ≠ UTC
-    label: new Date(s.date).toLocaleDateString("es-CO", { day: "2-digit", month: "short", timeZone: "UTC" }),
-    amount: s.netProfit,
-    transactions: s.transactionCount,
-  }));
-
-  // Proyección de cierre de mes reutilizando snapshots/budgets ya cargados
-  // arriba — sin disparar otra consulta concurrente (el pool de conexiones es
-  // compartido con breakeven/cashFlow/monthCompare en el mismo Promise.all).
-  const daysInMonth = new Date(year, month, 0).getDate();
-  const fixedExpensesMonthly = budgets.reduce((s, b) => s + b.budgetAmount, 0);
-  const projection = computeMonthEndProjection({
-    daysElapsed: snapshots.length,
-    daysInMonth,
-    mtdRevenue: totals.revenue,
-    mtdCost: totals.cost,
-    fixedExpensesMonthly,
-  });
-
-  return { totals, netMarginPct, chartData, budgets, projection };
+function periodStatusText(o: FinancialOverview, isCurrentPeriod: boolean): string {
+  const { current } = o;
+  if (o.status === "closed") return `Mes cerrado · ${current.daysInMonth} días.`;
+  if (o.status === "in-progress") {
+    return `Cifras al cierre del ${shortDay(o.cutoff)} · ${current.daysElapsed} de ${current.daysInMonth} días. Hoy entra cuando termine el día.`;
+  }
+  return isCurrentPeriod ? "Aún no hay días cerrados este mes." : "Este mes aún no tiene datos.";
 }
 
 export default async function FinancieroPage() {
   const { month, year, isCurrentPeriod } = await getSelectedPeriod();
-  const periodLabel = `${MONTHS[month - 1]} ${year}`;
+  const yesterday = colombiaDaysAgo(1);
+  const cutoff = await getDataCutoff().catch(() => yesterday);
 
-  const fallbackTotals = { revenue: 0, cost: 0, profit: 0, expenses: 0 };
-  const [financial, monthCompare, breakeven, cashFlow, waterfall] = await Promise.all([
-    getFinancialData(year, month).catch(() => ({ totals: fallbackTotals, netMarginPct: 0, chartData: [] as Awaited<ReturnType<typeof getFinancialData>>["chartData"], budgets: [] as Awaited<ReturnType<typeof getFinancialData>>["budgets"], projection: null as MonthEndProjection | null })),
-    getMonthComparison(year, month).catch(() => null),
-    getBreakevenAnalysis().catch(() => null),
-    getCashFlowAnalysis().catch(() => null),
-    getRevenueWaterfall(year, month).catch(() => null),
+  const [overview, breakeven] = await Promise.all([
+    getFinancialOverview(year, month, cutoff).catch(() => null),
+    isCurrentPeriod ? getTodayBreakeven(year, month, cutoff).catch(() => null) : Promise.resolve(null),
   ]);
-  const { totals = fallbackTotals, netMarginPct, chartData, budgets, projection } = financial;
 
-  // Los primeros días del mes, la utilidad MTD cruda casi siempre se ve en
-  // pérdida (pocos días de ingresos contra gastos fijos ya prorrateados) sin
-  // que nada esté mal. Con pocos días de historia, el veredicto responde
-  // "a este ritmo, ¿cómo cerrarías?" en vez de juzgar sobre datos parciales.
-  // Solo aplica al mes real en curso — un mes pasado ya cerrado no se "proyecta".
-  const useProjection = isCurrentPeriod && projection !== null && projection.lowConfidence && projection.daysElapsed > 0;
-  const headlineProfit = useProjection ? projection!.projectedNetProfit : totals.profit;
-  const headlineMarginPct = useProjection ? projection!.projectedMarginPct : netMarginPct;
-
-  // Veredicto "¿estamos ganando?" — semáforo honesto:
-  //   pérdida (rojo) · margen < 10% (ámbar: ganas pero ajustado) · ≥ 10% (verde)
-  const profitable = headlineProfit > 0;
-  const tier: "good" | "thin" | "loss" = !profitable ? "loss" : headlineMarginPct < 10 ? "thin" : "good";
-  const tone =
-    tier === "good"
-      ? { text: "text-primary", bg: "bg-primary/5", border: "border-primary/40" }
-      : tier === "thin"
-        ? { text: "text-warning", bg: "bg-warning/5", border: "border-warning/40" }
-        : { text: "text-destructive", bg: "bg-destructive/5", border: "border-destructive/40" };
-  const VerdictIcon = tier === "good" ? CheckCircle2 : tier === "loss" ? TrendingDown : AlertTriangle;
-  const verdictTitle = tier === "good" ? "Sí, vas ganando" : tier === "thin" ? "Vas ganando, pero ajustado" : "Estás en pérdida este mes";
-  const monthDelta = monthCompare?.deltas.netProfit ?? null;
+  const label = formatMonthLabel(year, month);
+  const fixed = overview?.current.fixed;
+  const syncBehind = isCurrentPeriod && cutoff < yesterday;
+  const period = `${year}-${String(month).padStart(2, "0")}`;
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-bold">
-        Centro Financiero{!isCurrentPeriod && <span className="text-muted-foreground font-normal"> — {periodLabel}</span>}
-      </h1>
-
-      {/* Veredicto: responde "¿estamos ganando?" de un vistazo */}
-      <div className={`rounded-xl border p-5 ${tone.border} ${tone.bg}`}>
-        <div className="flex items-start gap-3">
-          <VerdictIcon className={`h-6 w-6 mt-0.5 shrink-0 ${tone.text}`} />
-          <div className="flex-1 space-y-1">
-            <p className="text-xs text-muted-foreground uppercase tracking-wider">
-              {useProjection ? "¿Cómo cerrarías el mes a este ritmo?" : "¿Estamos ganando este mes?"}
-            </p>
-            <div className="flex items-center gap-2 flex-wrap">
-              <p className={`text-lg font-bold ${tone.text}`}>{verdictTitle}</p>
-              {useProjection && (
-                <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                  proyectado
-                </span>
-              )}
-            </div>
-            <p className={`text-3xl font-bold ${tone.text}`}>{formatCurrency(headlineProfit)}</p>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              {profitable ? (
-                <>De cada $100 que vendes, {useProjection ? "quedarían" : "te quedan"} <span className="font-semibold text-foreground">${headlineMarginPct.toFixed(0)}</span> de utilidad neta (después de costos y gastos fijos).</>
-              ) : (
-                <>Por cada $100 que vendes, {useProjection ? "proyectas perder" : "pierdes"} <span className="font-semibold text-destructive">${Math.abs(headlineMarginPct).toFixed(0)}</span> después de costos y gastos fijos.</>
-              )}
-              {!useProjection && monthDelta !== null && (
-                <>
-                  {" · "}
-                  <span className={monthDelta >= 0 ? "text-primary font-medium" : "text-destructive font-medium"}>
-                    {monthDelta >= 0 ? "▲" : "▼"} {Math.abs(monthDelta).toFixed(0)}%
-                  </span>{" "}
-                  vs mismo punto del mes pasado
-                </>
-              )}
-            </p>
-            {useProjection && (
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                Proyección con tu ritmo de estos {projection!.daysElapsed} día{projection!.daysElapsed !== 1 ? "s" : ""} · llevas{" "}
-                <span className="font-medium text-foreground">{formatCurrency(totals.revenue)}</span> reales · faltan {projection!.daysRemaining} días para cerrar el mes.
-              </p>
-            )}
-          </div>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold">
+            Centro Financiero{!isCurrentPeriod && <span className="text-muted-foreground font-normal"> — {label}</span>}
+          </h1>
+          {overview && <p className="text-xs text-muted-foreground mt-0.5">{periodStatusText(overview, isCurrentPeriod)}</p>}
         </div>
-        <div className="grid grid-cols-3 gap-3 mt-4 pt-4 border-t border-border">
-          <div>
-            <p className="text-xs text-muted-foreground">{useProjection ? "Ingresos (MTD real)" : "Ingresos (mes)"}</p>
-            <p className="text-sm font-semibold">{formatCurrency(totals.revenue)}</p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Gastos fijos (mes)</p>
-            <p className="text-sm font-semibold">{formatCurrency(useProjection ? projection!.fixedExpensesMonthly : totals.expenses)}</p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">{useProjection ? "Margen (MTD real)" : "Margen neto"}</p>
-            <p className={`text-sm font-semibold ${tone.text}`}>{netMarginPct.toFixed(1)}%</p>
-          </div>
-        </div>
+        {overview && overview.current.daysElapsed > 0 && (
+          <FinancieroExport
+            period={period}
+            days={overview.current.days}
+            categories={overview.categories}
+            summary={buildSummaryRows(overview)}
+          />
+        )}
       </div>
 
-      {waterfall && (
-        <WaterfallCard
-          data={waterfall}
-          categoryBreakdownNote={!isCurrentPeriod ? "Desglose por categoría basado en velocidad de venta actual, no en datos históricos de este mes." : undefined}
-        />
+      {syncBehind && (
+        <Notice tone="warning" icon={<CalendarClock className="h-4 w-4" />}>
+          El último sync de ventas completo llega hasta el {shortDay(cutoff)}: faltan días por cargar. Sincroniza para ver las cifras al día.
+        </Notice>
       )}
 
-      {breakeven && (
-        <div className="space-y-2">
-          {!isCurrentPeriod && (
-            <p className="text-xs text-muted-foreground italic">Este punto de equilibrio es de hoy, no de {periodLabel}.</p>
+      {overview && fixed && overview.current.daysElapsed > 0 && fixed.source !== "budget" && (
+        <Notice tone={fixed.source === "none" ? "danger" : "warning"} icon={<AlertTriangle className="h-4 w-4" />}>
+          {fixed.source === "inherited" && fixed.from ? (
+            <>
+              {label} no tiene presupuesto de gastos fijos propio: se usa el de{" "}
+              {formatMonthLabel(fixed.from.year, fixed.from.month)} ({formatCurrency(fixed.monthly)} al mes).{" "}
+            </>
+          ) : (
+            <>No hay presupuesto de gastos fijos: la utilidad neta no descuenta arriendo, nómina ni servicios. </>
           )}
-          <BreakevenCard data={breakeven} />
-        </div>
+          <Link href={`/presupuestos?year=${year}&month=${month}`} className="font-medium underline underline-offset-2">
+            Revisar en Presupuestos
+          </Link>
+        </Notice>
       )}
 
-      {cashFlow && (
-        <div className="space-y-2">
-          {!isCurrentPeriod && (
-            <p className="text-xs text-muted-foreground italic">Este flujo de caja es de ahora mismo, no de {periodLabel}.</p>
-          )}
-          <CashFlowCard data={cashFlow} />
+      {!overview ? (
+        <Notice tone="danger" icon={<AlertTriangle className="h-4 w-4" />}>
+          No se pudieron cargar las cifras de {label}. Intenta de nuevo en unos minutos.
+        </Notice>
+      ) : overview.status === "empty" ? (
+        <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+          {isCurrentPeriod
+            ? `${label} empieza hoy: las cifras del mes aparecen cuando cierre el primer día.`
+            : `No hay ventas registradas en ${label}.`}
         </div>
+      ) : (
+        <>
+          <VerdictCard overview={overview} />
+          <WaterfallCard pnl={overview.current} categories={overview.categories} />
+          <MonthCompare overview={overview} />
+          <FinancialDailyChart
+            title="Ventas y utilidad bruta por día"
+            fixedDaily={overview.current.fixedDaily}
+            data={overview.current.days.map((d) => ({
+              day: Number(d.date.slice(8)),
+              revenue: d.revenue,
+              grossProfit: d.grossProfit,
+            }))}
+          />
+        </>
       )}
 
-      {monthCompare && <MonthCompare data={monthCompare} isCurrentPeriod={isCurrentPeriod} />}
+      {breakeven && <BreakevenCard data={breakeven} />}
+    </div>
+  );
+}
 
-      <SalesChart data={chartData} title={isCurrentPeriod ? "Utilidad Diaria — Mes Actual" : `Utilidad Diaria — ${periodLabel}`} />
-
-      {budgets.length > 0 && (
-        <div className="rounded-xl border border-border bg-card p-4 md:p-5 space-y-3">
-          <h3 className="text-sm font-semibold">Presupuesto por Categoría — {isCurrentPeriod ? "Mes Actual" : periodLabel}</h3>
-          <div className="space-y-3">
-            {budgets.map((b) => {
-              const pct = b.budgetAmount > 0 ? (b.actualAmount / b.budgetAmount) * 100 : 0;
-              const isAlert = pct >= b.alertPct;
-              const isOver = pct >= 100;
-              return (
-                <div key={b.id} className="space-y-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-medium">{b.category}</span>
-                    <span className={isOver ? "text-destructive font-semibold" : isAlert ? "text-warning" : "text-muted-foreground"}>
-                      {formatCurrency(b.actualAmount)} / {formatCurrency(b.budgetAmount)} ({pct.toFixed(0)}%)
-                    </span>
-                  </div>
-                  <div className="h-1.5 w-full rounded-full bg-secondary overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all ${isOver ? "bg-destructive" : isAlert ? "bg-warning" : "bg-primary"}`}
-                      style={{ width: `${Math.min(pct, 100)}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+function Notice({
+  tone,
+  icon,
+  children,
+}: {
+  tone: "warning" | "danger";
+  icon: ReactNode;
+  children: ReactNode;
+}) {
+  const styles =
+    tone === "danger"
+      ? "border-destructive/40 bg-destructive/5 text-destructive"
+      : "border-warning/40 bg-warning/5 text-warning";
+  return (
+    <div className={`flex items-start gap-2 rounded-xl border px-4 py-3 text-xs leading-relaxed ${styles}`}>
+      <span className="mt-0.5 shrink-0">{icon}</span>
+      <p className="text-foreground">{children}</p>
     </div>
   );
 }

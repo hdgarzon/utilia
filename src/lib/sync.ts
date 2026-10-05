@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { odoo } from "@/lib/odoo";
-import { colombiaStartOfPreviousMonth, COLOMBIA_OFFSET_MS } from "@/lib/timezone";
+import { colombiaDayStartInstant, colombiaStartOfPreviousMonth, COLOMBIA_OFFSET_MS, daysInMonth } from "@/lib/timezone";
+import { getMonthFixedExpenses } from "@/lib/fixed-expenses";
 import { recomputeStockLevels } from "@/lib/analytics/stock-levels";
 
 // Sentinel: la primera vez no existe el registro, devolvemos undefined
@@ -371,15 +372,17 @@ async function buildSnapshotRows(
     bucket.cost += unitCost * line.product_uom_qty;
   }
 
-  // Gasto fijo prorrateado por mes, memoizado por (año, mes).
+  // Gasto fijo prorrateado por mes, memoizado por (año, mes). Un mes sin
+  // presupuesto propio hereda el ultimo anterior (ver fixed-expenses.ts): sin
+  // eso, los snapshots de un mes que nadie abrio en Presupuestos quedaban con
+  // gasto fijo 0 y utilidad neta = utilidad bruta.
   const fixedPerDayByMonth = new Map<string, number>();
   async function getFixedPerDay(year: number, month: number): Promise<number> {
     const key = `${year}-${month}`;
     const cached = fixedPerDayByMonth.get(key);
     if (cached !== undefined) return cached;
-    const budgets = await prisma.expenseBudget.findMany({ where: { year, month } });
-    const totalMonthly = budgets.reduce((sum, b) => sum + b.budgetAmount, 0);
-    const perDay = totalMonthly / new Date(year, month, 0).getDate();
+    const { monthly } = await getMonthFixedExpenses(year, month);
+    const perDay = monthly / daysInMonth(year, month);
     fixedPerDayByMonth.set(key, perDay);
     return perDay;
   }
@@ -476,22 +479,18 @@ export async function syncSalesAndComputeMetrics() {
   // Para POS, los datos viven en pos.order (no sale.order). Usamos ese modelo.
   const sinceFromState = await getLastSync("pos_order");
 
-  // Colombia = UTC-5 sin DST. Calculamos "inicio del día de hoy en Colombia"
-  // expresado en UTC, para que el sync siempre re-traiga TODAS las órdenes del
-  // día actual aunque ya haya corrido antes. Sin esto, un sync incremental a
-  // las 7pm sobreescribiría el snapshot del día con solo las órdenes nuevas.
-  const nowCO = new Date(Date.now() - COLOMBIA_OFFSET_MS);
-  const startOfTodayCO = new Date(
-    Date.UTC(nowCO.getUTCFullYear(), nowCO.getUTCMonth(), nowCO.getUTCDate()) + COLOMBIA_OFFSET_MS
-  );
-
-  // Usar el más temprano entre lastSyncAt y inicio-de-hoy Colombia. Para el sync
-  // inicial (lastSyncAt = epoch) hacemos backfill desde el inicio del mes
-  // anterior: cubre el reporte MTD y el comparativo mensual sin traer 90 días de
-  // órdenes (que no cabían en el límite de la función → timeout infinito).
+  // Cada snapshot diario se REESCRIBE con las órdenes traídas en esta corrida,
+  // así que hay que traer DÍAS COMPLETOS: desde la medianoche Colombia del día
+  // del último sync (y como mínimo todo hoy). Antes se traía desde la hora
+  // exacta del último sync: un sync manual a las 2pm hacía que el cron de la
+  // madrugada siguiente reescribiera ese día solo con las ventas de la tarde.
+  //
+  // Para el sync inicial (lastSyncAt = epoch) hacemos backfill desde el inicio
+  // del mes anterior: cubre el reporte MTD y el comparativo mensual sin traer 90
+  // días de órdenes (que no cabían en el límite de la función → timeout).
   const since =
     sinceFromState && sinceFromState.getTime() > 0
-      ? new Date(Math.min(sinceFromState.getTime(), startOfTodayCO.getTime()))
+      ? colombiaDayStartInstant(new Date(Math.min(sinceFromState.getTime(), Date.now())))
       : colombiaStartOfPreviousMonth();
 
   await markSyncStatus("pos_order", "syncing");

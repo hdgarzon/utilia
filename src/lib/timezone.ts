@@ -73,6 +73,58 @@ export function colombiaStartOfMonth(): Date {
 }
 
 /**
+ * Dia calendario Colombia de un instante, como Date a medianoche UTC (el mismo
+ * formato de las columnas DATE). Ej: 2026-09-09T01:30Z (8:30pm del 8 en
+ * Colombia) → 2026-09-08T00:00Z.
+ */
+export function colombiaDayOf(instant: Date): Date {
+  return new Date(`${colombiaDayString(instant)}T00:00:00.000Z`);
+}
+
+/**
+ * Instante real en que empezo el dia Colombia de `instant` (medianoche Colombia
+ * = 05:00 UTC). Sirve para pedirle a Odoo "todo lo de ese dia", que filtra por
+ * timestamp UTC y no por dia calendario.
+ */
+export function colombiaDayStartInstant(instant: Date): Date {
+  return new Date(colombiaDayOf(instant).getTime() + COLOMBIA_OFFSET_MS);
+}
+
+// ─── Calendario de fechas DATE (medianoche UTC) ─────────────────────────────
+// Las columnas `@db.Date` llegan como medianoche UTC. Estas funciones operan
+// en UTC puro para no correr el dia en servidores con otra zona horaria.
+
+/** Dias que tiene el mes (`month` 1-12). */
+export function daysInMonth(year: number, month: number): number {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+/** Primer dia del mes como Date a medianoche UTC. */
+export function monthStart(year: number, month: number): Date {
+  return new Date(Date.UTC(year, month - 1, 1));
+}
+
+/** Mes anterior, con el cambio de año resuelto. */
+export function previousMonth(year: number, month: number): { year: number; month: number } {
+  return month === 1 ? { year: year - 1, month: 12 } : { year, month: month - 1 };
+}
+
+/** Suma (o resta, con negativo) dias a una fecha DATE. */
+export function addDays(date: Date, days: number): Date {
+  return new Date(date.getTime() + days * 86_400_000);
+}
+
+/** Dias calendario de `from` a `to` (0 si son el mismo dia, negativo si `to` es anterior). */
+export function daysBetween(from: Date, to: Date): number {
+  return Math.round((to.getTime() - from.getTime()) / 86_400_000);
+}
+
+/** "YYYY-MM-DD" de una fecha DATE (medianoche UTC). */
+export function isoDay(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+/**
  * Primer día del MES ANTERIOR en Colombia (medianoche UTC).
  * Ej: cualquier momento de junio → 2026-05-01T00:00:00.000Z.
  * Date.UTC maneja el rollover de año si month-2 es negativo (enero → diciembre).
