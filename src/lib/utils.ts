@@ -18,6 +18,16 @@ export function formatPercent(value: number, decimals = 1): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(decimals)}%`;
 }
 
+export const MONTH_NAMES = [
+  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+];
+
+/** "Octubre 2026" (`month` 1-12). */
+export function formatMonthLabel(year: number, month: number): string {
+  return `${MONTH_NAMES[month - 1]} ${year}`;
+}
+
 export function formatNumber(value: number): string {
   return new Intl.NumberFormat("es-CO").format(value);
 }
