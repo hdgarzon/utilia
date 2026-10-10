@@ -62,7 +62,7 @@ export function FinancialDailyChart({ data, fixedDaily, title }: Props) {
             width={52}
           />
           <Tooltip
-            formatter={(value: number, name: string) => [formatCurrency(value), name]}
+            formatter={(value, name) => [formatCurrency(Number(value ?? 0)), name]}
             labelFormatter={(day) => `Día ${day}`}
             contentStyle={{
               backgroundColor: "var(--color-card)",

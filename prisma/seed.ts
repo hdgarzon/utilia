@@ -1,8 +1,20 @@
-import { hash } from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 
 // Valor de ejemplo de .env.example: es publico, asi que no vale como clave real.
 const EXAMPLE_PASSWORD = "cambia-esta-clave";
+
+/**
+ * El hash lo genera Postgres (pgcrypto), el mismo motor que lo valida en la
+ * funcion `authenticate` al iniciar sesion. bcryptjs 3 solo produce el prefijo
+ * `$2b$`, que el crypt() de pgcrypto no reconoce: un usuario sembrado asi no
+ * podria entrar.
+ */
+async function hashPassword(plain: string): Promise<string> {
+  const [{ hash }] = await prisma.$queryRaw<Array<{ hash: string }>>`
+    SELECT crypt(${plain}, gen_salt('bf', 12)) AS hash
+  `;
+  return hash;
+}
 
 function adminCredentials() {
   const email = process.env.SEED_ADMIN_EMAIL?.trim() || "admin@example.com";
@@ -24,7 +36,7 @@ function adminCredentials() {
 
 async function main() {
   const admin = adminCredentials();
-  const password = await hash(admin.password, 12);
+  const password = await hashPassword(admin.password);
 
   const user = await prisma.user.upsert({
     where: { email: admin.email },

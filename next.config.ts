@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 import { MAX_ACTION_BODY_BYTES } from "./src/lib/products/import-types";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["@prisma/client", "prisma", "bcryptjs"],
+  serverExternalPackages: ["@prisma/client", "prisma"],
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "*.odoo.com" },
