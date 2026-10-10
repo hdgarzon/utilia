@@ -951,7 +951,7 @@ Use `preview_start` with the existing `utilia-dev` config in `.claude/launch.jso
 
 - [ ] **Step 3: Log in and navigate to `/liquidacion`**
 
-Credentials: `admin@utilia.co` / `utilia2026!` (from `prisma/seed.ts`). Navigate (click the new "Liquidación" sidebar link, not a raw `href` assignment — direct `window.location.href` navigation via `preview_eval` has been flaky this session; clicking the actual `<a>` via `preview_click` on `a[href="/liquidacion"]` has worked reliably).
+Credentials: the `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` values from `.env.local` (used by `prisma/seed.ts`). Navigate (click the new "Liquidación" sidebar link, not a raw `href` assignment — direct `window.location.href` navigation via `preview_eval` has been flaky this session; clicking the actual `<a>` via `preview_click` on `a[href="/liquidacion"]` has worked reliably).
 
 - [ ] **Step 4: Verify the verdict banner and goal card render with real numbers**
 

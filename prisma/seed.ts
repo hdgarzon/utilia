@@ -1,15 +1,37 @@
 import { hash } from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 
+// Valor de ejemplo de .env.example: es publico, asi que no vale como clave real.
+const EXAMPLE_PASSWORD = "cambia-esta-clave";
+
+function adminCredentials() {
+  const email = process.env.SEED_ADMIN_EMAIL?.trim() || "admin@example.com";
+  const password = process.env.SEED_ADMIN_PASSWORD;
+
+  if (!password) {
+    throw new Error(
+      "Falta SEED_ADMIN_PASSWORD. Defínela en .env.local (ver .env.example) antes de correr pnpm db:seed.",
+    );
+  }
+  if (password === EXAMPLE_PASSWORD) {
+    throw new Error(
+      "SEED_ADMIN_PASSWORD tiene el valor de ejemplo de .env.example. Usa una contraseña propia.",
+    );
+  }
+
+  return { email, password };
+}
+
 async function main() {
-  const password = await hash("utilia2026!", 12);
+  const admin = adminCredentials();
+  const password = await hash(admin.password, 12);
 
   const user = await prisma.user.upsert({
-    where: { email: "admin@utilia.co" },
+    where: { email: admin.email },
     update: {},
     create: {
       name: "Administrador Utilia",
-      email: "admin@utilia.co",
+      email: admin.email,
       password,
       role: "ADMIN",
     },
@@ -30,11 +52,14 @@ async function main() {
 
   console.log("✓ Presupuestos iniciales creados");
   console.log("\n🚀 Seed completado. Credenciales de acceso:");
-  console.log("   Email:    admin@utilia.co");
-  console.log("   Password: utilia2026!");
+  console.log("   Email:    " + user.email);
+  console.log("   Password: la de SEED_ADMIN_PASSWORD (un usuario que ya existía conserva la suya)");
   console.log("\n   ⚠️  Cambia la contraseña después del primer inicio de sesión.");
 }
 
 main()
-  .catch(console.error)
+  .catch((err) => {
+    console.error(err);
+    process.exitCode = 1;
+  })
   .finally(() => prisma.$disconnect());

@@ -1160,7 +1160,7 @@ Usar `preview_start` con la config `utilia-dev` existente en `.claude/launch.jso
 
 - [ ] **Step 3: Login y verificación del selector en las 3 páginas**
 
-Credenciales: `admin@utilia.co` / `utilia2026!`. Navegar a `/ventas` — confirmar que aparecen las flechas `◀ {Mes} {Año} ▶` en el header, con `▶` deshabilitada (mes actual). Click en `◀` — confirmar que la página refresca mostrando datos de un mes anterior, y que el título del gráfico/KPIs cambian a mostrar el nombre del mes.
+Credenciales: las de `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` en `.env.local`. Navegar a `/ventas` — confirmar que aparecen las flechas `◀ {Mes} {Año} ▶` en el header, con `▶` deshabilitada (mes actual). Click en `◀` — confirmar que la página refresca mostrando datos de un mes anterior, y que el título del gráfico/KPIs cambian a mostrar el nombre del mes.
 
 - [ ] **Step 4: Verificar persistencia al navegar entre páginas**
 
