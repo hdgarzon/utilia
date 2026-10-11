@@ -10,6 +10,8 @@ import { getFinancialOverview, HEALTHY_NET_MARGIN_PCT } from "@/lib/analytics/fi
 import { getOpenToBuyPlan } from "@/lib/analytics/open-to-buy";
 import { getOpportunities } from "@/lib/analytics/opportunities";
 import { getReplenishmentSummary } from "@/lib/analytics/replenishment";
+import { getTodayStatusProgress } from "@/lib/analytics/status-posts";
+import { MAX_ACTIVE_RECS } from "@/lib/ai/recommendations";
 import { KPICard } from "@/components/dashboard/KPICard";
 import { SalesChart } from "@/components/dashboard/SalesChart";
 import { StockAlert } from "@/components/dashboard/StockAlert";
@@ -27,7 +29,16 @@ import {
   Lightbulb,
   ClipboardList,
   ChevronRight,
+  Megaphone,
 } from "lucide-react";
+
+// Activas = sin aplicar, sin descartar y sin vencer. Las vencidas no son
+// pendientes: el detector las vuelve a proponer si la señal sigue viva.
+const activeRecWhere = () => ({
+  applied: false,
+  dismissed: false,
+  OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+});
 
 async function getDashboardData() {
   // Colombia = UTC-5 sin horario de verano. Calcular "hoy" local para que
@@ -49,11 +60,11 @@ async function getDashboardData() {
       orderBy: { daysOfStock: "asc" },
     }),
     prisma.aIRecommendation.findMany({
-      where: { applied: false, dismissed: false },
+      where: activeRecWhere(),
       orderBy: [{ priority: "asc" }, { createdAt: "desc" }],
-      take: 6,
+      take: MAX_ACTIVE_RECS,
     }),
-    prisma.aIRecommendation.count({ where: { applied: false, dismissed: false } }),
+    prisma.aIRecommendation.count({ where: activeRecWhere() }),
     odoo.getTodayHourlySales().catch(() => [] as Awaited<ReturnType<typeof odoo.getTodayHourlySales>>),
     getWeeklyPattern(60).catch(() => []),
     odoo.getTodaySoldProducts().catch(() => [] as Awaited<ReturnType<typeof odoo.getTodaySoldProducts>>),
@@ -120,7 +131,7 @@ async function getDashboardData() {
 
 export default async function DashboardPage() {
   const { year: currentYear, month: currentMonth } = colombiaYearMonthDay();
-  const [data, monthCmp, otb, opps, replenishment] = await Promise.all([
+  const [data, monthCmp, otb, opps, replenishment, statusProgress] = await Promise.all([
     getDashboardData().catch(() => ({
       today: null,
       todayRevenue: 0,
@@ -140,6 +151,7 @@ export default async function DashboardPage() {
     getOpenToBuyPlan().catch(() => null),
     getOpportunities().catch(() => null),
     getReplenishmentSummary().catch(() => null),
+    getTodayStatusProgress().catch(() => null),
   ]);
   const { today, todayRevenue, todayTransactions, todayTicket, isLiveToday, salesChange, ticketChange, criticalStock, aiRecs, aiRecsPendingTotal, hourlyData, weeklyPattern, todaySold } = data;
   const todayUnits = todaySold.reduce((s, p) => s + p.qty, 0);
@@ -213,6 +225,26 @@ export default async function DashboardPage() {
           {new Date().toLocaleDateString("es-CO", { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "America/Bogota" })}
         </p>
       </div>
+
+      {statusProgress && statusProgress.posted < statusProgress.target && (
+        <Link
+          href="/campanas"
+          className="flex items-center gap-3 rounded-xl border border-warning/40 bg-warning/5 px-4 py-3 hover:bg-warning/10 transition-colors"
+        >
+          <Megaphone className="h-4 w-4 shrink-0 text-warning" />
+          <p className="flex-1 text-sm">
+            <span className="font-semibold">
+              Estados de hoy: {statusProgress.posted} de {statusProgress.target} publicados.
+            </span>{" "}
+            <span className="text-muted-foreground">
+              {statusProgress.created === 0
+                ? "Ábrelos para generarlos y publícalos — 5 minutos que mueven capital muerto."
+                : "Publícalos y márcalos: cada uno es capital muerto que vuelve a caja."}
+            </span>
+          </p>
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+        </Link>
+      )}
 
       {/* Centro de mando: ¿ganamos? · ¿en qué gastar? · oportunidades · alertas · pedidos */}
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-5 [&>*:last-child]:col-span-2 xl:[&>*:last-child]:col-span-1">
