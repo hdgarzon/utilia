@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { DEAD_STOCK_DAYS } from "./dead-stock";
 
 export interface OppProduct {
   key: string;
@@ -26,7 +27,8 @@ export interface Opportunities {
  * variantes por template (COALESCE(templateId, productId)). Tres frentes:
  *   - Estrella: rotación > 0.3/día y margen ≥ 30% → asegurar stock, dar visibilidad.
  *   - Margen bajo: rotación > 0.3/día y margen < 15% → revisar precio.
- *   - Capital muerto: stock con valor y sin rotación → liquidar para liberar caja.
+ *   - Capital muerto: stock con valor y ninguna variante vendida en
+ *     DEAD_STOCK_DAYS días (misma regla que Liquidación) → liquidar.
  */
 export async function getOpportunities(): Promise<Opportunities> {
   const groups = await prisma.$queryRaw<
@@ -51,7 +53,7 @@ export async function getOpportunities(): Promise<Opportunities> {
       COALESCE(SUM("stockQty" * cmp), 0)                 AS inv_value,
       COALESCE(SUM("avgDailySales7d" * "salePrice"), 0)  AS w_price_num,
       COALESCE(SUM("avgDailySales7d" * cmp), 0)          AS w_cmp_num,
-      COALESCE(MAX("rotationDays"), 0)                   AS rot
+      COALESCE(MIN("rotationDays"), 0)                   AS rot -- días desde que vendió CUALQUIER variante
     FROM "ProductInsight"
     GROUP BY k
   `;
@@ -88,7 +90,7 @@ export async function getOpportunities(): Promise<Opportunities> {
     .sort((a, b) => b.velocity - a.velocity)
     .slice(0, 8);
 
-  const deadAll = enriched.filter((p) => p.velocity === 0 && p.stockQty > 0 && p.inventoryValue > 0);
+  const deadAll = enriched.filter((p) => p.rotationDays > DEAD_STOCK_DAYS && p.stockQty > 0 && p.inventoryValue > 0);
   const deadStock = [...deadAll].sort((a, b) => b.inventoryValue - a.inventoryValue).slice(0, 8);
   const deadStockTotal = deadAll.reduce((s, p) => s + p.inventoryValue, 0);
   const starsRevenue = stars.reduce((s, p) => s + p.velocity * p.salePrice * 30, 0);

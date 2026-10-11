@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { DEAD_STOCK_DAYS } from "@/lib/analytics/dead-stock";
 
 export interface CategoryProductRow {
   id: string;
@@ -116,7 +117,7 @@ export async function getCategoryDetail(rawCategory: string | null): Promise<Cat
     .slice(0, 15);
 
   const stale = [...rows]
-    .filter((p) => p.rotationDays > 30 && p.stockQty > 1)
+    .filter((p) => p.rotationDays > DEAD_STOCK_DAYS && p.stockQty > 1)
     .sort((a, b) => b.rotationDays - a.rotationDays)
     .slice(0, 15);
 

@@ -149,6 +149,43 @@ async function bulkUpdateProductSales(rows: ProductSalesRow[]) {
   }
 }
 
+/**
+ * Recalcula `rotationDays` (dias sin venta) de TODOS los productos.
+ *
+ * `recomputeVelocities` solo escribe la rotacion de lo vendido en los ultimos
+ * 30 dias: el resto se quedaba con el valor viejo, y un producto que nunca
+ * vendio quedaba en 0 — el mas "fresco" del catalogo. Asi Liquidacion, la regla
+ * de no-recompra y los estados no veian el capital muerto mas profundo.
+ *
+ * Con `lastSoldAt` se cuenta desde la ultima venta. Sin ella (nunca se vio una
+ * venta, ni en el backfill) se cuenta desde que el producto entro al sistema:
+ * es un piso honesto — "al menos N dias sin venta".
+ */
+export async function refreshRotationDays() {
+  await prisma.$executeRaw`
+    UPDATE "ProductInsight" SET "rotationDays" = GREATEST(0, FLOOR(
+      EXTRACT(EPOCH FROM (now() - COALESCE("lastSoldAt", "createdAt"))) / 86400
+    ))::int
+  `;
+}
+
+/** Sube `lastSoldAt` a la venta mas reciente vista, sin bajarla nunca. */
+async function bumpLastSold(lastByProduct: Map<number, number>) {
+  const entries = Array.from(lastByProduct.entries());
+  const CHUNK = 500;
+  for (let i = 0; i < entries.length; i += CHUNK) {
+    const values = entries.slice(i, i + CHUNK).map(
+      ([pid, ms]) => Prisma.sql`(${pid}::int, ${new Date(ms).toISOString()}::timestamptz)`
+    );
+    await prisma.$executeRaw`
+      UPDATE "ProductInsight" p SET "lastSoldAt" = v.last_sold
+      FROM (VALUES ${Prisma.join(values)}) AS v("odooProductId", last_sold)
+      WHERE p."odooProductId" = v."odooProductId"
+        AND (p."lastSoldAt" IS NULL OR p."lastSoldAt" < v.last_sold)
+    `;
+  }
+}
+
 export async function syncProducts() {
   const runStart = new Date();
   // Leer el cutoff ANTES de marcar "syncing" para no machacarlo
@@ -662,6 +699,7 @@ export async function recomputeVelocities() {
 
   if (posOrders.length === 0) {
     await prisma.$executeRaw`UPDATE "ProductInsight" SET "avgDailySales7d" = 0, "avgDailySales14d" = 0, "avgDailySales30d" = 0`;
+    await refreshRotationDays();
     await recomputeDaysOfStock();
     return;
   }
@@ -750,6 +788,8 @@ export async function recomputeVelocities() {
     })
   );
 
+  // Antes de los niveles de stock: la regla de no-recompra lee la rotacion.
+  await refreshRotationDays();
   await recomputeDaysOfStock();
   await recomputeStockLevels();
 }
@@ -844,6 +884,18 @@ export async function backfillSalesHistory(
 
       const rows = await buildSnapshotRows(orders, lines, cmpByProduct);
       await bulkUpsertSnapshots(rows);
+
+      // Ultima venta por producto: sin esto, lo que no vende hace meses quedaba
+      // sin fecha y se contaba desde que entro al sistema, no desde su venta.
+      const fechaOrden = new Map(orders.map((o) => [o.id, new Date(o.date_order + "Z").getTime()]));
+      const ultimaVenta = new Map<number, number>();
+      for (const l of lines) {
+        const t = fechaOrden.get(l.order_id[0]);
+        if (t === undefined || l.product_uom_qty <= 0) continue;
+        const pid = l.product_id[0];
+        if (t > (ultimaVenta.get(pid) ?? 0)) ultimaVenta.set(pid, t);
+      }
+      await bumpLastSold(ultimaVenta);
       await bulkUpsertCategorySnapshots(buildCategoryRows(orders, lines, categoryOf, cmpByProduct));
 
       const m: BackfillMonth = {
@@ -863,5 +915,6 @@ export async function backfillSalesHistory(
     cursor.setUTCMonth(cursor.getUTCMonth() + 1);
   }
 
+  await refreshRotationDays();
   return resultados;
 }

@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { isServiceCategory } from "@/lib/service-categories";
 import { InventoryTable, type InventoryRow } from "@/components/dashboard/InventoryTable";
 import { AlertTriangle, XCircle, CheckCircle, HelpCircle } from "lucide-react";
+import { DEAD_STOCK_DAYS } from "@/lib/analytics/dead-stock";
 
 // Umbrales de salud de stock — unificados con el resumen (Home): "crítico" =
 // menos de una semana de cobertura.
@@ -44,7 +45,7 @@ async function getInventoryData() {
 
   // Stock muerto: con existencias pero sin rotación hace +30 días.
   const stale = await prisma.productInsight.findMany({
-    where: { rotationDays: { gt: 30 }, stockQty: { gt: 0 } },
+    where: { rotationDays: { gt: DEAD_STOCK_DAYS }, stockQty: { gt: 0 } },
     orderBy: { rotationDays: "desc" },
     take: 15,
   });
