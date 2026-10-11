@@ -23,7 +23,14 @@ const SERVICE_FACTOR = 1.65;
 const LEAD_TIME_SETTING_KEY = "replenishment.leadTimeDays";
 
 export interface LevelInput {
-  avgDailySales7d: number;
+  /**
+   * Venta diaria de los ultimos 30 dias. Medido en octubre de 2026 sobre 150
+   * dias de ventas: como estimador de los 14 dias siguientes, la de 30 dias
+   * erro 55% contra 69% la de 7, gano en 15 de 16 semanas (incluida Amor y
+   * Amistad) y en productos rapidos y lentos. La de 7 dias dejaba en cero los
+   * que no vendieron esa semana aunque vendan todos los meses.
+   */
+  avgDailySales30d: number;
   demandStdDev: number; // desviacion de la venta diaria
   rotationDays: number; // dias desde la ultima venta
   category: string | null;
@@ -51,12 +58,12 @@ export function computeStockLevels(
   seasonalFactor = 1
 ): StockLevels {
   const noSeRepone =
-    isServiceCategory(p.category) || p.avgDailySales7d <= 0 || p.rotationDays > 45;
+    isServiceCategory(p.category) || p.avgDailySales30d <= 0 || p.rotationDays > 45;
   if (noSeRepone) return { safetyStock: 0, minStock: 0, maxStock: 0, seasonalFactor: 1 };
 
   // La velocidad se proyecta a la temporada en la que se consumira el pedido,
   // no a la de hoy: por eso el factor multiplica antes de calcular los niveles.
-  const velocidad = p.avgDailySales7d * seasonalFactor;
+  const velocidad = p.avgDailySales30d * seasonalFactor;
   const safetyStock = Math.ceil(SERVICE_FACTOR * p.demandStdDev * Math.sqrt(leadTimeDays));
   const minStock = Math.ceil(velocidad * leadTimeDays) + safetyStock;
   const maxStock = Math.ceil(velocidad * (leadTimeDays + coverageDays)) + safetyStock;
@@ -98,7 +105,7 @@ export async function recomputeStockLevels(): Promise<RecomputeResult> {
   const leadTimeDays = await getLeadTimeDays();
   const rows = await prisma.productInsight.findMany({
     select: {
-      odooProductId: true, avgDailySales7d: true, demandStdDev: true,
+      odooProductId: true, avgDailySales30d: true, demandStdDev: true,
       rotationDays: true, category: true,
     },
   });
