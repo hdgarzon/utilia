@@ -5,6 +5,10 @@
  * El detector produce señales crudas. El LLM las convierte en texto accionable
  * en español con tono Utilia. Las recomendaciones existentes no se regeneran
  * (dedupe por `entityId + type`) para mantener costos bajos.
+ *
+ * Tope de MAX_ACTIVE_RECS activas: con cientos pendientes nadie decide nada
+ * (llegaron a 643 con 4 aplicadas). Solo se genera para llenar los cupos que
+ * libera aplicar, descartar o dejar vencer, y siempre lo mas urgente primero.
  */
 
 import { openai } from "@ai-sdk/openai";
@@ -12,6 +16,10 @@ import { generateObject } from "ai";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { detectAllSignals, type Signal } from "./detector";
+
+export const MAX_ACTIVE_RECS = 5;
+
+const PRIORITY_RANK: Record<Signal["priority"], number> = { high: 0, medium: 1, low: 2 };
 
 const recommendationSchema = z.object({
   title: z.string().describe("Título corto y accionable, max 60 caracteres"),
@@ -96,9 +104,11 @@ export async function generateRecommendations(): Promise<GenerationResult> {
   });
   const activeKeys = new Set(activeRecs.map((r) => `${r.type}:${r.entityId}`));
 
-  const newSignals = signals.filter(
-    (s) => !activeKeys.has(`${s.type}:${s.odooProductId}`)
-  );
+  const freeSlots = Math.max(MAX_ACTIVE_RECS - activeRecs.length, 0);
+  const newSignals = signals
+    .filter((s) => !activeKeys.has(`${s.type}:${s.odooProductId}`))
+    .sort((a, b) => PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority])
+    .slice(0, freeSlots);
 
   if (newSignals.length === 0) {
     return {

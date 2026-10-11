@@ -17,10 +17,16 @@ import { z } from "zod";
 import type { ProductInsight, StatusPost } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { colombiaToday, colombiaDaysAgo } from "@/lib/timezone";
+import { DEAD_STOCK_DAYS } from "@/lib/analytics/dead-stock";
 
-const SLOTS = 5;
+// 3 y no 5: de 30 estados generados en agosto-octubre no se publico ninguno.
+// Pocos y publicados valen mas que muchos en cola.
+const SLOTS = 3;
 const DAYS_BEFORE_REPEAT = 14;
-const DISCOUNT_HIGH = 30; // rotationDays > 60
+// Escalera por antiguedad: mientras mas tiempo parado, mas descuento. Vender
+// rapido importa mas que el margen — la caja vuelve como mercancia que si rota.
+const DISCOUNT_MAX = 40;  // rotationDays > 90
+const DISCOUNT_HIGH = 30; // rotationDays 61..90
 const DISCOUNT_LOW = 20;  // rotationDays 31..60
 
 /** Cantidad de estados que se crean solos al abrir el día. */
@@ -32,6 +38,7 @@ export function isArchived(name: string): boolean {
 }
 
 export function discountForRotation(rotationDays: number): number {
+  if (rotationDays > 90) return DISCOUNT_MAX;
   return rotationDays > 60 ? DISCOUNT_HIGH : DISCOUNT_LOW;
 }
 
@@ -171,7 +178,7 @@ function isSellable(c: Candidate): boolean {
 /** Capital muerto ordenado por capital invertido desc. */
 export async function rankedDeadStock(): Promise<Candidate[]> {
   const dead = await prisma.productInsight.findMany({
-    where: { rotationDays: { gt: 30 }, stockQty: { gt: 0 } },
+    where: { rotationDays: { gt: DEAD_STOCK_DAYS }, stockQty: { gt: 0 } },
   });
   return dead
     .map(toCandidate)
@@ -182,7 +189,7 @@ export async function rankedDeadStock(): Promise<Candidate[]> {
 /** Productos regulares (no capital muerto) con stock, para el selector manual. */
 export async function rankedRegularStock(): Promise<Candidate[]> {
   const regular = await prisma.productInsight.findMany({
-    where: { rotationDays: { lte: 30 }, stockQty: { gt: 0 } },
+    where: { rotationDays: { lte: DEAD_STOCK_DAYS }, stockQty: { gt: 0 } },
   });
   return regular
     .map(toCandidate)
@@ -205,7 +212,7 @@ async function recentlyPostedIds(): Promise<Set<number>> {
  * con copy regular. Incluye la llamada a la IA, que es la parte lenta.
  */
 async function postDataFromCandidate(c: Candidate) {
-  const mode: CopyMode = c.rotationDays > 30 ? "liquidacion" : "regular";
+  const mode: CopyMode = c.rotationDays > DEAD_STOCK_DAYS ? "liquidacion" : "regular";
   const discountPct = mode === "liquidacion" ? discountForRotation(c.rotationDays) : 0;
   const finalPrice = computeFinalPrice(c.salePrice, discountPct);
   const copy = await generateCopy({
@@ -393,7 +400,7 @@ export async function regenerateStatusPostCopy(id: string): Promise<StatusPost> 
     throw new Error("Este estado no tiene copy de producto");
   }
   const insight = await prisma.productInsight.findUnique({ where: { odooProductId: post.odooProductId } });
-  const mode: CopyMode = insight && insight.rotationDays <= 30 ? "regular" : "liquidacion";
+  const mode: CopyMode = insight && insight.rotationDays <= DEAD_STOCK_DAYS ? "regular" : "liquidacion";
   const copy = await generateCopy({
     name: post.productName,
     stockQty: post.stockQty ?? 0,
@@ -456,4 +463,14 @@ export async function deleteStatusPost(id: string): Promise<void> {
   }
 
   await prisma.statusPost.delete({ where: { id } });
+}
+
+/** Avance de los estados de hoy, para recordarlos desde el Resumen. */
+export async function getTodayStatusProgress(): Promise<{ created: number; posted: number; target: number }> {
+  const today = colombiaToday();
+  const [created, posted] = await Promise.all([
+    prisma.statusPost.count({ where: { date: today } }),
+    prisma.statusPost.count({ where: { date: today, posted: true } }),
+  ]);
+  return { created, posted, target: SLOTS };
 }

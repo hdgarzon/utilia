@@ -1,6 +1,6 @@
 export const dynamic = "force-dynamic";
 
-import { getDeadStockAnalysis, getLiquidationGoal } from "@/lib/analytics/dead-stock";
+import { DEAD_STOCK_DAYS, getDeadStockAnalysis, getLiquidationGoal } from "@/lib/analytics/dead-stock";
 import { LiquidationGoalEditor } from "@/components/dashboard/LiquidationGoalEditor";
 import { LiquidationWorkspace } from "@/components/dashboard/LiquidationWorkspace";
 import { formatCurrency, cn } from "@/lib/utils";
@@ -27,8 +27,10 @@ export default async function LiquidacionPage() {
   const goal = await getLiquidationGoal(analysis.totalInvestedCapital).catch(() => ({
     goalAmount: 0,
     baseline: 0,
+    deadline: null,
     updatedAt: null,
     currentDeadStock: analysis.totalInvestedCapital,
+    pace: null,
   }));
 
   if (analysis.products.length === 0) {
@@ -45,6 +47,8 @@ export default async function LiquidacionPage() {
             baseline={goal.baseline}
             currentDeadStock={goal.currentDeadStock}
             updatedAt={goal.updatedAt}
+            deadline={goal.deadline}
+            pace={goal.pace}
           />
         </div>
       );
@@ -79,7 +83,7 @@ export default async function LiquidacionPage() {
             <p className={cn("text-3xl font-bold", tone.text)}>{formatCurrency(analysis.totalInvestedCapital)}</p>
             <p className="text-xs text-muted-foreground leading-relaxed">
               El <span className={cn("font-semibold", tone.text)}>{analysis.deadStockPctOfInventory.toFixed(0)}%</span> de tu inventario total
-              ({formatCurrency(analysis.totalInventoryValue)}) no se ha vendido en más de 30 días.
+              ({formatCurrency(analysis.totalInventoryValue)}) no se ha vendido en más de {DEAD_STOCK_DAYS} días.
               Valor retail si se vendiera a precio normal: {formatCurrency(analysis.totalRetailValue)}.
             </p>
           </div>
@@ -91,6 +95,8 @@ export default async function LiquidacionPage() {
         baseline={goal.baseline}
         currentDeadStock={goal.currentDeadStock}
         updatedAt={goal.updatedAt}
+        deadline={goal.deadline}
+        pace={goal.pace}
       />
 
       <LiquidationWorkspace products={analysis.products} />

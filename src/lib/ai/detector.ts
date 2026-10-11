@@ -10,6 +10,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { DEAD_STOCK_DAYS } from "@/lib/analytics/dead-stock";
 
 export type SignalType = "restock" | "stale" | "hot" | "low_margin" | "no_sales_high_stock";
 
@@ -56,7 +57,7 @@ async function detectRestock(): Promise<Signal[]> {
 async function detectStale(): Promise<Signal[]> {
   const products = await prisma.productInsight.findMany({
     where: {
-      rotationDays: { gt: 30 },
+      rotationDays: { gt: DEAD_STOCK_DAYS },
       stockQty: { gt: 3 },
     },
     orderBy: { rotationDays: "desc" },

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { isServiceCategory } from "@/lib/service-categories";
+import { NO_REORDER_DAYS } from "@/lib/analytics/dead-stock";
 import { getSeasonalIndex, fortnightKey, fortnightKeyIn, lookupIndex, seasonalFactorFor } from "@/lib/analytics/seasonality";
 
 /**
@@ -58,7 +59,7 @@ export function computeStockLevels(
   seasonalFactor = 1
 ): StockLevels {
   const noSeRepone =
-    isServiceCategory(p.category) || p.avgDailySales30d <= 0 || p.rotationDays > 45;
+    isServiceCategory(p.category) || p.avgDailySales30d <= 0 || p.rotationDays > NO_REORDER_DAYS;
   if (noSeRepone) return { safetyStock: 0, minStock: 0, maxStock: 0, seasonalFactor: 1 };
 
   // La velocidad se proyecta a la temporada en la que se consumira el pedido,

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { colombiaYearMonthDay } from "@/lib/timezone";
+import { colombiaDaysAgo, colombiaYearMonthDay } from "@/lib/timezone";
+import { NO_REORDER_DAYS } from "@/lib/analytics/dead-stock";
 
 export interface MonthlyPurchaseSummary {
   year: number;
@@ -101,5 +102,40 @@ export async function getMonthlyPurchaseSummary(
       dateOrder: o.dateOrder,
       amountTotal: o.amountTotal,
     })),
+  };
+}
+
+export interface FrozenPurchases {
+  windowDays: number;
+  total: number; // valor sin IVA comprado a referencias congeladas
+  products: Array<{ odooProductId: number; name: string; qty: number; value: number; rotationDays: number }>;
+}
+
+/**
+ * Compras recientes a referencias que la regla de no-recompra congela (mas de
+ * NO_REORDER_DAYS dias sin venta). El sistema ya no las sugiere, pero en Odoo
+ * se pueden seguir comprando a mano: esto mide esa fuga de caja hacia
+ * mercancia que no rota.
+ */
+export async function getFrozenPurchases(windowDays = 30): Promise<FrozenPurchases> {
+  const since = colombiaDaysAgo(windowDays).toISOString();
+  const rows = await prisma.$queryRaw<
+    Array<{ odooProductId: number; name: string; qty: number; value: number; rotationDays: number }>
+  >`
+    SELECT l."odooProductId", MIN(l."productName") AS name,
+           SUM(l.qty)::float8 AS qty, SUM(l."priceSubtotal")::float8 AS value,
+           MIN(p."rotationDays")::int AS "rotationDays"
+    FROM "PurchaseOrderLine" l
+    JOIN "PurchaseOrder" o ON o.id = l."purchaseOrderId"
+    JOIN "ProductInsight" p ON p."odooProductId" = l."odooProductId"
+    WHERE o."dateOrder" >= ${since}::timestamptz
+      AND p."rotationDays" > ${NO_REORDER_DAYS}
+    GROUP BY l."odooProductId"
+    ORDER BY value DESC
+  `;
+  return {
+    windowDays,
+    total: rows.reduce((s, r) => s + r.value, 0),
+    products: rows,
   };
 }
