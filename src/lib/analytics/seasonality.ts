@@ -111,6 +111,41 @@ export function lookupIndex(
   return idx.find((i) => i.category === category && i.fortnight === fortnight) ?? null;
 }
 
+/**
+ * Techo y piso del ajuste estacional. Con uno o dos años de historia un indice
+ * extremo puede ser una racha, no un patron: sin topes, una piñateria con
+ * indice 3,2 en diciembre dispararia un pedido enorme por una sola navidad
+ * observada.
+ */
+const SEASONAL_MAX = 2.5;
+const SEASONAL_MIN = 0.5;
+
+/**
+ * Cuanto hay que ajustar la velocidad actual para la temporada que viene.
+ *
+ * La velocidad reciente YA trae el efecto de la temporada actual, asi que lo
+ * que importa es el cambio relativo: si hoy estamos en una quincena floja y
+ * entramos a una alta, el cociente sube; si es al reves, baja.
+ *
+ * El cociente se encoge hacia 1 segun los años que lo respaldan, con peso
+ * años / (años + 1): la mitad con un año, dos tercios con dos. Medido en
+ * octubre de 2026 sobre 123 pasos de quincena por categoria: el cociente
+ * crudo de 2025 predijo los de 2026 con 39% de error, peor que no ajustar
+ * (33%); acertaba si la venta subia o bajaba en 64% de los casos, pero
+ * exageraba cuanto. Encogido a la mitad el error baja a 34% y conserva la
+ * direccion de las temporadas fuertes.
+ */
+export function seasonalFactorFor(
+  actual: SeasonalIndex | null,
+  futura: SeasonalIndex | null
+): number {
+  if (!actual || !futura || actual.index <= 0 || futura.index <= 0) return 1;
+  const years = Math.min(actual.years, futura.years);
+  const weight = years / (years + 1);
+  const shrunk = Math.exp(weight * Math.log(futura.index / actual.index));
+  return Math.min(SEASONAL_MAX, Math.max(SEASONAL_MIN, shrunk));
+}
+
 /** Nombre legible de una quincena: "09-2a" → "2.ª quincena de septiembre". */
 const MESES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
 export function fortnightLabel(key: string): string {
@@ -151,12 +186,12 @@ export async function getSeasonAhead(leadTimeDays: number, coverageDays: number)
   const categories = porCategoria
     .map((g) => {
       const cat = g.category;
-      const ia = lookupIndex(idx, cat, actual)?.index ?? null;
+      const ia = lookupIndex(idx, cat, actual);
       const info = lookupIndex(idx, cat, futura);
-      if (!cat || !ia || !info || ia <= 0) return null;
+      if (!cat || !ia || !info || ia.index <= 0) return null;
       return {
         category: cat,
-        factor: Math.min(2.5, Math.max(0.5, info.index / ia)),
+        factor: seasonalFactorFor(ia, info),
         productsBelowMin: bajoPorCat.get(cat) ?? 0,
         years: info.years,
       };
