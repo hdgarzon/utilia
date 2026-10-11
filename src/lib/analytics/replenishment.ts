@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { NO_REORDER_DAYS } from "@/lib/analytics/dead-stock";
 import { getABCAnalysis } from "@/lib/analytics/abc";
 import { getOpenToBuyPlan } from "@/lib/analytics/open-to-buy";
 import { isServiceCategory } from "@/lib/service-categories";
@@ -116,7 +117,7 @@ async function fetchCandidates(): Promise<CandidateProduct[]> {
     FROM "ProductInsight"
     WHERE "avgDailySales7d" > 0
       AND "stockQty" >= 0
-      AND "rotationDays" <= 45
+      AND "rotationDays" <= ${NO_REORDER_DAYS}
       AND ("daysOfStock" < 14 OR "stockQty" < "minStock")
       AND "name" NOT LIKE '%(archivado)' -- marcador que deja el sync en stubs archivados: no se recompran
     ORDER BY "daysOfStock" ASC

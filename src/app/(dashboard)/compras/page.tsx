@@ -2,11 +2,12 @@ export const dynamic = "force-dynamic";
 
 import Link from "next/link";
 import { getOpenToBuyPlan } from "@/lib/analytics/open-to-buy";
-import { getMonthlyPurchaseSummary } from "@/lib/analytics/purchases";
+import { getFrozenPurchases, getMonthlyPurchaseSummary } from "@/lib/analytics/purchases";
+import { NO_REORDER_DAYS } from "@/lib/analytics/dead-stock";
 import { ComprasTable } from "@/components/dashboard/ComprasTable";
 import { PurchasesActuals } from "@/components/dashboard/PurchasesActuals";
 import { formatCurrency, cn } from "@/lib/utils";
-import { ShoppingBag, TrendingUp, AlertCircle, Wallet } from "lucide-react";
+import { ShoppingBag, TrendingUp, AlertCircle, Wallet, Ban } from "lucide-react";
 
 interface PageProps {
   searchParams: Promise<{ coverage?: string }>;
@@ -18,6 +19,7 @@ export default async function ComprasPage({ searchParams }: PageProps) {
 
   const plan = await getOpenToBuyPlan(coverage).catch(() => null);
   const purchaseSummary = await getMonthlyPurchaseSummary().catch(() => null);
+  const frozen = await getFrozenPurchases().catch(() => null);
 
   if (!plan || plan.categories.length === 0) {
     return (
@@ -128,6 +130,46 @@ export default async function ComprasPage({ searchParams }: PageProps) {
 
       {/* Compras reales del mes (Odoo: purchase.order confirmadas) */}
       {purchaseSummary && <PurchasesActuals summary={purchaseSummary} reinvestmentFund={reinvestmentFund} />}
+
+      {frozen && frozen.products.length > 0 && (
+        <div className="rounded-xl border border-destructive/40 bg-destructive/5 p-4 md:p-5 space-y-3">
+          <div className="flex items-start gap-2">
+            <Ban className="h-4 w-4 mt-0.5 shrink-0 text-destructive" />
+            <div>
+              <p className="text-sm font-semibold">
+                {formatCurrency(frozen.total)} comprados a referencias congeladas en los últimos {frozen.windowDays} días
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Llevan más de {NO_REORDER_DAYS} días sin venderse: la regla de no-recompra dice que no se reponen.
+                Es caja que entra a engrosar el capital muerto.
+              </p>
+            </div>
+          </div>
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-muted-foreground border-b border-border">
+                <th className="text-left py-1.5 font-medium">Producto</th>
+                <th className="text-right py-1.5 font-medium">Días sin venta</th>
+                <th className="text-right py-1.5 font-medium">Unidades</th>
+                <th className="text-right py-1.5 font-medium">Comprado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {frozen.products.slice(0, 10).map((p) => (
+                <tr key={p.odooProductId} className="border-b border-border/50 last:border-0">
+                  <td className="py-1.5 max-w-0 w-full truncate pr-3" title={p.name}>{p.name}</td>
+                  <td className="py-1.5 text-right text-warning">{p.rotationDays}d</td>
+                  <td className="py-1.5 text-right">{p.qty.toLocaleString("es-CO", { maximumFractionDigits: 1 })}</td>
+                  <td className="py-1.5 text-right font-medium">{formatCurrency(p.value)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {frozen.products.length > 10 && (
+            <p className="text-xs text-muted-foreground">y {frozen.products.length - 10} referencias más</p>
+          )}
+        </div>
+      )}
 
       {/* KPIs totales */}
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
