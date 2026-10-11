@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { isServiceCategory } from "@/lib/service-categories";
-import { getSeasonalIndex, fortnightKey, fortnightKeyIn, lookupIndex } from "@/lib/analytics/seasonality";
+import { getSeasonalIndex, fortnightKey, fortnightKeyIn, lookupIndex, seasonalFactorFor } from "@/lib/analytics/seasonality";
 
 /**
  * Niveles minimo y maximo de stock por producto.
@@ -34,31 +34,6 @@ export interface StockLevels {
   minStock: number;
   maxStock: number;
   seasonalFactor: number;
-}
-
-/**
- * Techo y piso del ajuste estacional. Con uno o dos años de historia un indice
- * extremo puede ser una racha, no un patron: sin topes, una piñateria con
- * indice 3,2 en diciembre dispararia un pedido enorme por una sola navidad
- * observada.
- */
-const SEASONAL_MAX = 2.5;
-const SEASONAL_MIN = 0.5;
-
-/**
- * Cuanto hay que ajustar la velocidad actual para la temporada que viene.
- *
- * La velocidad de los ultimos 7 dias YA trae el efecto de la temporada actual,
- * asi que lo que importa es el cambio relativo: si hoy estamos en una quincena
- * floja y entramos a una alta, el cociente sube; si es al reves, baja.
- */
-export function seasonalFactorFor(
-  indiceActual: number | null,
-  indiceFuturo: number | null
-): number {
-  if (!indiceActual || !indiceFuturo || indiceActual <= 0) return 1;
-  const raw = indiceFuturo / indiceActual;
-  return Math.min(SEASONAL_MAX, Math.max(SEASONAL_MIN, raw));
 }
 
 /**
@@ -143,8 +118,8 @@ export async function recomputeStockLevels(): Promise<RecomputeResult> {
   const values: string[] = [];
   for (const r of rows) {
     const factor = seasonalFactorFor(
-      lookupIndex(idx, r.category, quincenaActual)?.index ?? null,
-      lookupIndex(idx, r.category, quincenaFutura)?.index ?? null
+      lookupIndex(idx, r.category, quincenaActual),
+      lookupIndex(idx, r.category, quincenaFutura)
     );
     const l = computeStockLevels(r, leadTimeDays, DEFAULT_COVERAGE_DAYS, factor);
     if (l.minStock > 0) withLevels++;
