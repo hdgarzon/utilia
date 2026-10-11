@@ -12,8 +12,8 @@ export interface CandidateProduct {
   name: string;
   category: string | null;
   stockQty: number;
-  daysOfStock: number;
-  avgDailySales7d: number;
+  daysOfStock: number; // stock / venta diaria de 30 dias (ver stock-levels.ts)
+  avgDailySales: number; // venta diaria de los ultimos 30 dias
   cmp: number;
   minStock: number;
 }
@@ -27,7 +27,7 @@ export function computeSuggestedQty(
   p: CandidateProduct,
   coverageDays: number
 ): { qty: number; reason: SuggestReason } | null {
-  const toCoverage = p.avgDailySales7d * coverageDays - p.stockQty;
+  const toCoverage = p.avgDailySales * coverageDays - p.stockQty;
   const toMinStock = p.minStock - p.stockQty;
   const raw = Math.max(toCoverage, toMinStock);
   if (raw <= 0) return null;
@@ -49,7 +49,7 @@ export interface SuggestionLine {
   category: string | null;
   stockQty: number;
   daysOfStock: number;
-  avgDailySales7d: number;
+  avgDailySales: number; // ultimos 30 dias
   suggestedQty: number;
   unitCost: number; // cmp
   tier: "A" | "B" | "C";
@@ -112,15 +112,16 @@ const DELAY_ALERT_DAYS = 7;
  */
 async function fetchCandidates(): Promise<CandidateProduct[]> {
   const candidates = await prisma.$queryRaw<CandidateProduct[]>`
-    SELECT "odooProductId", "odooTemplateId", "name", "category", "stockQty", "daysOfStock",
-           "avgDailySales7d", "cmp", "minStock"
+    SELECT "odooProductId", "odooTemplateId", "name", "category", "stockQty",
+           LEAST("stockQty" / "avgDailySales30d", 999) AS "daysOfStock",
+           "avgDailySales30d" AS "avgDailySales", "cmp", "minStock"
     FROM "ProductInsight"
-    WHERE "avgDailySales7d" > 0
+    WHERE "avgDailySales30d" > 0
       AND "stockQty" >= 0
       AND "rotationDays" <= ${NO_REORDER_DAYS}
-      AND ("daysOfStock" < 14 OR "stockQty" < "minStock")
+      AND ("stockQty" / "avgDailySales30d" < 14 OR "stockQty" < "minStock")
       AND "name" NOT LIKE '%(archivado)' -- marcador que deja el sync en stubs archivados: no se recompran
-    ORDER BY "daysOfStock" ASC
+    ORDER BY "stockQty" / "avgDailySales30d" ASC
   `;
 
   const openLines = await prisma.replenishmentLine.findMany({
@@ -133,8 +134,20 @@ async function fetchCandidates(): Promise<CandidateProduct[]> {
   );
 }
 
+/**
+ * Tier ABC por producto. El analisis consolida variantes bajo el id de
+ * plantilla (ver abc.ts), asi que hay que buscar con esa misma clave para no
+ * perder el tier real de productos con variantes; cae a "C" solo si de verdad
+ * no aparece en el analisis.
+ */
+async function getTierLookup(): Promise<(c: CandidateProduct) => "A" | "B" | "C"> {
+  const abc = await getABCAnalysis();
+  const tierByProduct = new Map(abc.products.map((p) => [p.odooProductId, p.tier]));
+  return (c) => tierByProduct.get(c.odooTemplateId ?? c.odooProductId) ?? "C";
+}
+
 export interface ReplenishmentSummary {
-  productsToOrder: number; // productos con cantidad sugerida > 0
+  productsToOrder: number; // productos A/B con cantidad sugerida > 0
   criticalCount: number; // de esos, los que están bajo 7 días de cobertura
   openOrders: number; // pedidos aprobados o enviados, aún sin recibir
   delayedOrders: number; // enviados hace más de 7 días sin llegar
@@ -142,12 +155,17 @@ export interface ReplenishmentSummary {
 
 /**
  * Resumen liviano para la tarjeta del panel principal. A diferencia de
- * `getReplenishmentPlan`, no calcula ABC ni el plan OTB — el panel ya hace
- * muchas consultas y solo necesita los conteos.
+ * `getReplenishmentPlan`, no calcula el plan OTB ni agrupa por proveedor.
+ *
+ * Cuenta solo las lineas A/B, las mismas que el plan preselecciona. Desde que
+ * la velocidad es de 30 dias, el plan tambien lista productos C que se venden
+ * una o dos veces al mes; contarlos convertia la tarjeta en una alarma
+ * permanente (de 41 a 124 "sin stock") sin que cambiara que pedir.
  */
 export async function getReplenishmentSummary(coverageDaysTarget = 21): Promise<ReplenishmentSummary> {
-  const [candidates, openOrders] = await Promise.all([
+  const [candidates, tierOf, openOrders] = await Promise.all([
     fetchCandidates(),
+    getTierLookup(),
     prisma.replenishmentOrder.findMany({
       where: { status: { in: ["APPROVED", "SENT"] } },
       select: { status: true, sentAt: true },
@@ -158,7 +176,7 @@ export async function getReplenishmentSummary(coverageDaysTarget = 21): Promise<
   let criticalCount = 0;
   for (const c of candidates) {
     const suggestion = computeSuggestedQty(c, coverageDaysTarget);
-    if (!suggestion) continue;
+    if (!suggestion || tierOf(c) === "C") continue;
     productsToOrder++;
     if (suggestion.reason === "critico") criticalCount++;
   }
@@ -199,8 +217,7 @@ export async function getReplenishmentPlan(coverageDaysTarget = 21): Promise<Rep
   );
 
   // 4. Tier ABC por producto (los que no aparecen en el análisis caen en C).
-  const abc = await getABCAnalysis();
-  const tierByProduct = new Map(abc.products.map((p) => [p.odooProductId, p.tier]));
+  const tierOf = await getTierLookup();
 
   // 5. Armar líneas y agrupar por proveedor.
   const bySupplier = new Map<string, ReplenishmentSuggestion>();
@@ -218,18 +235,15 @@ export async function getReplenishmentPlan(coverageDaysTarget = 21): Promise<Rep
       category: c.category,
       stockQty: c.stockQty,
       daysOfStock: c.daysOfStock,
-      avgDailySales7d: c.avgDailySales7d,
+      avgDailySales: c.avgDailySales,
       suggestedQty: suggestion.qty,
       unitCost: c.cmp,
-      // El analisis ABC consolida variantes bajo el id de plantilla (ver abc.ts),
-      // asi que hay que buscar el tier con esa misma clave para no perder el
-      // tier real de productos con variantes (cae a "C" solo si de verdad no
-      // aparece en el analisis).
-      tier: tierByProduct.get(c.odooTemplateId ?? c.odooProductId) ?? "C",
+      tier: tierOf(c),
       reason: suggestion.reason,
     };
-    if (line.reason === "critico") criticalCount++;
-    if (line.reason === "advertencia") warningCount++;
+    // Los conteos siguen a lineCount: solo lo que se preselecciona (A/B).
+    if (line.tier !== "C" && line.reason === "critico") criticalCount++;
+    if (line.tier !== "C" && line.reason === "advertencia") warningCount++;
 
     const overrideSupplierId = overrideByProduct.get(c.odooProductId);
     const supplier = overrideSupplierId

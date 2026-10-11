@@ -207,7 +207,7 @@ function LineTable({
                 </div>
                 <div>
                   <p className="text-muted-foreground">Vende/día</p>
-                  <p className="font-medium tabular-nums">{l.avgDailySales7d.toFixed(1)}</p>
+                  <p className="font-medium tabular-nums">{l.avgDailySales.toFixed(1)}</p>
                 </div>
               </div>
 
@@ -265,7 +265,7 @@ function LineTable({
                   </td>
                   <td className="px-2 py-2 text-right tabular-nums">{Math.ceil(l.stockQty)}</td>
                   <td className="px-2 py-2 text-right tabular-nums">{Math.ceil(l.daysOfStock)}d</td>
-                  <td className="px-2 py-2 text-right tabular-nums">{l.avgDailySales7d.toFixed(1)}</td>
+                  <td className="px-2 py-2 text-right tabular-nums">{l.avgDailySales.toFixed(1)}</td>
                   <td className="px-2 py-2 text-center">
                     <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", badge.cls)}>{badge.label}</span>
                   </td>
