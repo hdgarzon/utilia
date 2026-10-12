@@ -1,12 +1,13 @@
 export const dynamic = "force-dynamic";
 
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { formatCurrency } from "@/lib/utils";
 import { BudgetRow } from "./BudgetRow";
 import { AddBudgetForm } from "./AddBudgetForm";
 import { RecordExpense } from "./RecordExpense";
 import { CloneBudgets } from "./CloneBudgets";
-import { DollarSign, AlertCircle, Calendar } from "lucide-react";
+import { DollarSign, AlertCircle, Calendar, ArrowLeft } from "lucide-react";
 import { getSelectedPeriod } from "@/lib/period";
 import { recomputeMonthFixedExpenses } from "@/lib/snapshots";
 
@@ -75,7 +76,14 @@ export default async function PresupuestosPage({
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold">Presupuestos</h1>
+          <Link
+            href="/financiero"
+            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <ArrowLeft className="h-3 w-3" />
+            Centro Financiero
+          </Link>
+          <h1 className="text-2xl font-semibold tracking-tight mt-2">Presupuestos</h1>
           <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1.5">
             <Calendar className="h-3 w-3" />
             {MONTHS[month - 1]} {year}

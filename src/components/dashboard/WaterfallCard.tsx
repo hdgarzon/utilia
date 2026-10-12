@@ -132,7 +132,7 @@ export function WaterfallCard({ pnl, categories }: Props) {
           <div className="flex items-center gap-2">
             <Receipt className="h-3.5 w-3.5 text-muted-foreground" />
             <p className="text-xs font-semibold">Gastos fijos por concepto</p>
-            <Link href="/presupuestos" className="ml-auto flex items-center text-xs text-primary hover:underline">
+            <Link href="/financiero/presupuestos" className="ml-auto flex items-center text-xs text-primary hover:underline">
               Presupuestos <ChevronRight className="h-3 w-3" />
             </Link>
           </div>

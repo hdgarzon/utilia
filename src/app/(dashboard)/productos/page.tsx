@@ -73,7 +73,7 @@ export default async function ProductosPage({
   if (error || !data || !options) {
     return (
       <div className="space-y-6">
-        <h1 className="text-xl font-bold">Productos</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Productos</h1>
         <div className="rounded-xl border border-destructive/40 bg-destructive/5 p-6 flex items-start gap-3">
           <AlertTriangle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
           <div className="space-y-2">
@@ -106,7 +106,7 @@ export default async function ProductosPage({
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <h1 className="text-xl font-bold">Productos</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Productos</h1>
         <Link
           href="/productos/cargar"
           className="rounded-lg border border-primary/40 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10"

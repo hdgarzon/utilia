@@ -2,8 +2,11 @@ export const dynamic = "force-dynamic";
 
 import type { ReactNode } from "react";
 import { getABCAnalysis, type ABCTier } from "@/lib/analytics/abc";
+import type { CategoryStat } from "@/lib/analytics/categories";
 import { getOpportunities, type OppProduct } from "@/lib/analytics/opportunities";
 import { ABCTable } from "@/components/dashboard/ABCTable";
+import { getCategoryStats } from "@/lib/analytics/categories";
+import { CategoriasTable } from "@/components/dashboard/CategoriasTable";
 import { formatCurrency, cn } from "@/lib/utils";
 import { Trophy, BarChart3, Layers, Lightbulb, Star, TrendingDown, Archive } from "lucide-react";
 
@@ -32,19 +35,22 @@ const TIER_COLORS: Record<ABCTier, { bg: string; text: string; border: string; l
 };
 
 export default async function ABCPage() {
-  const [data, opps] = await Promise.all([
+  const [data, opps, categories] = await Promise.all([
     getABCAnalysis().catch(() => null),
     getOpportunities().catch(() => null),
+    getCategoryStats().catch(() => []),
   ]);
+  const categorySection = <CategorySection stats={categories} />;
 
   if (!data || data.products.length === 0) {
     return (
       <div className="space-y-4">
-        <h1 className="text-xl font-bold">Análisis ABC</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Análisis ABC</h1>
         <div className="rounded-xl border border-border bg-card p-8 text-center">
           <BarChart3 className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
           <p className="text-sm text-muted-foreground">Aún no hay productos con ventas para clasificar</p>
         </div>
+        {categorySection}
       </div>
     );
   }
@@ -54,9 +60,9 @@ export default async function ABCPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-bold">Análisis ABC · Pareto 80/20</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Análisis</h1>
         <p className="text-xs text-muted-foreground mt-0.5">
-          Clasificación de productos por participación en revenue. Ingresos proyectados a 30 días desde velocidad observada.
+          ABC / Pareto 80/20 por producto y rendimiento por categoría. Ingresos proyectados a 30 días desde la velocidad observada.
         </p>
       </div>
 
@@ -150,7 +156,29 @@ export default async function ABCPage() {
       </div>
 
       <ABCTable products={products} totalMonthlyRevenue={totalMonthlyRevenue} totalMonthlyProfit={totalMonthlyProfit} />
+
+      {categorySection}
     </div>
+  );
+}
+
+/** Antes era el tab Categorías: se fusionó aquí y /categorias redirige a #categorias. */
+function CategorySection({ stats }: { stats: CategoryStat[] }) {
+  if (stats.length === 0) return null;
+  const totalProducts = stats.reduce((s, c) => s + c.productCount, 0);
+  const totalInventoryValue = stats.reduce((s, c) => s + c.inventoryValue, 0);
+  const totalRetailValue = stats.reduce((s, c) => s + c.retailValue, 0);
+  return (
+    <section id="categorias" className="scroll-mt-20 space-y-4">
+      <div>
+        <h2 className="text-base font-semibold">Por categoría</h2>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          {stats.length} categorías · {totalProducts.toLocaleString("es-CO")} productos · inventario{" "}
+          {formatCurrency(totalInventoryValue)} al costo ({formatCurrency(totalRetailValue)} a precio de venta)
+        </p>
+      </div>
+      <CategoriasTable stats={stats} />
+    </section>
   );
 }
 

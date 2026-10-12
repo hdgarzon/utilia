@@ -7,8 +7,8 @@ import { NavLinks } from "./NavLinks";
 
 export function Sidebar() {
   return (
-    <aside className="hidden md:flex h-screen w-56 flex-col bg-sidebar text-sidebar-foreground">
-      <div className="flex items-center px-5 py-5 border-b border-white/10">
+    <aside className="hidden md:flex h-screen w-60 shrink-0 flex-col bg-sidebar text-sidebar-foreground">
+      <div className="flex h-16 items-center px-6">
         <BrandMark />
       </div>
 
@@ -16,15 +16,21 @@ export function Sidebar() {
         <NavLinks />
       </nav>
 
-      <div className="border-t border-white/10 p-3">
-        <button
-          onClick={() => signOut({ callbackUrl: "/login" })}
-          className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-sidebar-foreground/75 transition-colors hover:bg-white/10 hover:text-white"
-        >
-          <LogOut className="h-4 w-4 shrink-0" />
-          Cerrar sesión
-        </button>
+      <div className="p-3">
+        <SignOutButton />
       </div>
     </aside>
+  );
+}
+
+export function SignOutButton() {
+  return (
+    <button
+      onClick={() => signOut({ callbackUrl: "/login" })}
+      className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-foreground"
+    >
+      <LogOut className="h-4 w-4 shrink-0 text-muted-foreground" />
+      Cerrar sesión
+    </button>
   );
 }

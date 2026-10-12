@@ -4,11 +4,12 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* ─── Tema claro + identidad de marca Utilia ──────────────────────────────────
-   Azul de marca #1763C7 (chrome/navegación) · Verde lima #8CC63F (acento/logo)
-   primary = verde legible → utilidad/positivo. destructive/ámbar = alertas.     */
+/* ─── Tema claro Utilia ───────────────────────────────────────────────────────
+   Una sola paleta neutra (gris frío) y un acento: el verde de marca (primary),
+   que también marca lo positivo. destructive/ámbar son semánticos, no acento.
+   El sidebar ya no es azul: es el mismo neutro un tono más oscuro, sin bordes.  */
 @theme inline {
-  --color-background: oklch(0.99 0.003 250);
+  --color-background: oklch(0.985 0.002 250);
   --color-foreground: oklch(0.24 0.02 255);
   --color-card: oklch(1 0 0);
   --color-card-foreground: oklch(0.24 0.02 255);
@@ -19,13 +20,13 @@
   --color-secondary: oklch(0.96 0.008 250);
   --color-secondary-foreground: oklch(0.30 0.02 255);
   --color-muted: oklch(0.96 0.008 250);
-  --color-muted-foreground: oklch(0.50 0.02 255);
+  --color-muted-foreground: oklch(0.52 0.015 255);
   --color-accent: oklch(0.95 0.01 250);
   --color-accent-foreground: oklch(0.30 0.02 255);
   --color-destructive: oklch(0.58 0.22 25);
   --color-destructive-foreground: oklch(1 0 0);
-  --color-border: oklch(0.91 0.006 250);
-  --color-input: oklch(0.92 0.006 250);
+  --color-border: oklch(0.93 0.004 250);
+  --color-input: oklch(0.91 0.005 250);
   --color-ring: oklch(0.55 0.15 142);
   --color-warning: oklch(0.55 0.16 65);
   --color-warning-foreground: oklch(0.25 0.02 255);
@@ -69,7 +70,7 @@
 }
 
 :root {
-  --background: oklch(0.99 0.003 250);
+  --background: oklch(0.985 0.002 250);
   --foreground: oklch(0.24 0.02 255);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.24 0.02 255);
@@ -80,12 +81,12 @@
   --secondary: oklch(0.96 0.008 250);
   --secondary-foreground: oklch(0.30 0.02 255);
   --muted: oklch(0.96 0.008 250);
-  --muted-foreground: oklch(0.50 0.02 255);
+  --muted-foreground: oklch(0.52 0.015 255);
   --accent: oklch(0.95 0.01 250);
   --accent-foreground: oklch(0.30 0.02 255);
   --destructive: oklch(0.58 0.22 25);
-  --border: oklch(0.91 0.006 250);
-  --input: oklch(0.92 0.006 250);
+  --border: oklch(0.93 0.004 250);
+  --input: oklch(0.91 0.005 250);
   --ring: oklch(0.55 0.15 142);
   --chart-1: oklch(0.55 0.15 142);
   --chart-2: oklch(0.50 0.16 258);
@@ -94,15 +95,15 @@
   --chart-5: oklch(0.55 0.13 300);
   --radius: 0.625rem;
 
-  /* Sidebar = azul de marca con acento lima */
-  --sidebar: oklch(0.50 0.16 258);
-  --sidebar-foreground: oklch(0.98 0.01 250);
-  --sidebar-primary: oklch(0.78 0.17 128);
-  --sidebar-primary-foreground: oklch(0.24 0.02 255);
-  --sidebar-accent: oklch(0.44 0.14 258);
-  --sidebar-accent-foreground: oklch(0.98 0.01 250);
-  --sidebar-border: oklch(0.44 0.14 258);
-  --sidebar-ring: oklch(0.78 0.17 128);
+  /* Sidebar = neutro un tono bajo el fondo, acento verde */
+  --sidebar: oklch(0.97 0.003 250);
+  --sidebar-foreground: oklch(0.45 0.015 255);
+  --sidebar-primary: oklch(0.55 0.15 142);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(1 0 0);
+  --sidebar-accent-foreground: oklch(0.24 0.02 255);
+  --sidebar-border: oklch(0.93 0.004 250);
+  --sidebar-ring: oklch(0.55 0.15 142);
 }
 
 * {

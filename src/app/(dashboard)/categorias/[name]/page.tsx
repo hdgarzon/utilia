@@ -33,13 +33,13 @@ export default async function CategoryDetailPage({ params }: PageProps) {
     <div className="space-y-6">
       <div>
         <Link
-          href="/categorias"
+          href="/abc#categorias"
           className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
         >
           <ArrowLeft className="h-3 w-3" />
-          Volver a Categorías
+          Volver a Análisis
         </Link>
-        <h1 className="text-xl font-bold mt-2">{category}</h1>
+        <h1 className="text-2xl font-semibold tracking-tight mt-2">{category}</h1>
         <p className="text-xs text-muted-foreground">
           {totals.productCount} productos · {totals.activeProducts} con ventas activas
         </p>

@@ -2,6 +2,16 @@ import type { NextConfig } from "next";
 import { MAX_ACTION_BODY_BYTES } from "./src/lib/products/import-types";
 
 const nextConfig: NextConfig = {
+  // Tabs fusionados en la auditoria de octubre 2026. Se redirige en vez de
+  // borrar la ruta para que favoritos y enlaces viejos sigan funcionando.
+  // `/categorias` exacto: el detalle /categorias/[name] sigue vivo.
+  async redirects() {
+    return [
+      { source: "/presupuestos", destination: "/financiero/presupuestos", permanent: false },
+      { source: "/inventario", destination: "/reabastecimiento#existencias", permanent: false },
+      { source: "/categorias", destination: "/abc#categorias", permanent: false },
+    ];
+  },
   serverExternalPackages: ["@prisma/client", "prisma"],
   images: {
     remotePatterns: [

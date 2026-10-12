@@ -63,11 +63,18 @@ export default async function FinancieroPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold">
+          <h1 className="text-2xl font-semibold tracking-tight">
             Centro Financiero{!isCurrentPeriod && <span className="text-muted-foreground font-normal"> — {label}</span>}
           </h1>
           {overview && <p className="text-xs text-muted-foreground mt-0.5">{periodStatusText(overview, isCurrentPeriod)}</p>}
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+        <Link
+          href={`/financiero/presupuestos?year=${year}&month=${month}`}
+          className="rounded-lg bg-secondary px-3 py-2 text-xs font-medium hover:bg-secondary/70 transition-colors"
+        >
+          Presupuestos de gastos fijos
+        </Link>
         {overview && overview.current.daysElapsed > 0 && (
           <FinancieroExport
             period={period}
@@ -76,6 +83,7 @@ export default async function FinancieroPage() {
             summary={buildSummaryRows(overview)}
           />
         )}
+        </div>
       </div>
 
       {syncBehind && (
@@ -94,7 +102,7 @@ export default async function FinancieroPage() {
           ) : (
             <>No hay presupuesto de gastos fijos: la utilidad neta no descuenta arriendo, nómina ni servicios. </>
           )}
-          <Link href={`/presupuestos?year=${year}&month=${month}`} className="font-medium underline underline-offset-2">
+          <Link href={`/financiero/presupuestos?year=${year}&month=${month}`} className="font-medium underline underline-offset-2">
             Revisar en Presupuestos
           </Link>
         </Notice>

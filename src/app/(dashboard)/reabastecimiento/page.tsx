@@ -10,6 +10,7 @@ import { ensureSuppliersFromHistory } from "@/lib/suppliers";
 import { ReplenishmentBoard } from "@/components/dashboard/ReplenishmentBoard";
 import { ReplenishmentPending } from "@/components/dashboard/ReplenishmentPending";
 import { LeadTimeSetting } from "@/components/dashboard/LeadTimeSetting";
+import { Existencias } from "./Existencias";
 import { formatCurrency, cn } from "@/lib/utils";
 import { ClipboardList, AlertTriangle, XCircle, Wallet } from "lucide-react";
 
@@ -36,11 +37,12 @@ export default async function ReabastecimientoPage({ searchParams }: PageProps) 
   if (!plan) {
     return (
       <div className="space-y-4">
-        <h1 className="text-xl font-bold">Reabastecimiento</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Reabastecimiento</h1>
         <div className="rounded-xl border border-border bg-card p-8 text-center">
           <ClipboardList className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
           <p className="text-sm text-muted-foreground">Aún no hay datos para sugerir pedidos</p>
         </div>
+        <Existencias />
       </div>
     );
   }
@@ -51,7 +53,7 @@ export default async function ReabastecimientoPage({ searchParams }: PageProps) 
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold">Reabastecimiento</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Reabastecimiento</h1>
           <p className="text-xs text-muted-foreground mt-0.5">
             Pedido sugerido por proveedor — revisa, ajusta y aprueba; nada se envía solo
           </p>
@@ -113,6 +115,8 @@ export default async function ReabastecimientoPage({ searchParams }: PageProps) 
         unassigned={plan.unassigned}
         suppliers={suppliers}
       />
+
+      <Existencias />
     </div>
   );
 }

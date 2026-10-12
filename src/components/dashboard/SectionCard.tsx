@@ -28,8 +28,8 @@ export function SectionCard({
   return (
     <div
       className={cn(
-        "rounded-xl border border-border bg-card",
-        !noPadding && "p-4 md:p-5",
+        "rounded-xl border border-border/70 bg-card",
+        !noPadding && "p-4 md:p-6",
         className
       )}
     >

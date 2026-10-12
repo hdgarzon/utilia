@@ -70,7 +70,7 @@ export async function upsertBudget(formData: FormData) {
     // El gasto fijo cambió → recalcular los snapshots del mes para que la
     // utilidad/margen del Centro Financiero queden coherentes.
     await recomputeMonthFixedExpenses(data.year, data.month);
-    revalidatePath("/presupuestos");
+    revalidatePath("/financiero/presupuestos");
     revalidatePath("/financiero");
     return { ok: true };
   } catch (err) {
@@ -104,7 +104,7 @@ export async function recordExpense(formData: FormData) {
       where: { id: parsed.data.budgetId },
       data: { actualAmount: { increment: parsed.data.amount } },
     });
-    revalidatePath("/presupuestos");
+    revalidatePath("/financiero/presupuestos");
     revalidatePath("/financiero");
     return { ok: true };
   } catch (err) {
@@ -120,7 +120,7 @@ export async function resetActual(id: string) {
       where: { id },
       data: { actualAmount: 0 },
     });
-    revalidatePath("/presupuestos");
+    revalidatePath("/financiero/presupuestos");
     revalidatePath("/financiero");
     return { ok: true };
   } catch (err) {
@@ -204,7 +204,7 @@ export async function cloneBudgets(formData: FormData) {
       }
     }
     await recomputeMonthFixedExpenses(targetYear, targetMonth);
-    revalidatePath("/presupuestos");
+    revalidatePath("/financiero/presupuestos");
     revalidatePath("/financiero");
     return { ok: true, cloned, updated, total: source.length };
   } catch (err) {
@@ -219,7 +219,7 @@ export async function deleteBudget(id: string) {
     const b = await prisma.expenseBudget.findUnique({ where: { id }, select: { year: true, month: true } });
     await prisma.expenseBudget.delete({ where: { id } });
     if (b) await recomputeMonthFixedExpenses(b.year, b.month);
-    revalidatePath("/presupuestos");
+    revalidatePath("/financiero/presupuestos");
     revalidatePath("/financiero");
     return { ok: true };
   } catch (err) {

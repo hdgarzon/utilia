@@ -80,7 +80,7 @@ export default async function VentasPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-bold">Analítica de Ventas</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">Analítica de Ventas</h1>
 
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         <KPICard title={isCurrentPeriod ? "Ingresos mes actual" : `Ingresos — ${periodLabel}`} value={formatCurrency(totalRevenue30d)} icon={DollarSign} variant="success" />

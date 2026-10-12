@@ -13,7 +13,7 @@ export default function NuevaCampanaPage() {
         >
           <ArrowLeft className="h-4 w-4" />
         </Link>
-        <h1 className="text-xl font-bold">Nueva Campaña</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Nueva Campaña</h1>
       </div>
       <NewCampaignForm />
     </div>

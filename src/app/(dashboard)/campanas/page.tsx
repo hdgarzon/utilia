@@ -73,7 +73,7 @@ export default async function CampanasPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">Centro de Campañas</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Centro de Campañas</h1>
         <Link
           href="/campanas/nueva"
           className="flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90 transition-opacity"
@@ -83,26 +83,30 @@ export default async function CampanasPage() {
         </Link>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
-        <div className="rounded-xl border border-border bg-card p-4 space-y-1">
-          <p className="text-xs text-muted-foreground">Total Campañas</p>
-          <p className="text-2xl font-bold">{stats.total}</p>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-4 space-y-1">
-          <p className="text-xs text-muted-foreground">Activas</p>
-          <p className="text-2xl font-bold text-primary">{stats.active}</p>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-4 space-y-1">
-          <p className="text-xs text-muted-foreground">Mensajes Enviados</p>
-          <p className="text-2xl font-bold">{stats.totalSent.toLocaleString()}</p>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-4 space-y-1">
-          <p className="text-xs text-muted-foreground">Ingresos Atribuidos</p>
-          <p className="text-2xl font-bold text-primary">{formatCurrency(stats.totalRevenue)}</p>
-        </div>
-      </div>
-
       <StatusPostsToday posts={statusView} liquidacionPool={liquidacionPool} regularPool={regularPool} />
+
+      {/* Sin campañas creadas, cuatro tarjetas en cero solo ocupan espacio. */}
+      {campaigns.length > 0 && (
+        <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+          <div className="rounded-xl border border-border bg-card p-4 space-y-1">
+            <p className="text-xs text-muted-foreground">Total Campañas</p>
+            <p className="text-2xl font-bold">{stats.total}</p>
+          </div>
+          <div className="rounded-xl border border-border bg-card p-4 space-y-1">
+            <p className="text-xs text-muted-foreground">Activas</p>
+            <p className="text-2xl font-bold text-primary">{stats.active}</p>
+          </div>
+          <div className="rounded-xl border border-border bg-card p-4 space-y-1">
+            <p className="text-xs text-muted-foreground">Mensajes Enviados</p>
+            <p className="text-2xl font-bold">{stats.totalSent.toLocaleString()}</p>
+          </div>
+          <div className="rounded-xl border border-border bg-card p-4 space-y-1">
+            <p className="text-xs text-muted-foreground">Ingresos Atribuidos</p>
+            <p className="text-2xl font-bold text-primary">{formatCurrency(stats.totalRevenue)}</p>
+          </div>
+        </div>
+      )}
+
 
       {campaigns.length === 0 ? (
         <div className="rounded-xl border border-border bg-card p-12 text-center space-y-3">

@@ -19,7 +19,7 @@ export default async function CargarPage() {
   if (!options) {
     return (
       <div className="space-y-6">
-        <h1 className="text-xl font-bold">Cargar productos</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Cargar productos</h1>
         <div className="rounded-xl border border-destructive/40 bg-destructive/5 p-6 flex items-start gap-3">
           <AlertTriangle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
           <div className="space-y-2">
@@ -38,7 +38,7 @@ export default async function CargarPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <h1 className="text-xl font-bold">Cargar productos</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Cargar productos</h1>
         <Link
           href="/productos"
           className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-secondary"

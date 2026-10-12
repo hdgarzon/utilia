@@ -12,7 +12,7 @@ export default async function LiquidacionPage() {
   if (!analysis) {
     return (
       <div className="space-y-4">
-        <h1 className="text-xl font-bold">Plan de Liquidación</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Plan de Liquidación</h1>
         <div className="rounded-xl border border-border bg-card p-8 text-center">
           <PackageX className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
           <p className="text-sm text-muted-foreground">Sin capital muerto detectado — todo tu inventario rota bien 👍</p>
@@ -37,7 +37,7 @@ export default async function LiquidacionPage() {
     if (goal.goalAmount > 0) {
       return (
         <div className="space-y-6">
-          <h1 className="text-xl font-bold">Plan de Liquidación de Capital Muerto</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Plan de Liquidación de Capital Muerto</h1>
           <div className="rounded-xl border border-primary/40 bg-primary/5 p-8 text-center space-y-2">
             <PackageX className="h-8 w-8 text-primary mx-auto" />
             <p className="text-sm font-semibold text-primary">¡Meta cumplida! Ya no tienes capital muerto.</p>
@@ -55,7 +55,7 @@ export default async function LiquidacionPage() {
     }
     return (
       <div className="space-y-4">
-        <h1 className="text-xl font-bold">Plan de Liquidación</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Plan de Liquidación</h1>
         <div className="rounded-xl border border-border bg-card p-8 text-center">
           <PackageX className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
           <p className="text-sm text-muted-foreground">Sin capital muerto detectado — todo tu inventario rota bien 👍</p>
@@ -73,7 +73,7 @@ export default async function LiquidacionPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-bold">Plan de Liquidación de Capital Muerto</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">Plan de Liquidación de Capital Muerto</h1>
 
       <div className={cn("rounded-xl border p-5", tone.border, tone.bg)}>
         <div className="flex items-start gap-3">
