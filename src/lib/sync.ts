@@ -840,9 +840,13 @@ export async function backfillSalesHistory(
   const cursor = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), 1));
 
   while (cursor < to) {
-    const inicio = new Date(cursor);
-    const fin = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1));
-    const etiqueta = inicio.toISOString().slice(0, 7);
+    // El mes se corta a medianoche COLOMBIA (05:00 UTC), igual que se agrupan
+    // los dias. Cortado a medianoche UTC, las ventas de 7pm-12am del ultimo dia
+    // caian en la consulta del mes siguiente, y ese upsert pisaba el dia entero
+    // con solo esas pocas ventas (ej. 31 de julio: $25.000 en vez de $346.000).
+    const etiqueta = cursor.toISOString().slice(0, 7);
+    const inicio = new Date(cursor.getTime() + COLOMBIA_OFFSET_MS);
+    const fin = new Date(Date.UTC(cursor.getUTCFullYear(), cursor.getUTCMonth() + 1, 1) + COLOMBIA_OFFSET_MS);
 
     const posOrders = await odoo.getPosOrdersBetween(inicio, fin);
     if (posOrders.length > 0) {
