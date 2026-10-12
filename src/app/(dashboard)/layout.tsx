@@ -3,6 +3,7 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { MobileNavProvider, MobileNavTrigger } from "@/components/layout/MobileNav";
 import { SyncButton } from "@/components/layout/SyncButton";
 import { PeriodSelector } from "@/components/layout/PeriodSelector";
+import { HashScroll } from "@/components/layout/HashScroll";
 import { getSelectedPeriod } from "@/lib/period";
 import { prisma } from "@/lib/prisma";
 
@@ -32,6 +33,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <MobileNavProvider>
+      <HashScroll />
       <div className="flex h-screen overflow-hidden bg-background">
         <Sidebar />
         <main className="flex-1 overflow-y-auto">
