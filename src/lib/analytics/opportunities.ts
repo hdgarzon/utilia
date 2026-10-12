@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { DEAD_STOCK_DAYS } from "./dead-stock";
+import { isServiceCategory } from "@/lib/service-categories";
 
 export interface OppProduct {
   key: string;
@@ -20,6 +21,8 @@ export interface Opportunities {
   deadStockTotal: number;     // capital total inmovilizado
   deadStockCount: number;     // cuántos productos componen ese capital muerto
   starsRevenue: number;       // ingreso mensual proyectado de las estrellas
+  belowCost: OppProduct[];    // con stock y precio de lista ≤ costo → cada venta pierde
+  belowCostCount: number;
 }
 
 /**
@@ -92,8 +95,41 @@ export async function getOpportunities(): Promise<Opportunities> {
 
   const deadAll = enriched.filter((p) => p.rotationDays > DEAD_STOCK_DAYS && p.stockQty > 0 && p.inventoryValue > 0);
   const deadStock = [...deadAll].sort((a, b) => b.inventoryValue - a.inventoryValue).slice(0, 8);
-  const deadStockTotal = deadAll.reduce((s, p) => s + p.inventoryValue, 0);
+  // El total y el conteo salen por VARIANTE con la misma regla que Liquidacion,
+  // para que el Resumen y Liquidacion den la misma cifra. La lista de arriba
+  // agrupa por template (exige que ninguna variante venda) y por eso suma menos.
+  const [deadAgg] = await prisma.$queryRaw<Array<{ total: number | null; n: number }>>`
+    SELECT SUM("stockQty" * cmp)::float8 AS total, COUNT(*)::int AS n
+    FROM "ProductInsight"
+    WHERE "stockQty" > 0 AND "rotationDays" > ${DEAD_STOCK_DAYS}
+  `;
+  const deadStockTotal = deadAgg?.total ?? 0;
   const starsRevenue = stars.reduce((s, p) => s + p.velocity * p.salePrice * 30, 0);
+
+  // Precio de lista igual o por debajo del costo, por variante y sin exigir
+  // rotacion: lo que no vende tambien pierde plata el dia que se venda.
+  const belowCostRows = await prisma.$queryRaw<
+    Array<{ id: number; name: string; category: string | null; salePrice: number; cmp: number; stockQty: number; rotationDays: number }>
+  >`
+    SELECT "odooProductId" AS id, name, category, "salePrice", cmp, "stockQty", "rotationDays"
+    FROM "ProductInsight"
+    WHERE "stockQty" > 0 AND cmp > 0 AND "salePrice" <= cmp
+      AND name NOT LIKE '%(archivado)'
+    ORDER BY (cmp - "salePrice") * "stockQty" DESC
+  `;
+  const belowCostAll = belowCostRows
+    .filter((r) => !isServiceCategory(r.category))
+    .map((r) => ({
+      key: `bc-${r.id}`,
+      name: r.name,
+      category: r.category,
+      velocity: 0,
+      marginPct: r.salePrice > 0 ? ((r.salePrice - r.cmp) / r.salePrice) * 100 : -100,
+      salePrice: r.salePrice,
+      stockQty: r.stockQty,
+      inventoryValue: r.stockQty * r.cmp,
+      rotationDays: r.rotationDays,
+    }));
 
   const strip = ({ cmp: _cmp, ...rest }: (typeof enriched)[number]): OppProduct => rest;
   return {
@@ -101,7 +137,9 @@ export async function getOpportunities(): Promise<Opportunities> {
     lowMargin: lowMargin.map(strip),
     deadStock: deadStock.map(strip),
     deadStockTotal,
-    deadStockCount: deadAll.length,
+    deadStockCount: deadAgg?.n ?? 0,
     starsRevenue,
+    belowCost: belowCostAll.slice(0, 8),
+    belowCostCount: belowCostAll.length,
   };
 }

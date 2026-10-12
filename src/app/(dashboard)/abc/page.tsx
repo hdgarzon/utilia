@@ -74,13 +74,13 @@ export default async function ABCPage() {
       </div>
 
       {/* Oportunidades de acción */}
-      {opps && (opps.stars.length > 0 || opps.lowMargin.length > 0 || opps.deadStock.length > 0) && (
+      {opps && (opps.stars.length > 0 || opps.lowMargin.length > 0 || opps.deadStock.length > 0 || opps.belowCost.length > 0) && (
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <Lightbulb className="h-4 w-4 text-primary" />
             <h2 className="text-sm font-semibold">Oportunidades de acción</h2>
           </div>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
             <OppCard
               title="Impulsar — estrellas"
               subtitle={`Venden y dejan margen · ${formatCurrency(opps.starsRevenue)}/mes`}
@@ -104,6 +104,14 @@ export default async function ABCPage() {
               icon={<Archive className="h-4 w-4" />}
               items={opps.deadStock}
               metric="dead"
+            />
+            <OppCard
+              title="Corregir precio — bajo costo"
+              subtitle={`${opps.belowCostCount} refs con precio ≤ costo · cada venta pierde`}
+              tone="destructive"
+              icon={<TrendingDown className="h-4 w-4" />}
+              items={opps.belowCost}
+              metric="below"
             />
           </div>
         </div>
@@ -159,7 +167,7 @@ function OppCard({
   tone: "primary" | "warning" | "destructive";
   icon: ReactNode;
   items: OppProduct[];
-  metric: "star" | "margin" | "dead";
+  metric: "star" | "margin" | "dead" | "below";
 }) {
   const c =
     tone === "primary"
@@ -188,7 +196,9 @@ function OppCard({
                   ? `${p.velocity.toFixed(1)}/d · ${p.marginPct.toFixed(0)}%`
                   : metric === "margin"
                     ? `${p.marginPct.toFixed(0)}%`
-                    : formatCurrency(p.inventoryValue)}
+                    : metric === "below"
+                      ? `${formatCurrency(p.salePrice)} · ${p.marginPct.toFixed(0)}%`
+                      : formatCurrency(p.inventoryValue)}
               </span>
             </div>
           ))

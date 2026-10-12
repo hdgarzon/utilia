@@ -4,6 +4,7 @@ import { odoo } from "@/lib/odoo";
 import { colombiaDayStartInstant, colombiaStartOfPreviousMonth, COLOMBIA_OFFSET_MS, daysInMonth } from "@/lib/timezone";
 import { getMonthFixedExpenses } from "@/lib/fixed-expenses";
 import { recomputeStockLevels } from "@/lib/analytics/stock-levels";
+import { saveCustomerCapture } from "@/lib/analytics/customers";
 
 // Sentinel: la primera vez no existe el registro, devolvemos undefined
 async function getLastSync(entity: string): Promise<Date | undefined> {
@@ -703,6 +704,8 @@ export async function recomputeVelocities() {
     await recomputeDaysOfStock();
     return;
   }
+
+  await saveCustomerCapture(posOrders);
 
   // Timestamp (UTC) de cada orden para ubicarla en su ventana.
   const orderMs = new Map<number, number>();
