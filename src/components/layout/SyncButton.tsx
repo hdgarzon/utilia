@@ -81,15 +81,16 @@ export function SyncButton() {
   return (
     <button
       onClick={handleSync}
+      aria-label="Sincronizar con Odoo"
       disabled={pending}
       title="Sincronizar datos desde Odoo + regenerar recomendaciones IA"
       className={cn(
-        "inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs font-medium transition-colors",
-        "hover:bg-secondary disabled:opacity-60 disabled:cursor-wait"
+        "inline-flex h-9 items-center gap-2 rounded-lg bg-secondary px-3 text-xs font-medium transition-colors",
+        "hover:bg-secondary/70 disabled:opacity-60 disabled:cursor-wait"
       )}
     >
       <Icon className={cn("h-3.5 w-3.5", pending && "animate-spin", tone)} />
-      <span>{pending ? "Sincronizando…" : "Sincronizar"}</span>
+      <span className="hidden sm:inline">{pending ? "Sincronizando…" : "Sincronizar"}</span>
     </button>
   );
 }

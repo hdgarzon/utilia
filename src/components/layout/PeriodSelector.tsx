@@ -10,7 +10,7 @@ const MONTHS = [
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
 ];
 
-const ALLOWED_PATHS = new Set(["/ventas", "/financiero", "/presupuestos"]);
+const ALLOWED_PATHS = new Set(["/ventas", "/financiero", "/financiero/presupuestos"]);
 
 interface Props {
   month: number;
@@ -30,8 +30,8 @@ export function PeriodSelector({ month, year, realMonth, realYear }: Props) {
   // En Presupuestos, un ?month=&year= explícito en la URL le gana a la
   // cookie (preserva links compartibles y el flujo de "Clonar a otro mes",
   // que navega con sus propios parámetros sin pasar por este componente).
-  const urlMonth = pathname === "/presupuestos" ? Number(searchParams.get("month")) : null;
-  const urlYear = pathname === "/presupuestos" ? Number(searchParams.get("year")) : null;
+  const urlMonth = pathname === "/financiero/presupuestos" ? Number(searchParams.get("month")) : null;
+  const urlYear = pathname === "/financiero/presupuestos" ? Number(searchParams.get("year")) : null;
   const effectiveMonth = urlMonth && urlYear ? urlMonth : month;
   const effectiveYear = urlMonth && urlYear ? urlYear : year;
   const effectiveIsCurrent = effectiveMonth === realMonth && effectiveYear === realYear;
@@ -39,8 +39,8 @@ export function PeriodSelector({ month, year, realMonth, realYear }: Props) {
   function go(newMonth: number, newYear: number) {
     startTransition(async () => {
       await setSelectedPeriod(newMonth, newYear);
-      if (pathname === "/presupuestos") {
-        router.push(`/presupuestos?month=${newMonth}&year=${newYear}`);
+      if (pathname === "/financiero/presupuestos") {
+        router.push(`/financiero/presupuestos?month=${newMonth}&year=${newYear}`);
       } else {
         router.refresh();
       }

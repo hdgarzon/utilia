@@ -18,7 +18,6 @@ import { KPICard } from "@/components/dashboard/KPICard";
 import { SalesChart } from "@/components/dashboard/SalesChart";
 import { StockAlert } from "@/components/dashboard/StockAlert";
 import { AIFeed } from "@/components/dashboard/AIFeed";
-import { WeeklyPattern } from "@/components/dashboard/WeeklyPattern";
 import { isServiceCategory } from "@/lib/service-categories";
 import { formatCurrency, cn } from "@/lib/utils";
 import {
@@ -237,7 +236,7 @@ export default async function DashboardPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-bold">Resumen Ejecutivo</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Resumen Ejecutivo</h1>
         <p className="text-xs text-muted-foreground mt-0.5">
           {new Date().toLocaleDateString("es-CO", { weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "America/Bogota" })}
         </p>
@@ -290,7 +289,7 @@ export default async function DashboardPage() {
           tone={deadStock > 0 ? "warning" : "success"}
         />
         <CommandCard
-          href="/inventario"
+          href="/reabastecimiento#existencias"
           label="Alertas de stock"
           value={String(criticalStock.length)}
           sub="productos críticos"
@@ -418,12 +417,7 @@ export default async function DashboardPage() {
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        <div className="xl:col-span-2">
-          <AIFeed recommendations={aiRecs} totalPending={aiRecsPendingTotal} />
-        </div>
-        <WeeklyPattern data={weeklyPattern} title="Patrón Semanal" windowDays={60} compact />
-      </div>
+      <AIFeed recommendations={aiRecs} totalPending={aiRecsPendingTotal} />
     </div>
   );
 }

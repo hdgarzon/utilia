@@ -1,11 +1,8 @@
 import {
   LayoutDashboard,
   TrendingUp,
-  Package,
   DollarSign,
   MessageSquare,
-  Tags,
-  Wallet,
   BarChart3,
   ShoppingBag,
   PackageX,
@@ -17,8 +14,9 @@ import {
 type NavItem = { href: string; label: string; icon: LucideIcon };
 
 /**
- * Menu agrupado por la pregunta que responde. Doce items sueltos eran una
- * lista para buscar; cinco grupos se leen de un vistazo.
+ * Menu agrupado por la pregunta que responde. La auditoria de octubre 2026
+ * fusiono Presupuestos en Financiero, Inventario en Reabastecimiento y
+ * Categorias en Analisis (ver redirects en next.config.ts): doce items a nueve.
  */
 export const navSections: { title: string | null; items: NavItem[] }[] = [
   {
@@ -26,34 +24,21 @@ export const navSections: { title: string | null; items: NavItem[] }[] = [
     items: [
       { href: "/", label: "Resumen", icon: LayoutDashboard },
       { href: "/ventas", label: "Ventas", icon: TrendingUp },
-    ],
-  },
-  {
-    title: "Plata",
-    items: [
       { href: "/financiero", label: "Financiero", icon: DollarSign },
-      { href: "/presupuestos", label: "Presupuestos", icon: Wallet },
     ],
   },
   {
     title: "Inventario",
     items: [
-      { href: "/inventario", label: "Inventario", icon: Package },
-      { href: "/liquidacion", label: "Liquidación", icon: PackageX },
       { href: "/reabastecimiento", label: "Reabastecimiento", icon: ClipboardList },
       { href: "/compras", label: "Compras", icon: ShoppingBag },
+      { href: "/liquidacion", label: "Liquidación", icon: PackageX },
     ],
   },
   {
-    title: "Análisis",
+    title: "Análisis y catálogo",
     items: [
-      { href: "/categorias", label: "Categorías", icon: Tags },
-      { href: "/abc", label: "ABC / Pareto", icon: BarChart3 },
-    ],
-  },
-  {
-    title: "Catálogo y clientes",
-    items: [
+      { href: "/abc", label: "Análisis", icon: BarChart3 },
       { href: "/productos", label: "Productos", icon: Boxes },
       { href: "/campanas", label: "Campañas", icon: MessageSquare },
     ],
@@ -63,19 +48,19 @@ export const navSections: { title: string | null; items: NavItem[] }[] = [
 export const navItems: NavItem[] = navSections.flatMap((s) => s.items);
 
 /**
- * Marca Utilia para la cabecera del sidebar. Wordmark con cuadro lima (acento del
- * logo) + nombre. Para usar el logo real, dejar el PNG en /public y reemplazar
- * el cuadro por <Image src="/logo.png" ... />.
+ * Marca Utilia para la cabecera del sidebar: cuadro con el acento verde +
+ * nombre. Para usar el logo real, dejar el PNG en /public y reemplazar el
+ * cuadro por <Image src="/logo.png" ... />.
  */
 export function BrandMark() {
   return (
     <div className="flex items-center gap-2.5">
-      <span className="grid h-7 w-7 place-items-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground text-sm font-bold">
+      <span className="grid h-7 w-7 place-items-center rounded-lg bg-primary text-primary-foreground text-sm font-semibold">
         U
       </span>
       <div className="leading-none">
-        <p className="text-base font-bold tracking-tight text-white">utilia</p>
-        <p className="text-[9px] uppercase tracking-[0.15em] text-white/60 mt-0.5">papelería y variedades</p>
+        <p className="text-[15px] font-semibold tracking-tight text-foreground">utilia</p>
+        <p className="text-[10px] text-muted-foreground mt-1">papelería y variedades</p>
       </div>
     </div>
   );

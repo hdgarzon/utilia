@@ -438,7 +438,6 @@ export async function setLeadTimeAction(days: number): Promise<ActionResult & { 
     await setLeadTimeDays(parsed.data.days);
     const r = await recomputeStockLevels();
     revalidatePath("/reabastecimiento");
-    revalidatePath("/inventario");
     return { ok: true, withLevels: r.withLevels };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };

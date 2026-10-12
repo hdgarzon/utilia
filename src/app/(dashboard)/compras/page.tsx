@@ -24,7 +24,7 @@ export default async function ComprasPage({ searchParams }: PageProps) {
   if (!plan || plan.categories.length === 0) {
     return (
       <div className="space-y-4">
-        <h1 className="text-xl font-bold">Plan de Compras</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Plan de Compras</h1>
         <div className="rounded-xl border border-border bg-card p-8 text-center">
           <ShoppingBag className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
           <p className="text-sm text-muted-foreground">Aún no hay datos de velocidad para proyectar compras</p>
@@ -52,7 +52,7 @@ export default async function ComprasPage({ searchParams }: PageProps) {
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold">Plan de Compras (Open-to-Buy)</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Plan de Compras (Open-to-Buy)</h1>
           <p className="text-xs text-muted-foreground mt-0.5">
             El dinero sigue la venta y la rotación — categorías más activas reciben más capital ·{" "}
             <Link href="/reabastecimiento" className="text-primary hover:underline">
@@ -79,54 +79,47 @@ export default async function ComprasPage({ searchParams }: PageProps) {
         </div>
       </div>
 
-      {/* Titular: ¿en qué gastar este mes? */}
-      <div className="rounded-xl border border-primary/40 bg-primary/5 p-5">
-        <div className="flex items-start gap-3">
-          <ShoppingBag className="h-6 w-6 mt-0.5 shrink-0 text-primary" />
-          <div className="space-y-1">
-            <p className="text-xs text-muted-foreground uppercase tracking-wider">¿En qué gastar este mes?</p>
-            <p className="text-lg font-bold text-primary">
-              {urgentNames.length > 0
-                ? `Prioriza: ${urgentNames.join(" · ")}`
-                : "Sin compras urgentes — vas bien de stock"}
+      {/* ¿En qué gastar este mes? Titular y Fondo de Reposición en un solo bloque:
+          antes eran dos tarjetas que repetían inversión sugerida y faltante. */}
+      <section className="rounded-xl bg-primary/5 p-5 md:p-6 space-y-5">
+        <div className="space-y-1">
+          <p className="text-xs text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+            <ShoppingBag className="h-3 w-3 text-primary" />
+            ¿En qué gastar este mes?
+          </p>
+          <p className="text-lg font-semibold text-primary text-balance">
+            {urgentNames.length > 0
+              ? `Prioriza: ${urgentNames.join(" · ")}`
+              : "Sin compras urgentes — vas bien de stock"}
+          </p>
+          {frenoNames.length > 0 && (
+            <p className="text-xs text-muted-foreground">
+              <span className="text-warning font-medium">Frena (sobre-stock):</span> {frenoNames.join(", ")}
             </p>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              Inversión sugerida <span className="font-semibold text-foreground">{formatCurrency(totals.totalAdjustedInvestment)}</span>
-              {capitalGap <= 0
-                ? <> · <span className="text-primary font-medium">tu fondo de reposición la cubre</span></>
-                : <> · <span className="text-destructive font-medium">faltan {formatCurrency(capitalGap)}</span> — empieza por las urgentes</>}
-              {frenoNames.length > 0 && (
-                <> · <span className="text-warning font-medium">frena (sobre-stock):</span> {frenoNames.join(", ")}</>
-              )}
-            </p>
-          </div>
+          )}
         </div>
-      </div>
-
-      {/* Fondo de Reposición — la pieza central */}
-      <div className="rounded-xl border border-primary/30 bg-primary/5 p-5 space-y-3">
-        <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
           <div>
-            <p className="text-xs text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+            <p className="text-xs text-muted-foreground flex items-center gap-1.5">
               <Wallet className="h-3 w-3 text-primary" />
               Fondo de Reposición disponible
             </p>
-            <p className="text-3xl font-bold text-primary mt-1">{formatCurrency(reinvestmentFund)}</p>
+            <p className="text-3xl font-semibold tracking-tight text-primary mt-1 tabular-nums">{formatCurrency(reinvestmentFund)}</p>
             <p className="text-xs text-muted-foreground mt-0.5">
               COGS real de los últimos {reinvestmentFundDays} días — este dinero <strong className="text-foreground">ya le pertenece al inventario</strong>, no es utilidad
             </p>
           </div>
-          <div className="text-right">
-            <p className="text-xs text-muted-foreground uppercase tracking-wider">Inversión sugerida (con frenos)</p>
-            <p className="text-2xl font-bold mt-1">{formatCurrency(totals.totalAdjustedInvestment)}</p>
+          <div>
+            <p className="text-xs text-muted-foreground">Inversión sugerida (con frenos)</p>
+            <p className="text-3xl font-semibold tracking-tight mt-1 tabular-nums">{formatCurrency(totals.totalAdjustedInvestment)}</p>
             <p className={cn("text-xs font-medium mt-0.5", capitalGap > 0 ? "text-destructive" : "text-primary")}>
               {capitalGap > 0
-                ? `⚠ Faltan ${formatCurrency(capitalGap)} — considera priorizar categorías urgentes`
-                : `✓ El fondo cubre la inversión con ${formatCurrency(-capitalGap)} de margen`}
+                ? `Faltan ${formatCurrency(capitalGap)} — empieza por las categorías urgentes`
+                : `El fondo la cubre con ${formatCurrency(-capitalGap)} de margen`}
             </p>
           </div>
         </div>
-      </div>
+      </section>
 
       {/* Compras reales del mes (Odoo: purchase.order confirmadas) */}
       {purchaseSummary && <PurchasesActuals summary={purchaseSummary} reinvestmentFund={reinvestmentFund} />}

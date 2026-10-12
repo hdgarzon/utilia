@@ -3,6 +3,7 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { MobileNavProvider, MobileNavTrigger } from "@/components/layout/MobileNav";
 import { SyncButton } from "@/components/layout/SyncButton";
 import { PeriodSelector } from "@/components/layout/PeriodSelector";
+import { HashScroll } from "@/components/layout/HashScroll";
 import { getSelectedPeriod } from "@/lib/period";
 import { prisma } from "@/lib/prisma";
 
@@ -32,11 +33,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <MobileNavProvider>
-      <div className="flex h-screen overflow-hidden">
+      <HashScroll />
+      <div className="flex h-screen overflow-hidden bg-background">
         <Sidebar />
-        <main className="flex-1 overflow-y-auto bg-background">
-          <header className="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-            <div className="flex items-center justify-between gap-3 px-4 md:px-6 py-3">
+        <main className="flex-1 overflow-y-auto">
+          <header className="sticky top-0 z-10 bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70">
+            <div className="mx-auto flex h-14 w-full max-w-7xl items-center gap-3 px-4 md:h-16 md:px-8">
               <MobileNavTrigger />
               <Suspense fallback={null}>
                 <PeriodSelector
@@ -46,17 +48,17 @@ export default async function DashboardLayout({ children }: { children: React.Re
                   realYear={period.realYear}
                 />
               </Suspense>
-              <div className="flex items-center gap-3">
+              <div className="ml-auto flex items-center gap-3">
                 {lastSyncLabel && (
                   <span className="hidden sm:inline text-xs text-muted-foreground">
-                    Último sync: <span className="text-foreground">{lastSyncLabel}</span>
+                    Actualizado <span className="text-foreground">{lastSyncLabel}</span>
                   </span>
                 )}
                 <SyncButton />
               </div>
             </div>
           </header>
-          <div className="p-4 md:p-6">{children}</div>
+          <div className="mx-auto w-full max-w-7xl px-4 pb-16 pt-4 md:px-8 md:pt-6">{children}</div>
         </main>
       </div>
     </MobileNavProvider>
