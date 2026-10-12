@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { colombiaDayOf, colombiaToday, daysBetween } from "@/lib/timezone";
+import { colombiaDayOf, colombiaDaysAgo, colombiaToday, daysBetween } from "@/lib/timezone";
 
 /**
  * Capital muerto = producto con stock y mas de DEAD_STOCK_DAYS dias sin venta.
@@ -96,6 +96,37 @@ export async function getDeadStockAnalysis(): Promise<DeadStockAnalysis> {
     deadStockPctOfInventory,
     byCategory,
   };
+}
+
+export interface InventoryHealth {
+  inventoryValue: number;   // stock × costo, todo el inventario con existencias
+  dailyCogs: number;        // costo de lo vendido por dia calendario, ultimos 30 dias
+  daysOfInventory: number;  // cuantos dias de venta hay en bodega (0 si no hay venta)
+  annualTurns: number;      // vueltas al año del inventario
+}
+
+/**
+ * Dias de inventario y rotacion anual: el inventario medido contra lo que se
+ * vende. Es la metrica de balance que el P&L no muestra — una papeleria sana
+ * rota 4-6 veces al año (60-90 dias de inventario).
+ */
+export async function getInventoryHealth(): Promise<InventoryHealth> {
+  const WINDOW = 30;
+  const [inv, cogs] = await Promise.all([
+    prisma.$queryRaw<Array<{ v: number | null }>>`
+      SELECT SUM("stockQty" * cmp)::float8 AS v FROM "ProductInsight" WHERE "stockQty" > 0
+    `,
+    prisma.financialSnapshot.aggregate({
+      where: { date: { gte: colombiaDaysAgo(WINDOW) } },
+      _sum: { totalCost: true },
+    }),
+  ]);
+  const inventoryValue = inv[0]?.v ?? 0;
+  // Por dia CALENDARIO: los dias cerrados tambien cuentan como dias de cobertura.
+  const dailyCogs = (cogs._sum.totalCost ?? 0) / WINDOW;
+  const daysOfInventory = dailyCogs > 0 ? inventoryValue / dailyCogs : 0;
+  const annualTurns = daysOfInventory > 0 ? 365 / daysOfInventory : 0;
+  return { inventoryValue, dailyCogs, daysOfInventory, annualTurns };
 }
 
 const GOAL_AMOUNT_KEY = "dead_stock_goal_amount";

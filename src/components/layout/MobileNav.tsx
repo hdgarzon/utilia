@@ -1,12 +1,10 @@
 "use client";
 
 import { useState, createContext, useContext } from "react";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
-import { cn } from "@/lib/utils";
 import { Menu, X, LogOut } from "lucide-react";
-import { navItems, BrandMark } from "./nav-config";
+import { BrandMark } from "./nav-config";
+import { NavLinks } from "./NavLinks";
 
 const MobileNavContext = createContext<() => void>(() => {});
 
@@ -20,7 +18,6 @@ const MobileNavContext = createContext<() => void>(() => {});
  */
 export function MobileNavProvider({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
-  const pathname = usePathname();
 
   return (
     <>
@@ -34,26 +31,8 @@ export function MobileNavProvider({ children }: { children: React.ReactNode }) {
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <nav className="flex-1 space-y-1 px-3 py-4 overflow-y-auto">
-              {navItems.map(({ href, label, icon: Icon }) => {
-                const active = pathname === href || (href !== "/" && pathname.startsWith(href));
-                return (
-                  <Link
-                    key={href}
-                    href={href}
-                    onClick={() => setOpen(false)}
-                    className={cn(
-                      "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                      active
-                        ? "bg-white/15 text-white"
-                        : "text-sidebar-foreground/75 hover:bg-white/10 hover:text-white"
-                    )}
-                  >
-                    <Icon className="h-4 w-4 shrink-0" />
-                    {label}
-                  </Link>
-                );
-              })}
+            <nav className="flex-1 px-3 py-4 overflow-y-auto">
+              <NavLinks onNavigate={() => setOpen(false)} />
             </nav>
             <div className="border-t border-white/10 p-3">
               <button

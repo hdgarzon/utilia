@@ -11,6 +11,8 @@ import { getOpenToBuyPlan } from "@/lib/analytics/open-to-buy";
 import { getOpportunities } from "@/lib/analytics/opportunities";
 import { getReplenishmentSummary } from "@/lib/analytics/replenishment";
 import { getTodayStatusProgress } from "@/lib/analytics/status-posts";
+import { getInventoryHealth } from "@/lib/analytics/dead-stock";
+import { getCustomerCapture } from "@/lib/analytics/customers";
 import { MAX_ACTIVE_RECS } from "@/lib/ai/recommendations";
 import { KPICard } from "@/components/dashboard/KPICard";
 import { SalesChart } from "@/components/dashboard/SalesChart";
@@ -30,6 +32,9 @@ import {
   ClipboardList,
   ChevronRight,
   Megaphone,
+  Warehouse,
+  Users,
+  BadgeAlert,
 } from "lucide-react";
 
 // Activas = sin aplicar, sin descartar y sin vencer. Las vencidas no son
@@ -131,7 +136,7 @@ async function getDashboardData() {
 
 export default async function DashboardPage() {
   const { year: currentYear, month: currentMonth } = colombiaYearMonthDay();
-  const [data, monthCmp, otb, opps, replenishment, statusProgress] = await Promise.all([
+  const [data, monthCmp, otb, opps, replenishment, statusProgress, invHealth, capture] = await Promise.all([
     getDashboardData().catch(() => ({
       today: null,
       todayRevenue: 0,
@@ -152,6 +157,8 @@ export default async function DashboardPage() {
     getOpportunities().catch(() => null),
     getReplenishmentSummary().catch(() => null),
     getTodayStatusProgress().catch(() => null),
+    getInventoryHealth().catch(() => null),
+    getCustomerCapture().catch(() => null),
   ]);
   const { today, todayRevenue, todayTransactions, todayTicket, isLiveToday, salesChange, ticketChange, criticalStock, aiRecs, aiRecsPendingTotal, hourlyData, weeklyPattern, todaySold } = data;
   const todayUnits = todaySold.reduce((s, p) => s + p.qty, 0);
@@ -216,6 +223,16 @@ export default async function DashboardPage() {
   const deadStock = opps?.deadStockTotal ?? 0;
   const deadStockCount = opps?.deadStockCount ?? 0;
   const starCount = opps?.stars.length ?? 0;
+
+  // Salud del negocio: lo que el P&L no muestra. Rotacion sana en papeleria:
+  // 4-6 vueltas al año (60-90 dias de inventario).
+  const invDays = invHealth?.daysOfInventory ?? 0;
+  const invTone: "success" | "warning" | "danger" =
+    !invHealth || invDays === 0 ? "warning" : invDays <= 90 ? "success" : invDays <= 150 ? "warning" : "danger";
+  const capturePct = capture?.pct ?? 0;
+  const captureTone: "success" | "warning" | "danger" =
+    capturePct >= 50 ? "success" : capturePct >= 20 ? "warning" : "danger";
+  const belowCostCount = opps?.belowCostCount ?? 0;
 
   return (
     <div className="space-y-6">
@@ -287,6 +304,34 @@ export default async function DashboardPage() {
           sub={replenishmentSub}
           icon={<ClipboardList className="h-3.5 w-3.5" />}
           tone={replenishmentTone}
+        />
+      </div>
+
+      {/* Salud del negocio: inventario, clientes y precios */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <CommandCard
+          href="/liquidacion"
+          label="Días de inventario"
+          value={invHealth && invDays > 0 ? `${Math.round(invDays)} días` : "—"}
+          sub={invHealth && invDays > 0 ? `rota ${invHealth.annualTurns.toFixed(1)}×/año · meta 4–6×` : "sin venta reciente"}
+          icon={<Warehouse className="h-3.5 w-3.5" />}
+          tone={invTone}
+        />
+        <CommandCard
+          href="/campanas"
+          label="Ventas con cliente"
+          value={capture ? `${capturePct.toFixed(0)}%` : "—"}
+          sub={capture ? `${capture.identified} de ${capture.orders} en 30 días · pide el celular en caja` : "se mide en el próximo sync"}
+          icon={<Users className="h-3.5 w-3.5" />}
+          tone={captureTone}
+        />
+        <CommandCard
+          href="/abc"
+          label="Precios bajo costo"
+          value={String(belowCostCount)}
+          sub={belowCostCount > 0 ? "refs que pierden plata en cada venta" : "ningún precio bajo costo"}
+          icon={<BadgeAlert className="h-3.5 w-3.5" />}
+          tone={belowCostCount > 0 ? "danger" : "success"}
         />
       </div>
 

@@ -91,6 +91,8 @@ src/proxy.ts            # auth gate (antes middleware.ts)
 - Odoo is upstream. Never write back to Odoo from a sync path. Writes happen only from user-triggered actions, through `src/lib/odoo-write.ts` (purchase-order drafts) and `src/lib/products/odoo-catalog-write.ts` (catalog import).
 - Date/period math goes through `src/lib/period.ts` and `src/lib/timezone.ts` — do not inline `new Date()` arithmetic.
 - Monthly P&L (Centro Financiero, home "¿Ganamos?") comes from `src/lib/analytics/financial-month.ts`: fixed cost is charged per calendar day from the budget, and only days closed by the last sync count. Do not sum `FinancialSnapshot.fixedExpenses`/`netProfit` for monthly figures — those columns skip days without sales.
+- Dead stock has one definition: `DEAD_STOCK_DAYS` (30) days without a sale, read from `ProductInsight.rotationDays`, which the sync recomputes for the whole catalog. The no-reorder rule is `NO_REORDER_DAYS` (45). Both live in `src/lib/analytics/dead-stock.ts`.
+- `backfillSalesHistory` cuts months at Colombia midnight (05:00 UTC). Cutting at UTC midnight overwrote each month's last day with only its 7pm-midnight sales.
 - Scheduled sync runs on Vercel Cron (`vercel.json`, daily at 10:00 UTC), which calls `GET /api/sync` signed with `CRON_SECRET`; `pnpm sync` is the manual equivalent.
 - `pnpm build` runs `prisma generate` first — a schema change requires a rebuild, not just a restart.
 - The Prisma client is generated into `src/generated/prisma/` (gitignored). Import models, enums and the `Prisma` namespace from `@/generated/prisma/client`, never from `@prisma/client`; take the client instance from `@/lib/prisma`.
