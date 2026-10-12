@@ -125,3 +125,17 @@ src/proxy.ts            # auth gate (antes middleware.ts)
 - Cambios no triviales: alinear primero (`/grill-with-docs` o preguntas), luego spec, luego implementar con tests.
 - Antes de proponer una librería nueva, revisa si ya hay algo equivalente en el repo.
 <!-- agent-kit:end -->
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues (hdgarzon/utilia) via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default vocabulary: needs-triage, needs-info, ready-for-agent, ready-for-human, wontfix. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
