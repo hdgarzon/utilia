@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(./**/.env)",
+      "Read(./**/.env.*)",
+      "Read(./**/secrets/**)",
+      "Read(./**/*.pem)",
+      "Read(./**/*.key)",
+      "Read(./**/*.dump)",
+      "Read(./**/*.sql.gz)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git add -A*)",
+      "Bash(git add .*)",
+      "Bash(rm -rf*)"
+    ],
+    "ask": [
+      "Bash(git push*)",
+      "Bash(supabase db push*)",
+      "Bash(vercel --prod*)"
+    ]
+  }
+}
