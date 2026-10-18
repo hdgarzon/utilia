@@ -44,3 +44,6 @@ docs/PLAN_CRECIMIENTO.md
 
 # datos de proveedor: facturas, precios de compra, fotos de catalogo
 joyeria/
+
+# Permisos locales del agente: pueden contener credenciales
+.claude/settings.local.json
