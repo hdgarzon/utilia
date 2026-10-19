@@ -4,11 +4,11 @@
 
 ## Tarea actual
 - Plan de remate octubre–enero: precio de remate por tramo de antigüedad en Liquidación y exportación de etiquetas (PR #73, rama `feat/precio-remate-por-tramo`).
-- SEO de las fichas de producto del sitio Odoo: generador de descripción web, meta title y meta descripción desde Productos (rama `feat/seo-fichas-producto`).
+- SEO de las fichas de producto del sitio Odoo: generador fusionado (PR #71) y clases A y B ya cubiertas en producción.
 
 ## Hecho
 - Liquidación: tramo de antigüedad, precio de remate sugerido y margen por producto; filtros por tramo y categoría; totales del lote; botón "Exportar etiquetas (CSV)". Precios en 0 o bajo costo marcados como "revisar precio" y fuera del descuento automático.
-- Corrida real de 5 fichas SEO escrita en Odoo (templates 18649, 19845, 19496, 20841, 20163, todas clase A) y verificada en www.utilia.pro: título, meta descripción y descripción larga visibles.
+- Textos SEO escritos en Odoo para las 130 fichas de clase A y B (5 de prueba + 125 en tres lotes, 0 fallos) y verificados en www.utilia.pro. Quedan 0 fichas A/B pendientes; las C y sin clase siguen disponibles para corridas futuras.
 - Generador SEO: selección por template (A/B primero, con stock, publicadas, sin descripción en Odoo, tope 50), generación con el modelo y límites de 60/155 caracteres garantizados en código, escritura a Odoo solo al confirmar la previsualización de 5 fichas. Lint y tests en verde.
 - Días sin venta recalculados para todo el catálogo y una sola definición de capital muerto (ADR 0001).
 - Meta de liquidación con fecha límite y ritmo; alerta de compras congeladas en Compras.
@@ -31,12 +31,14 @@
 - Resumen diario por WhatsApp: necesita la aprobación de Henry para enviar mensajes, el número de destino y el canal.
 
 ## Siguiente paso
-- Poner `ANTHROPIC_API_KEY` en Vercel (ya está en local) y renombrar la línea `OPENAI_API_KEY` de `.env.example`; luego correr desde Productos con tope 50 hasta cubrir A y B. Recomendaciones y estados de WhatsApp también dependen de esa clave ahora.
+- Renombrar la línea `OPENAI_API_KEY` por `ANTHROPIC_API_KEY=sk-ant-xxx` en `.env.example` (el agente no puede tocar `.env*`). La clave ya está en Vercel (Production y Preview) y las de OpenAI se borraron.
+- Siguiente frente SEO: texto introductorio para las 10 categorías de la tienda y, si se quiere, corridas de clase C desde Productos.
 - Confirmar el régimen de IVA con el contador y, si aplica, sumar el IVA de compras al costo.
 
 ## Notas de sesión
 <!-- AAAA-MM-DD: una o dos líneas -->
 - 2026-10-19: El precio de remate es una sugerencia en pantalla y en el CSV; no se escribe en Odoo. El tramo de costo + 10% se topa en el precio normal para que el remate nunca salga más caro.
+- 2026-10-19: Un lote de 50 fichas con esfuerzo bajo del modelo tarda ~80 s y cuesta menos de un dólar. La corrida de A/B se hizo por script con el mismo código de la acción, antes del deploy.
 - 2026-10-19: `generateObject` del SDK de IA ya está marcado como obsoleto (avisa en consola); recommendations.ts y seo-producto.ts lo usan. Migrar a `generateText` con `output` cuando se toque el módulo de IA.
 - 2026-10-11: En 10.229 ventas POS desde abril no hay ningún cliente asignado. El cuello de botella comercial está en la caja, no en el software.
 - 2026-10-11: El backfill y la meta se escribieron en producción antes de que CLAUDE.md exigiera confirmación de Henry para SQL y procesos en producción. Desde ahora eso lo ejecuta Henry.
