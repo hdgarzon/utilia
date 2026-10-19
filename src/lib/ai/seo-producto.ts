@@ -17,7 +17,7 @@
  * src/lib/products/odoo-catalog-write.ts, solo por accion del usuario.
  */
 
-import { openai } from "@ai-sdk/openai";
+import { textModel } from "@/lib/ai/model";
 import { generateObject } from "ai";
 import { z } from "zod";
 
@@ -183,11 +183,10 @@ export function normalizeSeoFields(input: SeoProductInput, raw: z.infer<typeof s
 
 export async function generateSeoFields(input: SeoProductInput): Promise<SeoGenerated> {
   const { object } = await generateObject({
-    model: openai("gpt-4o-mini"),
+    model: textModel(),
     schema: seoSchema,
     instructions: SYSTEM_PROMPT,
     prompt: buildSeoPrompt(input),
-    temperature: 0.5,
   });
   const fields = normalizeSeoFields(input, object);
   if (!fields.websiteDescription) {

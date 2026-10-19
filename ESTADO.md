@@ -23,12 +23,12 @@
 - Liquidar al ritmo de la meta y publicar los estados cada día.
 
 ## Bloqueado
-- Corrida real de 5 fichas SEO: la cuenta de OpenAI no tiene créditos (`You have no credits remaining`). La selección sí corrió contra datos reales (5 templates clase A). Al recargar créditos: abrir Productos → "Generar SEO (A/B)" con tope 5, confirmar, y abrir `/shop/<templateId>` en el sitio.
+- Corrida real de 5 fichas SEO: la IA pasó de OpenAI (sin créditos) a Anthropic (`src/lib/ai/model.ts`, `claude-opus-5-5`) y falta la clave `ANTHROPIC_API_KEY` en `.env.local` y en Vercel. Es una clave de API de console.anthropic.com con créditos de API; la suscripción de Claude.ai no sirve. La selección sí corrió contra datos reales (5 templates clase A). Con la clave: Productos → "Generar SEO (A/B)" con tope 5, confirmar, y abrir `/shop/<templateId>` en el sitio.
 - Margen real: depende de si el negocio es responsable de IVA. Si no lo es, el IVA de las compras es costo y el margen bajaría. Lo responde el contador.
 - Resumen diario por WhatsApp: necesita la aprobación de Henry para enviar mensajes, el número de destino y el canal.
 
 ## Siguiente paso
-- Recargar créditos de OpenAI y hacer la primera corrida de 5 fichas; luego subir el tope a 50 por corrida hasta cubrir A y B.
+- Crear la clave en console.anthropic.com, ponerla como `ANTHROPIC_API_KEY` (local y Vercel), renombrar la línea `OPENAI_API_KEY` de `.env.example`, y hacer la primera corrida de 5 fichas; luego subir el tope a 50 por corrida hasta cubrir A y B. Recomendaciones y estados de WhatsApp también dependen de esa clave ahora.
 - Confirmar el régimen de IVA con el contador y, si aplica, sumar el IVA de compras al costo.
 
 ## Notas de sesión

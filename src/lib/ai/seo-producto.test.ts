@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 const { generateObject } = vi.hoisted(() => ({ generateObject: vi.fn() }));
 vi.mock("ai", () => ({ generateObject }));
-vi.mock("@ai-sdk/openai", () => ({ openai: () => "modelo-mock" }));
+vi.mock("@ai-sdk/anthropic", () => ({ anthropic: () => "modelo-mock" }));
 
 import {
   generateSeoFields,

@@ -11,7 +11,7 @@
  * demanda eligiendo el origen (liquidación, regular o un producto puntual).
  */
 
-import { openai } from "@ai-sdk/openai";
+import { textModel } from "@/lib/ai/model";
 import { generateObject } from "ai";
 import { z } from "zod";
 import type { ProductInsight, StatusPost } from "@/generated/prisma/client";
@@ -90,7 +90,7 @@ async function generateCopy(input: {
 }): Promise<string> {
   try {
     const { object } = await generateObject({
-      model: openai("gpt-4o-mini"),
+      model: textModel(),
       schema: copySchema,
       instructions: input.mode === "regular" ? COPY_SYSTEM_PROMPT_REGULAR : COPY_SYSTEM_PROMPT_LIQUIDACION,
       prompt: `Producto: ${input.name}
@@ -130,7 +130,7 @@ Reglas:
 export async function suggestGanchoText(tema?: string): Promise<{ headline: string; subhead: string }> {
   try {
     const { object } = await generateObject({
-      model: openai("gpt-4o-mini"),
+      model: textModel(),
       schema: ganchoSchema,
       instructions: GANCHO_SYSTEM_PROMPT,
       prompt: tema?.trim()
