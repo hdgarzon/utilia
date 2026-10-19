@@ -139,3 +139,26 @@ Default vocabulary: needs-triage, needs-info, ready-for-agent, ready-for-human, 
 ### Domain docs
 
 Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+<!-- skills-flow:start -->
+## Flujo de skills
+
+Propón la skill en el momento indicado; no esperes a que Henry la recuerde. Si él dice que no, sigue sin ella.
+
+| Fase | Skill | Cuándo proponerla |
+|---|---|---|
+| Idea / decisión | `/abogado-del-diablo` | Decisión cara o difícil de revertir: infraestructura, cliente, dinero, seguridad |
+| Idea / decisión | `/grill-me` | Decisiones que no son de código |
+| Diseño | `/grill-with-docs` | Cambio no trivial sin spec. Antes de escribir código |
+| Plan | `/to-spec` → `/to-tickets` | Al terminar un grill, o cuando el trabajo no cabe en una sesión |
+| Construcción | `/implement` (con `/tdd`) | Hay spec o tickets listos |
+| Construcción | `/caveman` | Sesiones largas de código. Apagar (`/caveman off`) para grills, reviews y textos para clientes |
+| Bugs | `/diagnosing-bugs` | Tras dos intentos fallidos con un bug. Detente y cámbiate a esta skill |
+| Revisión | `/code-review` | Antes de abrir o fusionar un PR |
+| Cierre | `/handoff` | Antes de terminar la sesión: deja `ESTADO.md` al día |
+| Cualquiera | `/wait-what` | Si Henry dice que no entendió una respuesta |
+
+Reglas:
+- Una sesión = una fase. Si el trabajo salta de fase (por ejemplo, de diseño a construcción), sugiere `/handoff` y una sesión nueva.
+- No uses skills de otros plugins (10x-Team, etc.) para estas fases si existe una de esta tabla.
+<!-- skills-flow:end -->
