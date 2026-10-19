@@ -3,11 +3,11 @@
 > Actualizar al cerrar cada sesión. Es lo primero que lee la siguiente.
 
 ## Tarea actual
-- SEO de las fichas de producto del sitio Odoo: generador fusionado (PR #71) y clases A y B ya cubiertas en producción.
+- SEO de las fichas de producto del sitio Odoo: generador fusionado (PR #71) y todo el catálogo publicado con stock ya cubierto en producción.
 - Catálogo WhatsApp: exportación del catálogo al CSV de Meta Commerce Manager (rama `feat/exportacion-catalogo-meta`).
 
 ## Hecho
-- Textos SEO escritos en Odoo para las 130 fichas de clase A y B (5 de prueba + 125 en tres lotes, 0 fallos) y verificados en www.utilia.pro. Quedan 0 fichas A/B pendientes; las C y sin clase siguen disponibles para corridas futuras.
+- Textos SEO escritos en Odoo para 1.242 fichas: las 130 de clase A y B y luego las 1.112 restantes (60 de clase C y 1.052 sin clase), 0 fallos. Muestra verificada en www.utilia.pro. No quedan fichas publicadas con stock sin descripción.
 - Generador SEO: selección por template (A/B primero, con stock, publicadas, sin descripción en Odoo, tope 50), generación con el modelo y límites de 60/155 caracteres garantizados en código, escritura a Odoo solo al confirmar la previsualización de 5 fichas. Lint y tests en verde.
 - Catálogo WhatsApp: `buildMetaCatalogExport` selecciona hasta 500 templates (A, B, C, sin clase; con stock y venta en 30 días), `GET /api/catalog/meta.csv` lo descarga con sesión y `GET /api/catalog/image/[id]` sirve la foto en JPEG (pública, cacheada en CDN; ADR 0002). Botón en Productos. Tests de selección, formato y auth.
 - Días sin venta recalculados para todo el catálogo y una sola definición de capital muerto (ADR 0001).
@@ -32,8 +32,7 @@
 - Resumen diario por WhatsApp: necesita la aprobación de Henry para enviar mensajes, el número de destino y el canal.
 
 ## Siguiente paso
-- Renombrar la línea `OPENAI_API_KEY` por `ANTHROPIC_API_KEY=sk-ant-xxx` en `.env.example` (el agente no puede tocar `.env*`). La clave ya está en Vercel (Production y Preview) y las de OpenAI se borraron.
-- Siguiente frente SEO: texto introductorio para las 10 categorías de la tienda y, si se quiere, corridas de clase C desde Productos.
+- Siguiente frente SEO: texto introductorio para las 10 categorías de la tienda. Los productos nuevos se cubren desde Productos con "Generar SEO".
 - Confirmar el régimen de IVA con el contador y, si aplica, sumar el IVA de compras al costo.
 
 ## Notas de sesión
