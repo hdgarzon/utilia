@@ -11,7 +11,7 @@
  * libera aplicar, descartar o dejar vencer, y siempre lo mas urgente primero.
  */
 
-import { openai } from "@ai-sdk/openai";
+import { textModel } from "@/lib/ai/model";
 import { generateObject } from "ai";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
@@ -70,11 +70,10 @@ Genera una recomendación que el operador pueda accionar en menos de 2 minutos.`
 
 async function enrichWithLLM(signal: Signal) {
   const { object } = await generateObject({
-    model: openai("gpt-4o-mini"),
+    model: textModel(),
     schema: recommendationSchema,
     instructions: SYSTEM_PROMPT,
     prompt: buildPromptForSignal(signal),
-    temperature: 0.4,
   });
   return object;
 }

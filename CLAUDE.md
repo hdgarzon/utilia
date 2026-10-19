@@ -12,7 +12,7 @@ Guidance for Claude when working in this repository.
 - Write every commit as the repo author would. Imperative subject, `scope(area): resumen` prefix, no emoji, no filler.
 - **Commit language: Spanish**, unaccented, matching existing history (`feat(estados): plantilla gancho de intriga`).
 
-Exception: naming Claude/OpenAI as a *product dependency* is fine when it is factually part of the system — a model ID string, `@ai-sdk/openai` in `package.json`, a doc explaining the AI recommendation feature. The ban is on attribution, not on the API.
+Exception: naming Claude/OpenAI as a *product dependency* is fine when it is factually part of the system — a model ID string, `@ai-sdk/anthropic` in `package.json`, a doc explaining the AI recommendation feature. The ban is on attribution, not on the API.
 
 ## Sensitive data — never commit
 
@@ -20,7 +20,7 @@ Treat this repo as if it were public.
 
 **Never stage:**
 - `.env`, `.env.local`, `.env.production.local` or any variant except `.env.example`.
-- Odoo credentials or endpoint URLs, OpenAI API keys, `NEXTAUTH_SECRET`, database connection strings with a password.
+- Odoo credentials or endpoint URLs, Anthropic or OpenAI API keys, `NEXTAUTH_SECRET`, database connection strings with a password.
 - Production dumps, or seed/fixture files containing real customer names, emails, phones, or addresses.
 - Exports from production (CSV, JSON, XLSX), screenshots showing real records, or logs with real payloads.
 - Internal docs naming real customers, real suppliers, real margins, or contract prices.
@@ -58,7 +58,7 @@ pnpm backfill            # rebuild sales history from Odoo (scripts/backfill-his
 **Utilia** is a Next.js 16 App Router dashboard that syncs a business's Odoo instance into Postgres, then layers analytics, budgeting, replenishment, and AI-generated marketing on top.
 
 - **Stack:** Next.js 16 (App Router, `src/`), Prisma 7 (driver adapter `pg`) + Postgres (Supabase), NextAuth v5, Tailwind 4 + shadcn/radix, Vitest, Vercel.
-- **AI:** Vercel AI SDK + OpenAI (`src/lib/ai/`) — powers `AIRecommendation` and campaign/status copy generation.
+- **AI:** Vercel AI SDK + Anthropic (`src/lib/ai/`, model in `src/lib/ai/model.ts`, key `ANTHROPIC_API_KEY`) — powers `AIRecommendation`, status copy and product SEO text.
 
 ### Layout
 
@@ -76,7 +76,7 @@ src/lib/sync.ts         # Odoo → Postgres sync orchestration
 src/lib/snapshots.ts    # FinancialSnapshot rollups
 src/lib/fixed-expenses.ts # monthly fixed cost from budgets (inherits the last month that has one)
 src/lib/analytics/      # derived metrics
-src/lib/ai/             # prompt construction + OpenAI calls
+src/lib/ai/             # prompt construction + model calls (Anthropic via AI SDK)
 src/lib/period.ts       # fiscal period math
 src/lib/timezone.ts     # all date handling goes through here
 src/proxy.ts            # auth gate (antes middleware.ts)

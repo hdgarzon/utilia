@@ -56,19 +56,22 @@ describe("el costo y el precio solo se escriben al crear", () => {
 });
 
 describe("listas fijadas", () => {
-  it("la lista de actualizacion son exactamente los cinco campos del catalogo", () => {
-    expect(UPDATE_FIELDS.size).toBe(5);
+  it("la lista de actualizacion son los cinco campos del catalogo mas los tres textos SEO", () => {
+    expect(UPDATE_FIELDS.size).toBe(8);
     expect([...UPDATE_FIELDS].sort()).toEqual([
       "categ_id",
       "is_published",
       "public_categ_ids",
       "seller_ids",
       "supplier_taxes_id",
+      "website_description",
+      "website_meta_description",
+      "website_meta_title",
     ]);
   });
 
-  it("la lista de creacion son esos cinco mas los siete de alta", () => {
-    expect(CREATE_FIELDS.size).toBe(13);
+  it("la lista de creacion son esos ocho mas los siete de alta", () => {
+    expect(CREATE_FIELDS.size).toBe(16);
     expect([...CREATE_FIELDS].sort()).toEqual([
       "available_in_pos",
       "categ_id",
@@ -83,6 +86,9 @@ describe("listas fijadas", () => {
       "standard_price",
       "supplier_taxes_id",
       "type",
+      "website_description",
+      "website_meta_description",
+      "website_meta_title",
     ]);
   });
 

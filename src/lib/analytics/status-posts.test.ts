@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 
 vi.mock("@/lib/prisma", () => ({ prisma: {} }));
-vi.mock("@ai-sdk/openai", () => ({ openai: vi.fn() }));
+vi.mock("@ai-sdk/anthropic", () => ({ anthropic: vi.fn() }));
 vi.mock("ai", () => ({ generateObject: vi.fn() }));
 
 import { discountForRotation } from "./status-posts";
