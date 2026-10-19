@@ -4,7 +4,7 @@ const { executeKw } = vi.hoisted(() => ({ executeKw: vi.fn() }));
 vi.mock("@/lib/odoo", () => ({ odooRpc: { executeKw, searchRead: vi.fn() } }));
 vi.mock("@/lib/odoo-write", () => ({ translateOdooError: (e: unknown) => String(e) }));
 
-import { updateTemplates } from "./odoo-catalog-write";
+import { updateTemplates, writeSeoFields } from "./odoo-catalog-write";
 
 // Cuerpo de bloque a proposito: si la arrow function devolviera el mock
 // (retorno implicito de mockReset), Vitest la registraria como callback de
@@ -180,5 +180,34 @@ describe("createTemplate", () => {
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+describe("writeSeoFields", () => {
+  const campos = {
+    websiteDescription: "<p>Cuaderno para el colegio.</p>",
+    metaTitle: "Cuaderno Argollado | Utilia Sabaneta",
+    metaDescription: "Compra tu cuaderno en Sabaneta o con envio.",
+  };
+
+  it("escribe los tres campos SEO sobre la plantilla", async () => {
+    executeKw.mockResolvedValue(true);
+    await writeSeoFields(42, campos);
+    const [modelo, metodo, args] = executeKw.mock.calls[0];
+    expect(modelo).toBe("product.template");
+    expect(metodo).toBe("write");
+    expect(args).toEqual([
+      [42],
+      {
+        website_description: campos.websiteDescription,
+        website_meta_title: campos.metaTitle,
+        website_meta_description: campos.metaDescription,
+      },
+    ]);
+  });
+
+  it("rechaza textos vacios antes de salir a la red", async () => {
+    await expect(writeSeoFields(42, { ...campos, metaTitle: " " })).rejects.toThrow(/incompletos/);
+    expect(executeKw).not.toHaveBeenCalled();
   });
 });

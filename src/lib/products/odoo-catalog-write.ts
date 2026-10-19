@@ -8,6 +8,8 @@ import {
   toOdooValues,
   toOdooCreateValues,
   toOdooOrderpointValues,
+  toOdooSeoValues,
+  type SeoFieldsPatch,
 } from "./write-guard";
 import type { BulkResult, TemplatePatch } from "./types";
 import type { ProductCreateInput } from "./import-types";
@@ -86,9 +88,27 @@ export async function updateTemplates(ids: number[], patch: TemplatePatch): Prom
  * este respondio con un error de negocio. Sin respuesta de negocio, el fallo
  * es de transporte y reintentar linea por linea no descubre nada.
  */
-function esRechazoDeNegocio(err: unknown): boolean {
+export function esRechazoDeNegocio(err: unknown): boolean {
   const raw = err instanceof Error ? err.message : String(err);
   return raw.toLowerCase().includes("odoo rpc error");
+}
+
+/**
+ * Escribe los textos SEO de UNA ficha de producto (descripcion web, meta
+ * title y meta descripcion). Se llama por template porque cada ficha lleva
+ * su propio texto; no hay lote posible.
+ *
+ * Igual que el resto del modulo: solo desde la accion del usuario, nunca
+ * desde el sync. Los tres campos pasan por la lista blanca de write-guard.
+ */
+export async function writeSeoFields(templateId: number, fields: SeoFieldsPatch): Promise<void> {
+  assertModelAllowed(MODEL);
+  if (!fields.websiteDescription.trim() || !fields.metaTitle.trim() || !fields.metaDescription.trim()) {
+    throw new Error(`Textos SEO incompletos para la ficha ${templateId}`);
+  }
+  const values = toOdooSeoValues(fields);
+  assertWritableOnUpdate(values);
+  await write([templateId], values);
 }
 
 function write(ids: number[], values: Record<string, unknown>): Promise<boolean> {
