@@ -76,6 +76,10 @@ describe("sanitizeDescriptionHtml", () => {
     expect(sanitizeDescriptionHtml(sucio)).toBe("<p>Hola <strong>mundo</strong></p>");
   });
 
+  it("quita comentarios y no se corta con '>' dentro de un atributo", () => {
+    expect(sanitizeDescriptionHtml('<!-- nota --><p title="a>b">Hola</p>')).toBe("<p>Hola</p>");
+  });
+
   it("envuelve texto plano en un parrafo", () => {
     expect(sanitizeDescriptionHtml("Texto suelto")).toBe("<p>Texto suelto</p>");
   });

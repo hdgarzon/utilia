@@ -88,7 +88,7 @@ export async function updateTemplates(ids: number[], patch: TemplatePatch): Prom
  * este respondio con un error de negocio. Sin respuesta de negocio, el fallo
  * es de transporte y reintentar linea por linea no descubre nada.
  */
-function esRechazoDeNegocio(err: unknown): boolean {
+export function esRechazoDeNegocio(err: unknown): boolean {
   const raw = err instanceof Error ? err.message : String(err);
   return raw.toLowerCase().includes("odoo rpc error");
 }

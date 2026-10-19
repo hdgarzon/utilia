@@ -3,15 +3,18 @@
 import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { loadSeoCandidates, type SeoCandidate } from "@/lib/products/seo-candidates";
+import { SEO_BATCH_LIMIT, SEO_BATCH_MAX, SEO_PREVIEW_COUNT } from "@/lib/products/seo-limits";
 import {
-  loadSeoCandidates,
-  SEO_BATCH_LIMIT,
-  SEO_BATCH_MAX,
-  SEO_PREVIEW_COUNT,
-  type SeoCandidate,
-} from "@/lib/products/seo-candidates";
-import { generateSeoBatch, META_TITLE_MAX, META_DESCRIPTION_MAX, type SeoGenerated } from "@/lib/ai/seo-producto";
-import { writeSeoFields } from "@/lib/products/odoo-catalog-write";
+  generateSeoBatch,
+  fitMetaTitle,
+  fitMetaDescription,
+  sanitizeDescriptionHtml,
+  META_TITLE_MAX,
+  META_DESCRIPTION_MAX,
+  type SeoGenerated,
+} from "@/lib/ai/seo-producto";
+import { writeSeoFields, esRechazoDeNegocio } from "@/lib/products/odoo-catalog-write";
 import { translateOdooError } from "@/lib/odoo-write";
 
 /**
@@ -110,7 +113,17 @@ export async function writeSeoBatch(input: unknown): Promise<SeoWriteResult> {
     // tanto) y los ids no se aceptan del cliente a ciegas.
     const candidatas = await loadSeoCandidates(limit);
     const candidataPorId = new Map(candidatas.map((c) => [c.templateId, c]));
-    const listas: SeoGenerated[] = previewed.filter((p) => candidataPorId.has(p.templateId));
+    // Lo previsualizado vuelve del cliente: se vuelve a sanear y acotar en
+    // el servidor, porque termina en una pagina publica.
+    const listas: SeoGenerated[] = previewed
+      .filter((p) => candidataPorId.has(p.templateId))
+      .map((p) => ({
+        ...p,
+        websiteDescription: sanitizeDescriptionHtml(p.websiteDescription),
+        metaTitle: fitMetaTitle(p.metaTitle.replace(/\s*\|\s*Utilia( Sabaneta)?\s*$/i, "")),
+        metaDescription: fitMetaDescription(p.metaDescription),
+      }))
+      .filter((p) => p.websiteDescription.length > 0);
     const yaListas = new Set(listas.map((p) => p.templateId));
     const porGenerar = candidatas.filter((c) => !yaListas.has(c.templateId));
 
@@ -119,12 +132,23 @@ export async function writeSeoBatch(input: unknown): Promise<SeoWriteResult> {
 
     const fallidas = [...failed];
     let written = 0;
-    for (const ficha of todas) {
+    for (let i = 0; i < todas.length; i += 1) {
+      const ficha = todas[i];
       try {
         await writeSeoFields(ficha.templateId, ficha);
         written += 1;
       } catch (err) {
-        fallidas.push({ templateId: ficha.templateId, name: ficha.name, error: translateOdooError(err, "catalogo") });
+        const mensaje = translateOdooError(err, "catalogo");
+        if (!esRechazoDeNegocio(err)) {
+          // Odoo no respondio: seguir seria repetir el mismo timeout por cada
+          // ficha que queda y pasarse del tiempo de la funcion sin registrar
+          // nada. Se marca lo que falta como fallido y se corta.
+          for (const resto of todas.slice(i)) {
+            fallidas.push({ templateId: resto.templateId, name: resto.name, error: mensaje });
+          }
+          break;
+        }
+        fallidas.push({ templateId: ficha.templateId, name: ficha.name, error: mensaje });
       }
     }
 
@@ -150,6 +174,7 @@ export async function writeSeoBatch(input: unknown): Promise<SeoWriteResult> {
 
 /** Ultima corrida registrada, para mostrarla junto al boton. */
 export async function getSeoUltimaCorrida(): Promise<SeoUltimaCorrida | null> {
+  await requireSession();
   const row = await prisma.setting.findUnique({ where: { key: SETTING_ULTIMA_CORRIDA } });
   if (!row) return null;
   try {

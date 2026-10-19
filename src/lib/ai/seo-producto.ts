@@ -153,8 +153,11 @@ const TAGS_PERMITIDAS = new Set(["p", "ul", "ol", "li", "strong", "em", "br"]);
  * <script> que se colara del modelo seria un agujero, no un detalle.
  */
 export function sanitizeDescriptionHtml(html: string): string {
-  let out = html.replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, "");
-  out = out.replace(/<\/?([a-zA-Z][a-zA-Z0-9]*)\b[^>]*>/g, (_m, tag: string, offset: number, str: string) => {
+  let out = html.replace(/<!--[\s\S]*?-->/g, "");
+  out = out.replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, "");
+  // Los atributos entrecomillados pueden contener '>'; la alternancia los
+  // consume enteros para que la etiqueta no se corte antes de tiempo.
+  out = out.replace(/<\/?([a-zA-Z][a-zA-Z0-9]*)\b(?:[^>"']|"[^"]*"|'[^']*')*>/g, (_m, tag: string, offset: number, str: string) => {
     const t = tag.toLowerCase();
     if (!TAGS_PERMITIDAS.has(t)) return "";
     const cierre = str[offset + 1] === "/";
@@ -187,6 +190,10 @@ export async function generateSeoFields(input: SeoProductInput): Promise<SeoGene
     schema: seoSchema,
     instructions: SYSTEM_PROMPT,
     prompt: buildSeoPrompt(input),
+    // Textos de 100 palabras con datos dados: el razonamiento largo no
+    // mejora el resultado y si alarga una corrida de 50 hacia el limite de
+    // la funcion serverless.
+    providerOptions: { anthropic: { effort: "low" } },
   });
   const fields = normalizeSeoFields(input, object);
   if (!fields.websiteDescription) {

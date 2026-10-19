@@ -4,7 +4,7 @@ vi.mock("@/lib/prisma", () => ({ prisma: {} }));
 vi.mock("@/lib/odoo", () => ({ odooRpc: { executeKw: vi.fn(), searchRead: vi.fn() } }));
 vi.mock("@/lib/analytics/abc", () => ({ getABCAnalysis: vi.fn() }));
 
-import { selectSeoCandidates, groupSeoInsights, htmlTieneTexto, type SeoInsight } from "./seo-candidates";
+import { selectSeoCandidates, groupSeoInsights, type SeoInsight } from "./seo-candidates";
 import type { ABCTier } from "@/lib/analytics/abc";
 
 function insight(over: Partial<SeoInsight> & { odooProductId: number }): SeoInsight {
@@ -90,11 +90,3 @@ describe("selectSeoCandidates", () => {
   });
 });
 
-describe("htmlTieneTexto", () => {
-  it("trata el html vacio de Odoo como sin descripcion", () => {
-    expect(htmlTieneTexto(false)).toBe(false);
-    expect(htmlTieneTexto("<p><br></p>")).toBe(false);
-    expect(htmlTieneTexto("<p>&nbsp;</p>")).toBe(false);
-    expect(htmlTieneTexto("<p>Cuaderno de 100 hojas</p>")).toBe(true);
-  });
-});

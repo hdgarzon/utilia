@@ -16,12 +16,9 @@ import { getABCAnalysis, type ABCTier } from "@/lib/analytics/abc";
  * sobre fichas nuevas en vez de reescribir las mismas.
  */
 
-/** Tope por defecto de fichas por corrida. Controla el costo del modelo. */
-export const SEO_BATCH_LIMIT = 50;
-/** Tope maximo que acepta la accion, por tiempo de la funcion serverless. */
-export const SEO_BATCH_MAX = 200;
-/** Fichas que se muestran en la previsualizacion antes de confirmar. */
-export const SEO_PREVIEW_COUNT = 5;
+import { SEO_BATCH_LIMIT } from "./seo-limits";
+
+export { SEO_BATCH_LIMIT, SEO_BATCH_MAX, SEO_PREVIEW_COUNT } from "./seo-limits";
 
 /** Lo que la seleccion necesita de cada variante de ProductInsight. */
 export interface SeoInsight {
@@ -115,32 +112,30 @@ export function selectSeoCandidates(
     .slice(0, Math.max(0, limit));
 }
 
-/** Quita etiquetas y espacios: una descripcion `<p><br></p>` cuenta como vacia. */
-export function htmlTieneTexto(html: string | false | null | undefined): boolean {
-  if (!html) return false;
-  return html.replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").trim().length > 0;
-}
-
-interface OdooSeoTemplate {
-  id: number;
-  website_description: string | false;
-  is_published: boolean;
-}
+/**
+ * Lo que el editor web de Odoo guarda cuando se borra la descripcion. Se
+ * excluyen por valor exacto, no con `ilike`, para no descartar una
+ * descripcion real que tenga un salto de linea.
+ */
+export const DESCRIPCIONES_VACIAS = ["<p><br></p>", "<p><br/></p>", "<p></p>", ""] as const;
 
 /**
  * Lee de Odoo que templates ya tienen descripcion web y cuales estan
- * publicados. Solo lectura. Se consulta `product.template` directamente
- * porque esos campos no viven en ProductInsight.
+ * publicados. Solo lectura y solo ids: el HTML de cada descripcion no se
+ * baja, porque crece con cada corrida (cada una agrega 50 fichas con texto).
  */
 async function leerEstadoWebDeOdoo(): Promise<{ conDescripcion: Set<number>; publicados: Set<number> }> {
   const [conTexto, publicadosRaw] = await Promise.all([
-    odooRpc.searchRead<Pick<OdooSeoTemplate, "id" | "website_description">>(
+    odooRpc.searchRead<{ id: number }>(
       "product.template",
-      [["website_description", "!=", false]],
-      ["id", "website_description"],
+      [
+        ["website_description", "!=", false],
+        ["website_description", "not in", [...DESCRIPCIONES_VACIAS]],
+      ],
+      ["id"],
       { limit: 10000 }
     ),
-    odooRpc.searchRead<Pick<OdooSeoTemplate, "id">>(
+    odooRpc.searchRead<{ id: number }>(
       "product.template",
       [["is_published", "=", true], ["sale_ok", "=", true]],
       ["id"],
@@ -148,7 +143,7 @@ async function leerEstadoWebDeOdoo(): Promise<{ conDescripcion: Set<number>; pub
     ),
   ]);
   return {
-    conDescripcion: new Set(conTexto.filter((t) => htmlTieneTexto(t.website_description)).map((t) => t.id)),
+    conDescripcion: new Set(conTexto.map((t) => t.id)),
     publicados: new Set(publicadosRaw.map((t) => t.id)),
   };
 }

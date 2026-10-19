@@ -76,7 +76,7 @@ src/lib/sync.ts         # Odoo → Postgres sync orchestration
 src/lib/snapshots.ts    # FinancialSnapshot rollups
 src/lib/fixed-expenses.ts # monthly fixed cost from budgets (inherits the last month that has one)
 src/lib/analytics/      # derived metrics
-src/lib/ai/             # prompt construction + OpenAI calls
+src/lib/ai/             # prompt construction + model calls (Anthropic via AI SDK)
 src/lib/period.ts       # fiscal period math
 src/lib/timezone.ts     # all date handling goes through here
 src/proxy.ts            # auth gate (antes middleware.ts)

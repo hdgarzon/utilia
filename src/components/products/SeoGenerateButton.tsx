@@ -5,9 +5,8 @@ import { Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { previewSeo, writeSeoBatch, type SeoUltimaCorrida } from "@/app/(dashboard)/productos/seo-actions";
 import type { SeoGenerated } from "@/lib/ai/seo-producto";
+import { SEO_BATCH_LIMIT, SEO_BATCH_MAX } from "@/lib/products/seo-limits";
 import { SeoPreviewDialog } from "./SeoPreviewDialog";
-
-const LIMIT_DEFAULT = 50;
 
 /**
  * "Generar SEO (A/B)": previsualiza las primeras 5 fichas y, al confirmar,
@@ -21,7 +20,7 @@ export function SeoGenerateButton({
   ultimaCorrida: SeoUltimaCorrida | null;
   odooBaseUrl: string | null;
 }) {
-  const [limit, setLimit] = useState(LIMIT_DEFAULT);
+  const [limit, setLimit] = useState(SEO_BATCH_LIMIT);
   const [loading, setLoading] = useState(false);
   const [writing, setWriting] = useState(false);
   const [preview, setPreview] = useState<{ total: number; items: SeoGenerated[]; previewFailed: number } | null>(null);
@@ -87,9 +86,9 @@ export function SeoGenerateButton({
           <input
             type="number"
             min={1}
-            max={200}
+            max={SEO_BATCH_MAX}
             value={limit}
-            onChange={(e) => setLimit(Math.max(1, Math.min(200, Number(e.target.value) || 1)))}
+            onChange={(e) => setLimit(Math.max(1, Math.min(SEO_BATCH_MAX, Number(e.target.value) || 1)))}
             className="w-16 rounded-lg border border-border bg-background px-2 py-1 text-xs"
             aria-label="Tope de fichas por corrida"
           />
