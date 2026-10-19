@@ -21,13 +21,15 @@ Términos del proyecto y su significado exacto. Úsalos en código, commits, doc
 | Fondo de reposición | Costo de lo vendido en los últimos 30 días: el dinero que ya le pertenece al inventario y se reinvierte. | `open-to-buy.ts` |
 | OTB (Open-to-Buy) | Plan de compra por categoría: venta proyectada + stock final deseado − stock actual. | `open-to-buy.ts`, Compras |
 | Snapshot financiero | Fila diaria de ingreso, costo y utilidad. El P&L mensual sale de `financial-month.ts`, no de sumar sus columnas de gasto fijo. | `FinancialSnapshot` |
+| Ficha de producto | Página pública de un template en el sitio Odoo (`/shop/<slug>-<templateId>`). Una por template, no por variante. Lleva descripción web, meta title y meta descripción. | `seo-producto.ts`, `seo-candidates.ts`, Productos |
+| Meta descripción | Resumen de hasta 155 caracteres que Google muestra bajo el título del resultado (`website_meta_description` en Odoo). El meta title va en 60 caracteres con el formato "Nombre \| Utilia Sabaneta". | `seo-producto.ts`, `writeSeoFields` |
 | Backfill | Reconstrucción del histórico de ventas desde Odoo, mes a mes, cortando los meses a medianoche de Colombia. | `backfillSalesHistory`, `pnpm backfill` |
 | Catálogo WhatsApp | Exportación del catálogo al CSV de Meta Commerce Manager, que se conecta al número de WhatsApp Business. Un producto por template, hasta 500, con stock y venta en los últimos 30 días, priorizando clase A y B. | `meta-catalog-export.ts`, `/api/catalog/meta.csv`, Productos |
 | Colección | Agrupación de productos dentro del catálogo WhatsApp. Una por categoría de Odoo, con el nombre en formato "Papeleria", "Piñateria" (columna `product_type` del CSV). | `toCollectionName`, Meta Commerce Manager |
 
 ## Fuera de alcance
 - Cambiar precios en Odoo: el sistema señala los precios bajo costo, la corrección la hace Henry.
-- Escribir en Odoo desde el sync.
+- Escribir en Odoo desde el sync. Los textos SEO se escriben solo al confirmar la previsualización en Productos.
 - Enviar mensajes a clientes o proveedores sin aprobación explícita.
 
 ## Decisiones clave

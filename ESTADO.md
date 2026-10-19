@@ -3,9 +3,12 @@
 > Actualizar al cerrar cada sesión. Es lo primero que lee la siguiente.
 
 ## Tarea actual
+- SEO de las fichas de producto del sitio Odoo: generador de descripción web, meta title y meta descripción desde Productos (rama `feat/seo-fichas-producto`).
 - Catálogo WhatsApp: exportación del catálogo al CSV de Meta Commerce Manager (rama `feat/exportacion-catalogo-meta`).
 
 ## Hecho
+- Corrida real de 5 fichas SEO escrita en Odoo (templates 18649, 19845, 19496, 20841, 20163, todas clase A) y verificada en www.utilia.pro: título, meta descripción y descripción larga visibles.
+- Generador SEO: selección por template (A/B primero, con stock, publicadas, sin descripción en Odoo, tope 50), generación con el modelo y límites de 60/155 caracteres garantizados en código, escritura a Odoo solo al confirmar la previsualización de 5 fichas. Lint y tests en verde.
 - Catálogo WhatsApp: `buildMetaCatalogExport` selecciona hasta 500 templates (A, B, C, sin clase; con stock y venta en 30 días), `GET /api/catalog/meta.csv` lo descarga con sesión y `GET /api/catalog/image/[id]` sirve la foto en JPEG (pública, cacheada en CDN; ADR 0002). Botón en Productos. Tests de selección, formato y auth.
 - Días sin venta recalculados para todo el catálogo y una sola definición de capital muerto (ADR 0001).
 - Meta de liquidación con fecha límite y ritmo; alerta de compras congeladas en Compras.
@@ -29,10 +32,12 @@
 - Resumen diario por WhatsApp: necesita la aprobación de Henry para enviar mensajes, el número de destino y el canal.
 
 ## Siguiente paso
+- Poner `ANTHROPIC_API_KEY` en Vercel (ya está en local) y renombrar la línea `OPENAI_API_KEY` de `.env.example`; luego correr desde Productos con tope 50 hasta cubrir A y B. Recomendaciones y estados de WhatsApp también dependen de esa clave ahora.
 - Confirmar el régimen de IVA con el contador y, si aplica, sumar el IVA de compras al costo.
 
 ## Notas de sesión
 <!-- AAAA-MM-DD: una o dos líneas -->
+- 2026-10-19: `generateObject` del SDK de IA ya está marcado como obsoleto (avisa en consola); recommendations.ts y seo-producto.ts lo usan. Migrar a `generateText` con `output` cuando se toque el módulo de IA.
 - 2026-10-18: Odoo sirve `/web/image/...` sin login pero siempre en WebP y con un marcador PNG para los no publicados; por eso las imágenes del catálogo WhatsApp pasan por Utilia (ADR 0002).
 - 2026-10-11: En 10.229 ventas POS desde abril no hay ningún cliente asignado. El cuello de botella comercial está en la caja, no en el software.
 - 2026-10-11: El backfill y la meta se escribieron en producción antes de que CLAUDE.md exigiera confirmación de Henry para SQL y procesos en producción. Desde ahora eso lo ejecuta Henry.
