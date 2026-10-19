@@ -3,6 +3,7 @@
 Una línea por cambio entregado, en lenguaje de usuario.
 
 ## Sin publicar
+- Productos tiene el botón "Generar SEO (A/B)": genera descripción web, meta title y meta descripción para las fichas de producto del sitio (primero clase A y B, con stock y publicadas, hasta 50 por corrida), muestra las primeras 5 antes de confirmar y las escribe en Odoo.
 - El Resumen muestra días de inventario, ventas con cliente identificado y cuántos productos tienen precio bajo costo (#64).
 - ABC lista los productos cuyo precio de lista es igual o menor al costo (#64).
 - El menú quedó agrupado por secciones (#64, #65).

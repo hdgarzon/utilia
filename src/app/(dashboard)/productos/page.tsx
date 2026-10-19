@@ -10,6 +10,8 @@ import { AlertTriangle } from "lucide-react";
 import { listTemplates, getCatalogOptions, PAGE_SIZE } from "@/lib/products/catalog";
 import { CatalogFilters } from "@/components/products/CatalogFilters";
 import { CatalogWorkspace } from "@/components/products/CatalogWorkspace";
+import { SeoGenerateButton } from "@/components/products/SeoGenerateButton";
+import { getSeoUltimaCorrida } from "./seo-actions";
 import type { CatalogFilters as Filters, CatalogProblem, ProductType } from "@/lib/products/types";
 
 const PROBLEMAS_VALIDOS: CatalogProblem[] = [
@@ -62,9 +64,16 @@ export default async function ProductosPage({
   let data: Awaited<ReturnType<typeof listTemplates>> | null = null;
   let options: Awaited<ReturnType<typeof getCatalogOptions>> | null = null;
   let error: string | null = null;
+  // Si Postgres no responde, la pantalla sigue sirviendo: el boton solo
+  // pierde el "ultima corrida".
+  let seoUltima: Awaited<ReturnType<typeof getSeoUltimaCorrida>> = null;
 
   try {
-    [data, options] = await Promise.all([listTemplates(filters, page), getCatalogOptions()]);
+    [data, options, seoUltima] = await Promise.all([
+      listTemplates(filters, page),
+      getCatalogOptions(),
+      getSeoUltimaCorrida().catch(() => null),
+    ]);
   } catch (err) {
     console.error("[productos] fallo la lectura del catalogo:", err);
     error = "No se pudo leer el catálogo de Odoo. Revisa la conexión e intenta de nuevo.";
@@ -107,12 +116,15 @@ export default async function ProductosPage({
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-semibold tracking-tight">Productos</h1>
-        <Link
-          href="/productos/cargar"
-          className="rounded-lg border border-primary/40 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10"
-        >
-          Cargar productos →
-        </Link>
+        <div className="flex items-center gap-2 flex-wrap">
+          <SeoGenerateButton ultimaCorrida={seoUltima} odooBaseUrl={process.env.ODOO_BASE_URL ?? null} />
+          <Link
+            href="/productos/cargar"
+            className="rounded-lg border border-primary/40 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10"
+          >
+            Cargar productos →
+          </Link>
+        </div>
       </div>
 
       <CatalogFilters options={options} total={data.total} />
