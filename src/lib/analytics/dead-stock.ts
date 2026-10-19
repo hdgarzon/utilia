@@ -18,6 +18,7 @@ export const NO_REORDER_DAYS = 45;
 
 export interface DeadStockProduct {
   id: string;
+  internalRef: string | null;
   name: string;
   category: string | null;
   stockQty: number;
@@ -59,6 +60,7 @@ export async function getDeadStockAnalysis(): Promise<DeadStockAnalysis> {
 
   const products: DeadStockProduct[] = deadRows.map((p) => ({
     id: p.id,
+    internalRef: p.internalRef,
     name: p.name,
     category: p.category,
     stockQty: p.stockQty,

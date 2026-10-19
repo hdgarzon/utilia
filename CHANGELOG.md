@@ -3,6 +3,7 @@
 Una línea por cambio entregado, en lenguaje de usuario.
 
 ## Sin publicar
+- Liquidación muestra el tramo de antigüedad, el precio de remate sugerido y el margen de cada producto, con filtros por tramo y categoría, totales del lote y exportación de etiquetas en CSV. Los precios en 0 o bajo costo quedan marcados para revisar.
 - El Resumen muestra días de inventario, ventas con cliente identificado y cuántos productos tienen precio bajo costo (#64).
 - ABC lista los productos cuyo precio de lista es igual o menor al costo (#64).
 - El menú quedó agrupado por secciones (#64, #65).
