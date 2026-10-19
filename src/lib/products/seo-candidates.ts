@@ -11,7 +11,8 @@ import { getABCAnalysis, type ABCTier } from "@/lib/analytics/abc";
  * cupo de la corrida. Se priorizan las clases A y B del ABC, que son las que
  * mas venden y las que mas conviene posicionar; C y sin clase entran despues.
  *
- * Las que ya tienen `website_description` en Odoo se omiten: el texto escrito
+ * Las que ya tienen descripcion en Odoo (`description_ecommerce`, el recuadro
+ * junto al nombre, o `website_description`, el bloque de abajo) se omiten: el texto escrito
  * a mano por el dueño vale mas que el generado, y asi cada corrida avanza
  * sobre fichas nuevas en vez de reescribir las mismas.
  */
@@ -129,6 +130,11 @@ async function leerEstadoWebDeOdoo(): Promise<{ conDescripcion: Set<number>; pub
     odooRpc.searchRead<{ id: number }>(
       "product.template",
       [
+        "|",
+        "&",
+        ["description_ecommerce", "!=", false],
+        ["description_ecommerce", "not in", [...DESCRIPCIONES_VACIAS]],
+        "&",
         ["website_description", "!=", false],
         ["website_description", "not in", [...DESCRIPCIONES_VACIAS]],
       ],

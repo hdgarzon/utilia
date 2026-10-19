@@ -86,7 +86,7 @@ export function SeoPreviewDialog({
               </p>
               <div
                 className="text-xs leading-relaxed [&_p]:mb-1 [&_ul]:list-disc [&_ul]:pl-4"
-                dangerouslySetInnerHTML={{ __html: f.websiteDescription }}
+                dangerouslySetInnerHTML={{ __html: f.ecommerceDescription }}
               />
             </li>
           ))}
