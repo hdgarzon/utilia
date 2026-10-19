@@ -3,6 +3,7 @@
 Una línea por cambio entregado, en lenguaje de usuario.
 
 ## Sin publicar
+- Productos tiene el botón "Exportar catálogo WhatsApp": descarga el CSV para Meta Commerce Manager con hasta 500 productos con stock y venta reciente, priorizando clase A y B, con imágenes en JPEG servidas por Utilia.
 - El Resumen muestra días de inventario, ventas con cliente identificado y cuántos productos tienen precio bajo costo (#64).
 - ABC lista los productos cuyo precio de lista es igual o menor al costo (#64).
 - El menú quedó agrupado por secciones (#64, #65).

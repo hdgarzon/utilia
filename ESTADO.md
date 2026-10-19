@@ -3,9 +3,10 @@
 > Actualizar al cerrar cada sesión. Es lo primero que lee la siguiente.
 
 ## Tarea actual
-- Revisión de CEO/CFO del dashboard y corrección de las mediciones de inventario (PRs #61 y #64, ambos fusionados y desplegados).
+- Catálogo WhatsApp: exportación del catálogo al CSV de Meta Commerce Manager (rama `feat/exportacion-catalogo-meta`).
 
 ## Hecho
+- Catálogo WhatsApp: `buildMetaCatalogExport` selecciona hasta 500 templates (A, B, C, sin clase; con stock y venta en 30 días), `GET /api/catalog/meta.csv` lo descarga con sesión y `GET /api/catalog/image/[id]` sirve la foto en JPEG (pública, cacheada en CDN; ADR 0002). Botón en Productos. Tests de selección, formato y auth.
 - Días sin venta recalculados para todo el catálogo y una sola definición de capital muerto (ADR 0001).
 - Meta de liquidación con fecha límite y ritmo; alerta de compras congeladas en Compras.
 - Tope de 5 recomendaciones activas; 3 estados diarios con escalera 20/30/40% y recordatorio en el Resumen.
@@ -16,6 +17,8 @@
 - Verificado en Odoo: las ventas POS no llevan IVA; el margen bruto está bien calculado.
 
 ## Pendiente
+- Catálogo WhatsApp: subir el CSV a Meta Commerce Manager, conectar el catálogo al número de WhatsApp Business y crear una colección por `product_type`. Si Meta rechaza alguna imagen, revisar el producto en Odoo (filtro "Sin imagen" en Productos).
+- Catálogo WhatsApp: definir `META_CATALOG_BRAND` (nombre del negocio para la columna `brand`) y, si se usa dominio propio, `META_CATALOG_PUBLIC_URL`.
 - Registrar al cliente en caja (Odoo POS). Hoy la captura de clientes es 0%: sin eso no hay recompra, segmentos RFM ni campañas.
 - Corregir en Odoo los precios bajo costo (lista en ABC).
 - Registrar el gasto real en Presupuestos: `actualAmount` está en 0 en todos los meses.
@@ -30,5 +33,6 @@
 
 ## Notas de sesión
 <!-- AAAA-MM-DD: una o dos líneas -->
+- 2026-10-18: Odoo sirve `/web/image/...` sin login pero siempre en WebP y con un marcador PNG para los no publicados; por eso las imágenes del catálogo WhatsApp pasan por Utilia (ADR 0002).
 - 2026-10-11: En 10.229 ventas POS desde abril no hay ningún cliente asignado. El cuello de botella comercial está en la caja, no en el software.
 - 2026-10-11: El backfill y la meta se escribieron en producción antes de que CLAUDE.md exigiera confirmación de Henry para SQL y procesos en producción. Desde ahora eso lo ejecuta Henry.

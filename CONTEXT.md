@@ -22,6 +22,8 @@ Términos del proyecto y su significado exacto. Úsalos en código, commits, doc
 | OTB (Open-to-Buy) | Plan de compra por categoría: venta proyectada + stock final deseado − stock actual. | `open-to-buy.ts`, Compras |
 | Snapshot financiero | Fila diaria de ingreso, costo y utilidad. El P&L mensual sale de `financial-month.ts`, no de sumar sus columnas de gasto fijo. | `FinancialSnapshot` |
 | Backfill | Reconstrucción del histórico de ventas desde Odoo, mes a mes, cortando los meses a medianoche de Colombia. | `backfillSalesHistory`, `pnpm backfill` |
+| Catálogo WhatsApp | Exportación del catálogo al CSV de Meta Commerce Manager, que se conecta al número de WhatsApp Business. Un producto por template, hasta 500, con stock y venta en los últimos 30 días, priorizando clase A y B. | `meta-catalog-export.ts`, `/api/catalog/meta.csv`, Productos |
+| Colección | Agrupación de productos dentro del catálogo WhatsApp. Una por categoría de Odoo, con el nombre en formato "Papeleria", "Piñateria" (columna `product_type` del CSV). | `toCollectionName`, Meta Commerce Manager |
 
 ## Fuera de alcance
 - Cambiar precios en Odoo: el sistema señala los precios bajo costo, la corrección la hace Henry.
@@ -30,3 +32,4 @@ Términos del proyecto y su significado exacto. Úsalos en código, commits, doc
 
 ## Decisiones clave
 - [0001 — Una sola definición de capital muerto](docs/adr/0001-definicion-unica-capital-muerto.md)
+- [0002 — Imágenes del catálogo WhatsApp servidas por Utilia](docs/adr/0002-imagenes-catalogo-whatsapp.md)
