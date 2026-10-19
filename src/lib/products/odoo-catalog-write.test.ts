@@ -185,7 +185,7 @@ describe("createTemplate", () => {
 
 describe("writeSeoFields", () => {
   const campos = {
-    websiteDescription: "<p>Cuaderno para el colegio.</p>",
+    ecommerceDescription: "<p>Cuaderno para el colegio.</p>",
     metaTitle: "Cuaderno Argollado | Utilia Sabaneta",
     metaDescription: "Compra tu cuaderno en Sabaneta o con envio.",
   };
@@ -199,7 +199,7 @@ describe("writeSeoFields", () => {
     expect(args).toEqual([
       [42],
       {
-        website_description: campos.websiteDescription,
+        description_ecommerce: campos.ecommerceDescription,
         website_meta_title: campos.metaTitle,
         website_meta_description: campos.metaDescription,
       },

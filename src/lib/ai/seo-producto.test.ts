@@ -99,7 +99,7 @@ describe("generateSeoFields (modelo mockeado)", () => {
     expect(r.metaTitle.length).toBeLessThanOrEqual(META_TITLE_MAX);
     expect(r.metaTitle).toMatch(/\| Utilia/);
     expect(r.metaDescription.length).toBeLessThanOrEqual(META_DESCRIPTION_MAX);
-    expect(r.websiteDescription).toBe("<p>Un cuaderno para el colegio.</p>");
+    expect(r.ecommerceDescription).toBe("<p>Un cuaderno para el colegio.</p>");
   });
 
   it("si el modelo no da titulo, usa el nombre en capitalizacion normal", async () => {

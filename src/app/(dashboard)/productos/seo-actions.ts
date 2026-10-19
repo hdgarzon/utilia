@@ -60,7 +60,7 @@ const limitSchema = z.number().int().min(1).max(SEO_BATCH_MAX).default(SEO_BATCH
 const generatedSchema = z.object({
   templateId: z.number().int().positive(),
   name: z.string().min(1),
-  websiteDescription: z.string().min(1).max(5000),
+  ecommerceDescription: z.string().min(1).max(5000),
   metaTitle: z.string().min(1).max(META_TITLE_MAX),
   metaDescription: z.string().min(1).max(META_DESCRIPTION_MAX),
 });
@@ -119,11 +119,11 @@ export async function writeSeoBatch(input: unknown): Promise<SeoWriteResult> {
       .filter((p) => candidataPorId.has(p.templateId))
       .map((p) => ({
         ...p,
-        websiteDescription: sanitizeDescriptionHtml(p.websiteDescription),
+        ecommerceDescription: sanitizeDescriptionHtml(p.ecommerceDescription),
         metaTitle: fitMetaTitle(p.metaTitle.replace(/\s*\|\s*Utilia( Sabaneta)?\s*$/i, "")),
         metaDescription: fitMetaDescription(p.metaDescription),
       }))
-      .filter((p) => p.websiteDescription.length > 0);
+      .filter((p) => p.ecommerceDescription.length > 0);
     const yaListas = new Set(listas.map((p) => p.templateId));
     const porGenerar = candidatas.filter((c) => !yaListas.has(c.templateId));
 

@@ -56,10 +56,11 @@ describe("el costo y el precio solo se escriben al crear", () => {
 });
 
 describe("listas fijadas", () => {
-  it("la lista de actualizacion son los cinco campos del catalogo mas los tres textos SEO", () => {
-    expect(UPDATE_FIELDS.size).toBe(8);
+  it("la lista de actualizacion son los cinco campos del catalogo mas los cuatro textos SEO", () => {
+    expect(UPDATE_FIELDS.size).toBe(9);
     expect([...UPDATE_FIELDS].sort()).toEqual([
       "categ_id",
+      "description_ecommerce",
       "is_published",
       "public_categ_ids",
       "seller_ids",
@@ -70,11 +71,12 @@ describe("listas fijadas", () => {
     ]);
   });
 
-  it("la lista de creacion son esos ocho mas los siete de alta", () => {
-    expect(CREATE_FIELDS.size).toBe(16);
+  it("la lista de creacion son esos nueve mas los siete de alta", () => {
+    expect(CREATE_FIELDS.size).toBe(17);
     expect([...CREATE_FIELDS].sort()).toEqual([
       "available_in_pos",
       "categ_id",
+      "description_ecommerce",
       "image_1920",
       "is_published",
       "is_storable",
