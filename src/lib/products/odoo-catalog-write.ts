@@ -103,7 +103,7 @@ export function esRechazoDeNegocio(err: unknown): boolean {
  */
 export async function writeSeoFields(templateId: number, fields: SeoFieldsPatch): Promise<void> {
   assertModelAllowed(MODEL);
-  if (!fields.websiteDescription.trim() || !fields.metaTitle.trim() || !fields.metaDescription.trim()) {
+  if (!fields.ecommerceDescription.trim() || !fields.metaTitle.trim() || !fields.metaDescription.trim()) {
     throw new Error(`Textos SEO incompletos para la ficha ${templateId}`);
   }
   const values = toOdooSeoValues(fields);

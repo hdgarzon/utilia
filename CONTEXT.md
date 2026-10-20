@@ -23,7 +23,7 @@ Términos del proyecto y su significado exacto. Úsalos en código, commits, doc
 | Fondo de reposición | Costo de lo vendido en los últimos 30 días: el dinero que ya le pertenece al inventario y se reinvierte. | `open-to-buy.ts` |
 | OTB (Open-to-Buy) | Plan de compra por categoría: venta proyectada + stock final deseado − stock actual. | `open-to-buy.ts`, Compras |
 | Snapshot financiero | Fila diaria de ingreso, costo y utilidad. El P&L mensual sale de `financial-month.ts`, no de sumar sus columnas de gasto fijo. | `FinancialSnapshot` |
-| Ficha de producto | Página pública de un template en el sitio Odoo (`/shop/<slug>-<templateId>`). Una por template, no por variante. Lleva descripción web, meta title y meta descripción. | `seo-producto.ts`, `seo-candidates.ts`, Productos |
+| Ficha de producto | Página pública de un template en el sitio Odoo (`/shop/<slug>-<templateId>`). Una por template, no por variante. Lleva descripción corta (`description_ecommerce`, el recuadro junto al nombre), meta title y meta descripción. `website_description` es el bloque a todo el ancho al final de la página; el generador no lo usa. | `seo-producto.ts`, `seo-candidates.ts`, Productos |
 | Meta descripción | Resumen de hasta 155 caracteres que Google muestra bajo el título del resultado (`website_meta_description` en Odoo). El meta title va en 60 caracteres con el formato "Nombre \| Utilia Sabaneta". | `seo-producto.ts`, `writeSeoFields` |
 | Backfill | Reconstrucción del histórico de ventas desde Odoo, mes a mes, cortando los meses a medianoche de Colombia. | `backfillSalesHistory`, `pnpm backfill` |
 

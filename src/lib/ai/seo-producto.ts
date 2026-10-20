@@ -2,7 +2,7 @@
  * Textos SEO para las fichas de producto del sitio Odoo (website_sale).
  *
  * Por cada template genera tres campos que Odoo ya sabe mostrar:
- *  - `website_description`: HTML corto (60-120 palabras) con uso, para quien
+ *  - `description_ecommerce`: HTML corto (60-120 palabras) con uso, para quien
  *    es y la disponibilidad en la papeleria de Sabaneta o con envio.
  *  - `website_meta_title`: "Nombre En Capitalizacion Normal | Utilia Sabaneta",
  *    maximo 60 caracteres.
@@ -41,7 +41,7 @@ export interface SeoProductInput {
 }
 
 export interface SeoFields {
-  websiteDescription: string;
+  ecommerceDescription: string;
   metaTitle: string;
   metaDescription: string;
 }
@@ -180,8 +180,8 @@ export function normalizeSeoFields(input: SeoProductInput, raw: z.infer<typeof s
   const titulo = raw.tituloCorto.trim() || toTitleCase(input.name);
   const metaTitle = fitMetaTitle(titulo);
   const metaDescription = fitMetaDescription(raw.metaDescripcion);
-  const websiteDescription = sanitizeDescriptionHtml(raw.descripcionHtml);
-  return { websiteDescription, metaTitle, metaDescription };
+  const ecommerceDescription = sanitizeDescriptionHtml(raw.descripcionHtml);
+  return { ecommerceDescription, metaTitle, metaDescription };
 }
 
 export async function generateSeoFields(input: SeoProductInput): Promise<SeoGenerated> {
@@ -196,7 +196,7 @@ export async function generateSeoFields(input: SeoProductInput): Promise<SeoGene
     providerOptions: { anthropic: { effort: "low" } },
   });
   const fields = normalizeSeoFields(input, object);
-  if (!fields.websiteDescription) {
+  if (!fields.ecommerceDescription) {
     throw new Error(`El modelo devolvio una descripcion vacia para ${input.name}`);
   }
   return { templateId: input.templateId, name: input.name, ...fields };

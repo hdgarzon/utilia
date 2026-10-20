@@ -33,7 +33,10 @@ export const UPDATE_FIELDS: ReadonlySet<string> = new Set([
   "supplier_taxes_id",
   "seller_ids",
   // Textos SEO de la ficha publica (website_sale). Son texto de catalogo:
-  // no tocan precio, costo ni inventario.
+  // no tocan precio, costo ni inventario. `description_ecommerce` es el
+  // recuadro junto al nombre del producto; `website_description` es el
+  // bloque a todo el ancho al final de la pagina.
+  "description_ecommerce",
   "website_description",
   "website_meta_title",
   "website_meta_description",
@@ -200,14 +203,14 @@ export function toOdooCreateValues(
 
 /** Textos SEO de una ficha, en lenguaje de la app. */
 export interface SeoFieldsPatch {
-  websiteDescription: string;
+  ecommerceDescription: string;
   metaTitle: string;
   metaDescription: string;
 }
 
 export function toOdooSeoValues(fields: SeoFieldsPatch): Record<string, unknown> {
   return {
-    website_description: fields.websiteDescription,
+    description_ecommerce: fields.ecommerceDescription,
     website_meta_title: fields.metaTitle,
     website_meta_description: fields.metaDescription,
   };

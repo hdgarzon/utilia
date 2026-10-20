@@ -4,6 +4,7 @@ Una línea por cambio entregado, en lenguaje de usuario.
 
 ## Sin publicar
 - Liquidación muestra el tramo de antigüedad, el precio de remate sugerido y el margen de cada producto, con filtros por tramo y categoría, totales del lote y exportación de etiquetas en CSV. Los precios en 0 o bajo costo quedan marcados para revisar.
+- La descripción generada de cada ficha de producto aparece en el recuadro junto al nombre, no al final de la página.
 - Los textos generados por IA (recomendaciones, estados de WhatsApp y SEO de fichas) ahora salen de Claude (Anthropic) en vez de OpenAI; requiere `ANTHROPIC_API_KEY`.
 - Productos tiene el botón "Generar SEO (A/B)": genera descripción web, meta title y meta descripción para las fichas de producto del sitio (primero clase A y B, con stock y publicadas, hasta 50 por corrida), muestra las primeras 5 antes de confirmar y las escribe en Odoo.
 - El Resumen muestra días de inventario, ventas con cliente identificado y cuántos productos tienen precio bajo costo (#64).

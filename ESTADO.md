@@ -37,6 +37,7 @@
 ## Notas de sesión
 <!-- AAAA-MM-DD: una o dos líneas -->
 - 2026-10-19: El precio de remate es una sugerencia en pantalla y en el CSV; no se escribe en Odoo. El tramo de costo + 10% se topa en el precio normal para que el remate nunca salga más caro.
+- 2026-10-19: El recuadro bajo el nombre del producto es `description_ecommerce`; `website_description` se pinta al final de la página a todo el ancho. Las 1.222 descripciones generadas se movieron arriba y se vació el bloque de abajo; 20 fichas que ya tenían texto propio arriba conservan el generado abajo.
 - 2026-10-19: Un lote de 50 fichas con esfuerzo bajo del modelo tarda ~80 s y cuesta menos de un dólar. La corrida de A/B se hizo por script con el mismo código de la acción, antes del deploy.
 - 2026-10-19: `generateObject` del SDK de IA ya está marcado como obsoleto (avisa en consola); recommendations.ts y seo-producto.ts lo usan. Migrar a `generateText` con `output` cuando se toque el módulo de IA.
 - 2026-10-11: En 10.229 ventas POS desde abril no hay ningún cliente asignado. El cuello de botella comercial está en la caja, no en el software.
