@@ -4,12 +4,12 @@
 
 ## Tarea actual
 - Plan de remate octubre–enero: precio de remate por tramo de antigüedad en Liquidación y exportación de etiquetas (PR #73, rama `feat/precio-remate-por-tramo`).
-- Fotos de las fichas del sitio Odoo: botón "Reparar fotos" en Productos (PR #79). Corrida de prueba de 3 fichas hecha en producción; faltan las demás.
+- Fotos de las fichas del sitio Odoo: reparación automática terminada (PR #79). Lo que queda son fotos nuevas, que se toman en la tienda.
 
 ## Hecho
 - Liquidación: tramo de antigüedad, precio de remate sugerido y margen por producto; filtros por tramo y categoría; totales del lote; botón "Exportar etiquetas (CSV)". Precios en 0 o bajo costo marcados como "revisar precio" y fuera del descuento automático.
 - Auditoría de fotos de las 1.243 fichas publicadas con stock: 279 se pueden reparar recortando el margen blanco (34 A/B), 475 necesitan foto nueva (47 A/B), 413 tienen fondo no blanco, ninguna tiene fotos extra. El peso no es problema.
-- Reparación de fotos (PR #79): recorte del margen blanco y cuadrado blanco sin agrandar, vista previa de 5, respaldo de la original en `ProductImageBackup` antes de escribir. Tabla creada en producción. Corrida de prueba con 3 fichas A (18649, 19496, 20841), verificada en www.utilia.pro.
+- Reparación de fotos (PR #79): recorte del margen blanco y cuadrado blanco sin agrandar, vista previa de 5, respaldo de la original en `ProductImageBackup` antes de escribir. Tabla creada en producción. Corrida de prueba con 3 fichas A y luego el resto: 288 fotos reparadas en producción, 0 fallos, todas con respaldo. Muestra verificada en www.utilia.pro. No queda ninguna foto que califique.
 - Textos SEO escritos en Odoo para 1.242 fichas: las 130 de clase A y B y luego las 1.112 restantes (60 de clase C y 1.052 sin clase), 0 fallos. Muestra verificada en www.utilia.pro. No quedan fichas publicadas con stock sin descripción.
 - Generador SEO: selección por template (A/B primero, con stock, publicadas, sin descripción en Odoo, tope 50), generación con el modelo y límites de 60/155 caracteres garantizados en código, escritura a Odoo solo al confirmar la previsualización de 5 fichas. Lint y tests en verde.
 - Catálogo WhatsApp: `buildMetaCatalogExport` selecciona hasta 500 templates (A, B, C, sin clase; con stock y venta en 30 días), `GET /api/catalog/meta.csv` lo descarga con sesión y `GET /api/catalog/image/[id]` sirve la foto en JPEG (pública, cacheada en CDN; ADR 0002). Botón en Productos. Tests de selección, formato y auth.
@@ -24,7 +24,6 @@
 
 ## Pendiente
 - Imprimir las etiquetas de remate desde el CSV y corregir en Odoo los productos marcados "revisar precio" antes de rematarlos.
-- Fusionar el PR #79 y reparar las ~276 fotos restantes desde Productos (tope 100 por corrida).
 - Fotos nuevas para las 47 fichas A/B sin foto o de baja resolución: tomarlas en la tienda o pedirlas al proveedor, nunca de internet.
 - Catálogo WhatsApp: subir el CSV a Meta Commerce Manager, conectar el catálogo al número de WhatsApp Business y crear una colección por `product_type`. Si Meta rechaza alguna imagen, revisar el producto en Odoo (filtro "Sin imagen" en Productos).
 - Catálogo WhatsApp: definir `META_CATALOG_BRAND` (nombre del negocio para la columna `brand`) y, si se usa dominio propio, `META_CATALOG_PUBLIC_URL`.
