@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 import Link from "next/link";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Download } from "lucide-react";
 import { listTemplates, getCatalogOptions, PAGE_SIZE } from "@/lib/products/catalog";
 import { CatalogFilters } from "@/components/products/CatalogFilters";
 import { CatalogWorkspace } from "@/components/products/CatalogWorkspace";
@@ -123,6 +123,16 @@ export default async function ProductosPage({
         <div className="flex items-center gap-2 flex-wrap">
           <SeoGenerateButton ultimaCorrida={seoUltima} odooBaseUrl={process.env.ODOO_BASE_URL ?? null} />
           <ImageRepairButton ultimaCorrida={imagenesUltima} odooBaseUrl={process.env.ODOO_BASE_URL ?? null} />
+          {/* Enlace directo (no fetch): el navegador descarga el CSV con la sesion. */}
+          <a
+            href="/api/catalog/meta.csv"
+            download
+            title="Descarga el CSV para Meta Commerce Manager: hasta 500 productos con stock y venta reciente, priorizando clase A y B."
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-secondary"
+          >
+            <Download className="h-3.5 w-3.5" />
+            Exportar catálogo WhatsApp
+          </a>
           <Link
             href="/productos/cargar"
             className="rounded-lg border border-primary/40 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10"

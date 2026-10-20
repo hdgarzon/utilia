@@ -14,5 +14,8 @@ export default auth(function proxy(req) {
 });
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.svg).*)"],
+  // api/catalog/image queda fuera: es publica (Meta descarga las fotos del
+  // catalogo WhatsApp) y el proxy le pondria cookies de sesion, que impiden
+  // que el CDN cachee la respuesta.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/catalog/image|.*\\.svg).*)"],
 };
