@@ -12,6 +12,8 @@ import { CatalogFilters } from "@/components/products/CatalogFilters";
 import { CatalogWorkspace } from "@/components/products/CatalogWorkspace";
 import { SeoGenerateButton } from "@/components/products/SeoGenerateButton";
 import { getSeoUltimaCorrida } from "./seo-actions";
+import { ImageRepairButton } from "@/components/products/ImageRepairButton";
+import { getImageRepairUltimaCorrida } from "./image-actions";
 import type { CatalogFilters as Filters, CatalogProblem, ProductType } from "@/lib/products/types";
 
 const PROBLEMAS_VALIDOS: CatalogProblem[] = [
@@ -67,12 +69,14 @@ export default async function ProductosPage({
   // Si Postgres no responde, la pantalla sigue sirviendo: el boton solo
   // pierde el "ultima corrida".
   let seoUltima: Awaited<ReturnType<typeof getSeoUltimaCorrida>> = null;
+  let imagenesUltima: Awaited<ReturnType<typeof getImageRepairUltimaCorrida>> = null;
 
   try {
-    [data, options, seoUltima] = await Promise.all([
+    [data, options, seoUltima, imagenesUltima] = await Promise.all([
       listTemplates(filters, page),
       getCatalogOptions(),
       getSeoUltimaCorrida().catch(() => null),
+      getImageRepairUltimaCorrida().catch(() => null),
     ]);
   } catch (err) {
     console.error("[productos] fallo la lectura del catalogo:", err);
@@ -118,6 +122,7 @@ export default async function ProductosPage({
         <h1 className="text-2xl font-semibold tracking-tight">Productos</h1>
         <div className="flex items-center gap-2 flex-wrap">
           <SeoGenerateButton ultimaCorrida={seoUltima} odooBaseUrl={process.env.ODOO_BASE_URL ?? null} />
+          <ImageRepairButton ultimaCorrida={imagenesUltima} odooBaseUrl={process.env.ODOO_BASE_URL ?? null} />
           <Link
             href="/productos/cargar"
             className="rounded-lg border border-primary/40 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10"

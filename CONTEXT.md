@@ -23,6 +23,7 @@ Términos del proyecto y su significado exacto. Úsalos en código, commits, doc
 | Snapshot financiero | Fila diaria de ingreso, costo y utilidad. El P&L mensual sale de `financial-month.ts`, no de sumar sus columnas de gasto fijo. | `FinancialSnapshot` |
 | Ficha de producto | Página pública de un template en el sitio Odoo (`/shop/<slug>-<templateId>`). Una por template, no por variante. Lleva descripción corta (`description_ecommerce`, el recuadro junto al nombre), meta title y meta descripción. `website_description` es el bloque a todo el ancho al final de la página; el generador no lo usa. | `seo-producto.ts`, `seo-candidates.ts`, Productos |
 | Meta descripción | Resumen de hasta 155 caracteres que Google muestra bajo el título del resultado (`website_meta_description` en Odoo). El meta title va en 60 caracteres con el formato "Nombre \| Utilia Sabaneta". | `seo-producto.ts`, `writeSeoFields` |
+| Reparación de foto | Recorte del margen blanco de la foto principal de una ficha y centrado del producto en un cuadrado blanco al 88 %, sin agrandarlo. Solo para fotos con fondo blanco donde el producto ocupa menos del 80 % del lado o la foto no es cuadrada. La original queda respaldada en `ProductImageBackup`. | `image-repair.ts`, Productos |
 | Backfill | Reconstrucción del histórico de ventas desde Odoo, mes a mes, cortando los meses a medianoche de Colombia. | `backfillSalesHistory`, `pnpm backfill` |
 
 ## Fuera de alcance
