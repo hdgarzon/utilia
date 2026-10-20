@@ -26,6 +26,8 @@ Términos del proyecto y su significado exacto. Úsalos en código, commits, doc
 | Ficha de producto | Página pública de un template en el sitio Odoo (`/shop/<slug>-<templateId>`). Una por template, no por variante. Lleva descripción corta (`description_ecommerce`, el recuadro junto al nombre), meta title y meta descripción. `website_description` es el bloque a todo el ancho al final de la página; el generador no lo usa. | `seo-producto.ts`, `seo-candidates.ts`, Productos |
 | Meta descripción | Resumen de hasta 155 caracteres que Google muestra bajo el título del resultado (`website_meta_description` en Odoo). El meta title va en 60 caracteres con el formato "Nombre \| Utilia Sabaneta". | `seo-producto.ts`, `writeSeoFields` |
 | Backfill | Reconstrucción del histórico de ventas desde Odoo, mes a mes, cortando los meses a medianoche de Colombia. | `backfillSalesHistory`, `pnpm backfill` |
+| Catálogo WhatsApp | Exportación del catálogo al CSV de Meta Commerce Manager, que se conecta al número de WhatsApp Business. Un producto por template, hasta 500, con stock y venta en los últimos 30 días, priorizando clase A y B. | `meta-catalog-export.ts`, `/api/catalog/meta.csv`, Productos |
+| Colección | Agrupación de productos dentro del catálogo WhatsApp. Una por categoría de Odoo, con el nombre en formato "Papeleria", "Piñateria" (columna `product_type` del CSV). | `toCollectionName`, Meta Commerce Manager |
 
 ## Fuera de alcance
 - Cambiar precios en Odoo: el sistema señala los precios bajo costo, la corrección la hace Henry.
@@ -34,3 +36,4 @@ Términos del proyecto y su significado exacto. Úsalos en código, commits, doc
 
 ## Decisiones clave
 - [0001 — Una sola definición de capital muerto](docs/adr/0001-definicion-unica-capital-muerto.md)
+- [0002 — Imágenes del catálogo WhatsApp servidas por Utilia](docs/adr/0002-imagenes-catalogo-whatsapp.md)
