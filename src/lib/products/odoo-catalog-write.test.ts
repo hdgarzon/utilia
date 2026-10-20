@@ -4,7 +4,7 @@ const { executeKw } = vi.hoisted(() => ({ executeKw: vi.fn() }));
 vi.mock("@/lib/odoo", () => ({ odooRpc: { executeKw, searchRead: vi.fn() } }));
 vi.mock("@/lib/odoo-write", () => ({ translateOdooError: (e: unknown) => String(e) }));
 
-import { updateTemplates, writeSeoFields } from "./odoo-catalog-write";
+import { updateTemplates, writeSeoFields, writeTemplateImage } from "./odoo-catalog-write";
 
 // Cuerpo de bloque a proposito: si la arrow function devolviera el mock
 // (retorno implicito de mockReset), Vitest la registraria como callback de
@@ -208,6 +208,23 @@ describe("writeSeoFields", () => {
 
   it("rechaza textos vacios antes de salir a la red", async () => {
     await expect(writeSeoFields(42, { ...campos, metaTitle: " " })).rejects.toThrow(/incompletos/);
+    expect(executeKw).not.toHaveBeenCalled();
+  });
+});
+
+describe("writeTemplateImage", () => {
+  it("escribe solo image_1920 sobre la plantilla", async () => {
+    executeKw.mockResolvedValue(true);
+    await writeTemplateImage(42, "QUJD");
+    const [modelo, metodo, args] = executeKw.mock.calls[0];
+    expect(modelo).toBe("product.template");
+    expect(metodo).toBe("write");
+    expect(args).toEqual([[42], { image_1920: "QUJD" }]);
+  });
+
+  it("rechaza una imagen vacia o con prefijo data: sin salir a la red", async () => {
+    await expect(writeTemplateImage(42, "")).rejects.toThrow(/invalida/i);
+    await expect(writeTemplateImage(42, "data:image/jpeg;base64,QUJD")).rejects.toThrow(/invalida/i);
     expect(executeKw).not.toHaveBeenCalled();
   });
 });
