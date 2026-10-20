@@ -17,6 +17,8 @@ Términos del proyecto y su significado exacto. Úsalos en código, commits, doc
 | Captura de clientes | Porcentaje de ventas POS con cliente asignado en caja, en los últimos 30 días. | `customers.ts`, Resumen |
 | Precio bajo costo | Producto con stock cuyo precio de lista es igual o menor a su CMP. | `opportunities.ts`, ABC |
 | CMP | Costo medio ponderado del producto (`standard_price` en Odoo). | `ProductInsight.cmp` |
+| Tramo de antigüedad | Franja de días sin venta que fija la regla de remate: 31–90 sin descuento (solo visibilidad), 91–180 al 20%, 181–365 al 35%, más de 365 o nunca vendido a costo + 10%. | `liquidation-pricing.ts`, Liquidación |
+| Precio de remate | Precio sugerido por el tramo de antigüedad, redondeado a la centena hacia arriba y nunca por debajo del CMP. Un producto con precio 0 o bajo costo no recibe precio de remate: queda en "revisar precio". | `suggestLiquidationPrice`, Liquidación, etiquetas CSV |
 | Estado (de WhatsApp) | Publicación diaria de un producto de capital muerto con descuento escalonado según los días sin venta (20, 30 o 40%). | `status-posts.ts`, Campañas |
 | Fondo de reposición | Costo de lo vendido en los últimos 30 días: el dinero que ya le pertenece al inventario y se reinvierte. | `open-to-buy.ts` |
 | OTB (Open-to-Buy) | Plan de compra por categoría: venta proyectada + stock final deseado − stock actual. | `open-to-buy.ts`, Compras |
