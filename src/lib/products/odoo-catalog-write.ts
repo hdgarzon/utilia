@@ -111,6 +111,24 @@ export async function writeSeoFields(templateId: number, fields: SeoFieldsPatch)
   await write([templateId], values);
 }
 
+/**
+ * Reemplaza la foto principal de UNA ficha (`image_1920`). Odoo regenera
+ * solo las miniaturas (1024, 512, 256, 128).
+ *
+ * Quien la llama respalda antes la foto original: este modulo no lee ni
+ * guarda nada, solo escribe. Igual que el resto: solo desde una accion del
+ * usuario, nunca desde el sync.
+ */
+export async function writeTemplateImage(templateId: number, imageBase64: string): Promise<void> {
+  assertModelAllowed(MODEL);
+  if (!imageBase64 || imageBase64.startsWith("data:")) {
+    throw new Error(`Imagen invalida para la ficha ${templateId}: se espera base64 sin prefijo data:`);
+  }
+  const values = { image_1920: imageBase64 };
+  assertWritableOnUpdate(values);
+  await write([templateId], values);
+}
+
 function write(ids: number[], values: Record<string, unknown>): Promise<boolean> {
   return odooRpc.executeKw<boolean>(MODEL, "write", [ids, values], {}, ODOO_WRITE_TIMEOUT_MS);
 }

@@ -441,3 +441,22 @@ enum ProductImportRowStatus {
   OK
   ERROR
 }
+
+// ─── Reparacion de fotos de producto ─────────────────────────────────────────
+
+// Foto original de una ficha antes de que la reparacion la reemplace en
+// Odoo. Se guarda ANTES de escribir: si el respaldo falla, no se escribe.
+// Una fila por reparacion; para restaurar se toma la mas antigua del
+// template, que es la foto que habia antes de la primera corrida.
+model ProductImageBackup {
+  id             String   @id @default(cuid())
+  odooTemplateId Int
+  // image_1920 tal como estaba en Odoo (base64, sin prefijo data:).
+  imageBase64    String
+  // Lado del cuadrado que se escribio en su lugar.
+  repairedSide   Int
+  createdBy      String?
+  createdAt      DateTime @default(now())
+
+  @@index([odooTemplateId])
+}

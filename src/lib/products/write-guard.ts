@@ -40,6 +40,10 @@ export const UPDATE_FIELDS: ReadonlySet<string> = new Set([
   "website_description",
   "website_meta_title",
   "website_meta_description",
+  // Foto principal de la ficha. Es catalogo: Odoo regenera las miniaturas y
+  // no toca precio, costo ni inventario. Solo la escribe la reparacion de
+  // fotos, y siempre despues de respaldar la original en Postgres.
+  "image_1920",
 ]);
 
 /** Solo seguros al dar de alta, con el producto en cero. */
@@ -49,7 +53,6 @@ const CREATE_ONLY_FIELDS: ReadonlySet<string> = new Set([
   "is_storable",
   "list_price",
   "standard_price",
-  "image_1920",
   "show_availability",
   // Si el producto sale en la caja del punto de venta. Es una bandera de
   // catalogo: no crea stock ni movimiento, solo decide donde se ve.
