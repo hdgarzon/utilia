@@ -5,9 +5,8 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { loadImageRepairs, type ImageRepairTarget } from "@/lib/products/image-repair-candidates";
 import { repairImage, thumbnailDataUrl, LADO_PRODUCTO_SUFICIENTE } from "@/lib/products/image-repair";
+import { applyImageRepairs } from "@/lib/products/image-repair-apply";
 import { IMAGE_REPAIR_LIMIT, IMAGE_REPAIR_MAX, IMAGE_REPAIR_PREVIEW_COUNT } from "@/lib/products/image-repair-limits";
-import { writeTemplateImage, esRechazoDeNegocio } from "@/lib/products/odoo-catalog-write";
-import { translateOdooError } from "@/lib/odoo-write";
 
 /**
  * Reparacion de fotos de las fichas (recorte del margen blanco y cuadrado),
@@ -93,58 +92,7 @@ export async function writeImageRepairBatch(input: { limit?: number }): Promise<
     // Se vuelve a seleccionar en el servidor: la regla mira la foto actual,
     // asi que una ficha que alguien cambio entre tanto ya no califica.
     const targets = await loadImageRepairs(limit.data);
-    const fallidas: Array<{ templateId: number; name: string; error: string }> = [];
-    let written = 0;
-
-    const cortar = (desde: number, error: string) => {
-      for (const resto of targets.slice(desde)) {
-        fallidas.push({ templateId: resto.templateId, name: resto.name, error });
-      }
-    };
-
-    for (let i = 0; i < targets.length; i += 1) {
-      const t = targets[i];
-
-      let reparada: Awaited<ReturnType<typeof repairImage>>;
-      try {
-        reparada = await repairImage(t.original);
-      } catch (err) {
-        console.error(`[imagenes] no se pudo procesar la foto de ${t.templateId}:`, err);
-        fallidas.push({ templateId: t.templateId, name: t.name, error: "No se pudo procesar la foto" });
-        continue;
-      }
-
-      // Respaldo primero. Si Postgres falla no se escribe nada mas: sin
-      // respaldo no hay como volver a la foto original.
-      try {
-        await prisma.productImageBackup.create({
-          data: {
-            odooTemplateId: t.templateId,
-            imageBase64: t.original.toString("base64"),
-            repairedSide: reparada.side,
-            createdBy: session.user?.email ?? null,
-          },
-        });
-      } catch (err) {
-        console.error("[imagenes] fallo el respaldo, se corta la corrida:", err);
-        cortar(i, "No se pudo respaldar la foto original; no se escribio");
-        break;
-      }
-
-      try {
-        await writeTemplateImage(t.templateId, reparada.base64);
-        written += 1;
-      } catch (err) {
-        const mensaje = translateOdooError(err, "catalogo");
-        if (!esRechazoDeNegocio(err)) {
-          // Odoo no respondio: seguir seria repetir el mismo timeout por cada
-          // ficha que queda. Se marca lo que falta como fallido y se corta.
-          cortar(i, mensaje);
-          break;
-        }
-        fallidas.push({ templateId: t.templateId, name: t.name, error: mensaje });
-      }
-    }
+    const { written, failed: fallidas } = await applyImageRepairs(targets, session.user?.email ?? null);
 
     const registro: ImageRepairUltimaCorrida = { at: new Date().toISOString(), written, failed: fallidas.length };
     await prisma.setting.upsert({
