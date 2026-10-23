@@ -80,7 +80,7 @@ async function getDashboardData() {
     transactions: h.transactions,
   }));
 
-  // "Hoy" en vivo desde Odoo (misma base —amount_total— que el gráfico horario y
+  // "Hoy" en vivo desde Odoo (misma base —ingreso sin IVA— que el gráfico horario y
   // que el snapshot del sync). Evita la contradicción de mostrar $0 en los KPIs
   // mientras el gráfico y la tabla ya reflejan ventas del día. Si Odoo no
   // responde (hourly vacío), cae al último snapshot sincronizado.

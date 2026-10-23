@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
-import { odoo } from "@/lib/odoo";
+import { odoo, posOrderRevenue } from "@/lib/odoo";
 import { colombiaDayStartInstant, colombiaStartOfPreviousMonth, COLOMBIA_OFFSET_MS, daysInMonth } from "@/lib/timezone";
 import { getMonthFixedExpenses } from "@/lib/fixed-expenses";
 import { recomputeStockLevels } from "@/lib/analytics/stock-levels";
@@ -379,9 +379,12 @@ function colombiaDateKey(dateOrderUtc: string): string {
  * Agrega ordenes y lineas en filas de snapshot diario. Unica fuente del calculo
  * de ingreso, costo, utilidad y margen: la usan el sync incremental y el
  * backfill historico, para que no puedan divergir.
+ *
+ * `revenue` de cada orden es su ingreso (sin IVA), de `posOrderRevenue`: el
+ * ingreso, el ticket promedio y la proyeccion nunca llevan impuesto.
  */
-async function buildSnapshotRows(
-  orders: Array<{ id: number; date_order: string; amount_total: number }>,
+export async function buildSnapshotRows(
+  orders: Array<{ id: number; date_order: string; revenue: number }>,
   lines: Array<{ order_id: [number, string]; product_id: [number, string]; product_uom_qty: number; purchase_price?: number | false }>,
   cmpByProduct: Map<number, number>
 ): Promise<SnapshotRow[]> {
@@ -391,8 +394,8 @@ async function buildSnapshotRows(
   for (const order of orders) {
     const dateKey = colombiaDateKey(order.date_order);
     const bucket = salesByDate.get(dateKey) ?? { revenue: 0, cost: 0, count: 0, tickets: [] };
-    bucket.revenue += order.amount_total;
-    bucket.tickets.push(order.amount_total);
+    bucket.revenue += order.revenue;
+    bucket.tickets.push(order.revenue);
     bucket.count += 1;
     salesByDate.set(dateKey, bucket);
   }
@@ -539,7 +542,7 @@ export async function syncSalesAndComputeMetrics() {
     const orders = posOrders.map((o) => ({
       id: o.id,
       date_order: o.date_order,
-      amount_total: o.amount_total,
+      revenue: posOrderRevenue(o),
     }));
 
     if (orders.length === 0) {
@@ -856,7 +859,7 @@ export async function backfillSalesHistory(
       const orders = posOrders.map((o) => ({
         id: o.id,
         date_order: o.date_order,
-        amount_total: o.amount_total,
+        revenue: posOrderRevenue(o),
       }));
       const posLines = await odoo.getPosOrderLines(orders.map((o) => o.id));
       const lines = posLines.map((l) => ({

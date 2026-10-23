@@ -199,6 +199,7 @@ export interface OdooSaleOrder {
   name: string;
   date_order: string;
   amount_total: number;
+  /** Ingreso (sin IVA) de la orden. `amount_total` incluye impuestos. */
   amount_untaxed: number;
   state: string;
   partner_id: [number, string];
@@ -211,6 +212,7 @@ export interface OdooSaleOrderLine {
   product_id: [number, string];
   product_uom_qty: number;
   price_unit: number;
+  /** Ingreso (sin IVA) de la línea. Nunca usar `price_total`, que trae el impuesto. */
   price_subtotal: number;
   // `purchase_price` solo existe si el módulo `sale_margin` está instalado.
   // Es el costo histórico al momento de confirmar la venta (mejor que
@@ -257,12 +259,27 @@ export interface OdooSupplier {
   phone: string | false;
 }
 
+const POS_ORDER_FIELDS = [
+  "id",
+  "name",
+  "date_order",
+  "amount_total",
+  "amount_tax",
+  "amount_paid",
+  "state",
+  "partner_id",
+  "lines",
+  "session_id",
+];
+
 /** POS = Point of Sale. Modelo paralelo a sale.order pero para caja registradora. */
 export interface OdooPosOrder {
   id: number;
   name: string;
   date_order: string;
+  /** Total cobrado, IVA incluido. Para ingreso usar `posOrderRevenue`. */
   amount_total: number;
+  amount_tax: number;
   amount_paid: number;
   state: string; // "draft" | "paid" | "done" | "invoiced" | "cancel"
   partner_id: [number, string] | false;
@@ -276,6 +293,7 @@ export interface OdooPosOrderLine {
   product_id: [number, string];
   qty: number;
   price_unit: number;
+  /** Ingreso (sin IVA) de la línea. Nunca usar `price_subtotal_incl`, que trae el impuesto. */
   price_subtotal: number;
   discount: number;
   // total_cost = qty × costo unitario al momento de la venta (histórico, ideal)
@@ -304,6 +322,15 @@ export interface OdooPurchaseOrderLine {
   price_subtotal: number;
 }
 
+/**
+ * Ingreso (sin IVA) de una orden POS: lo cobrado menos el impuesto. Es la única
+ * base de ingreso de Utilia; con precios IVA incluido, `amount_total` inflaría
+ * la venta gravada ~16% y el margen bruto saldría falso.
+ */
+export function posOrderRevenue(o: { amount_total: number; amount_tax: number }): number {
+  return o.amount_total - o.amount_tax;
+}
+
 // ─── API pública ─────────────────────────────────────────────────────────────
 
 export const odoo = {
@@ -320,6 +347,7 @@ export const odoo = {
     return { ok: true, uid, db: ODOO_DB, serverVersion };
   },
 
+  /** Ventas del sitio web. Su ingreso es `amount_untaxed`, nunca `amount_total`. */
   async getSaleOrders(since?: Date): Promise<OdooSaleOrder[]> {
     const domain: unknown[] = [["state", "in", ["sale", "done"]]];
     if (since) domain.push(["write_date", ">=", formatOdooDate(since)]);
@@ -440,7 +468,7 @@ export const odoo = {
     return searchRead<OdooPosOrder>(
       "pos.order",
       domain,
-      ["id", "name", "date_order", "amount_total", "amount_paid", "state", "partner_id", "lines", "session_id"],
+      POS_ORDER_FIELDS,
       { limit, order: "date_order desc" }
     );
   },
@@ -454,7 +482,7 @@ export const odoo = {
         ["date_order", ">=", formatOdooDate(desde)],
         ["date_order", "<", formatOdooDate(hasta)],
       ],
-      ["id", "name", "date_order", "amount_total", "amount_paid", "state", "partner_id", "lines", "session_id"],
+      POS_ORDER_FIELDS,
       { limit, order: "date_order asc" }
     );
   },
@@ -474,14 +502,14 @@ export const odoo = {
     const start = new Date(colombiaMidnight.getTime() + COLOMBIA_OFFSET_MS);
     const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
 
-    const orders = await searchRead<{ date_order: string; amount_total: number }>(
+    const orders = await searchRead<{ date_order: string; amount_total: number; amount_tax: number }>(
       "pos.order",
       [
         ["state", "in", ["paid", "done", "invoiced"]],
         ["date_order", ">=", formatOdooDate(start)],
         ["date_order", "<", formatOdooDate(end)],
       ],
-      ["date_order", "amount_total"],
+      ["date_order", "amount_total", "amount_tax"],
       { limit: 500, order: "date_order asc" }
     );
 
@@ -495,7 +523,7 @@ export const odoo = {
       const hourCO = (dt.getUTCHours() - 5 + 24) % 24;
       const bucket = byHour.get(hourCO);
       if (bucket) {
-        bucket.revenue += o.amount_total;
+        bucket.revenue += posOrderRevenue(o);
         bucket.transactions += 1;
       }
     }
