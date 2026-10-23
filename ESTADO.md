@@ -7,6 +7,7 @@
 - Fotos de las fichas del sitio Odoo: reparación automática terminada (PR #79). Lo que queda son fotos nuevas, que se toman en la tienda.
 
 ## Hecho
+- Ingreso sin IVA: el sync, el backfill y "Hoy" en vivo toman la base sin impuesto de cada orden POS (`posOrderRevenue` = `amount_total - amount_tax`); las líneas ya usaban `price_subtotal`. Tests en `sync.test.ts`. Listo antes de activar el IVA en el POS.
 - Liquidación: tramo de antigüedad, precio de remate sugerido y margen por producto; filtros por tramo y categoría; totales del lote; botón "Exportar etiquetas (CSV)". Precios en 0 o bajo costo marcados como "revisar precio" y fuera del descuento automático.
 - Auditoría de fotos de las 1.243 fichas publicadas con stock: 279 se pueden reparar recortando el margen blanco (34 A/B), 475 necesitan foto nueva (47 A/B), 413 tienen fondo no blanco, ninguna tiene fotos extra. El peso no es problema.
 - Reparación de fotos (PR #79): recorte del margen blanco y cuadrado blanco sin agrandar, vista previa de 5, respaldo de la original en `ProductImageBackup` antes de escribir. Tabla creada en producción. Corrida de prueba con 3 fichas A y luego el resto: 288 fotos reparadas en producción, 0 fallos, todas con respaldo. Muestra verificada en www.utilia.pro. No queda ninguna foto que califique.
@@ -42,6 +43,7 @@
 
 ## Notas de sesión
 <!-- AAAA-MM-DD: una o dos líneas -->
+- 2026-10-23: `sale.order` (sitio web) no lo consume ningún sync hoy; si se agrega, su ingreso es `amount_untaxed`. No se corrió sync ni backfill: el histórico no cambia porque las ventas POS no llevaban impuesto.
 - 2026-10-19: El precio de remate es una sugerencia en pantalla y en el CSV; no se escribe en Odoo. El tramo de costo + 10% se topa en el precio normal para que el remate nunca salga más caro.
 - 2026-10-19: NO correr `pnpm db:push` contra la base de producción: comparte el esquema `public` con tablas de otra app (`accreditation_requests`, con FK a `auth.users`) y push intentaría borrarlas. `ProductImageBackup` se creó con SQL explícito (CREATE TABLE + índice + RLS activado, igual que las demás tablas).
 - 2026-10-19: Al escribir `image_1920` en JPEG, Odoo sirve la ficha en JPEG (no WebP); la variante sin foto propia hereda la del template.
