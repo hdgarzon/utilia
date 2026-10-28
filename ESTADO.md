@@ -21,6 +21,7 @@
 - Meta de liquidación fijada en producción, con fecha límite 2026-12-31.
 - Menú agrupado en secciones (el PR #65 lo dejó en 3 grupos y 9 items). Verificado: lo nuevo de los PRs #61 y #64 sigue vivo tras el rediseño.
 - Verificado en Odoo: las ventas POS no llevan IVA; el margen bruto está bien calculado.
+- Eliminados los endpoints públicos `/api/test-db` y `/api/test-odoo` (PR #83): nada los usaba y `/api/test-db` exponía sin sesión host y puerto de la base y errores de Prisma. Lint, tests y build en verde.
 
 ## Pendiente
 - Imprimir las etiquetas de remate desde el CSV y corregir en Odoo los productos marcados "revisar precio" antes de rematarlos.
@@ -37,11 +38,13 @@
 - Resumen diario por WhatsApp: necesita la aprobación de Henry para enviar mensajes, el número de destino y el canal.
 
 ## Siguiente paso
+- Henry: fusionar y desplegar el PR #83. Hasta entonces `/api/test-db` sigue público en producción.
 - Siguiente frente SEO: texto introductorio para las 10 categorías de la tienda. Los productos nuevos se cubren desde Productos con "Generar SEO".
 - Confirmar el régimen de IVA con el contador y, si aplica, sumar el IVA de compras al costo.
 
 ## Notas de sesión
 <!-- AAAA-MM-DD: una o dos líneas -->
+- 2026-10-28: `src/proxy.ts` exime todo `/api` de la autenticación; cada ruta nueva bajo `/api` debe llamar `auth()` o `cron-auth` por su cuenta.
 - 2026-10-19: El precio de remate es una sugerencia en pantalla y en el CSV; no se escribe en Odoo. El tramo de costo + 10% se topa en el precio normal para que el remate nunca salga más caro.
 - 2026-10-19: NO correr `pnpm db:push` contra la base de producción: comparte el esquema `public` con tablas de otra app (`accreditation_requests`, con FK a `auth.users`) y push intentaría borrarlas. `ProductImageBackup` se creó con SQL explícito (CREATE TABLE + índice + RLS activado, igual que las demás tablas).
 - 2026-10-19: Al escribir `image_1920` en JPEG, Odoo sirve la ficha en JPEG (no WebP); la variante sin foto propia hereda la del template.

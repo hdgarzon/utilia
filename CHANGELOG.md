@@ -3,6 +3,7 @@
 Una línea por cambio entregado, en lenguaje de usuario.
 
 ## Sin publicar
+- Se eliminaron los endpoints de diagnóstico `/api/test-db` y `/api/test-odoo`, que eran públicos y exponían host y puerto de la base de datos y errores internos.
 - Liquidación muestra el tramo de antigüedad, el precio de remate sugerido y el margen de cada producto, con filtros por tramo y categoría, totales del lote y exportación de etiquetas en CSV. Los precios en 0 o bajo costo quedan marcados para revisar.
 - Productos tiene el botón "Reparar fotos": recorta el margen blanco de la foto principal y centra el producto en un cuadrado blanco, sin agrandarla (primero clase A y B, con stock y publicadas, hasta 100 por corrida). Muestra el antes y después de las primeras 5, respalda la foto original en Postgres y luego la escribe en Odoo. Requiere la tabla nueva `ProductImageBackup` (ya creada en producción).
 - La descripción generada de cada ficha de producto aparece en el recuadro junto al nombre, no al final de la página.
